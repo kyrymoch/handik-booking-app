@@ -20,6 +20,7 @@ class Handik_Booking_App_Plugin {
 	public $routing;
 	public $cal;
 	public $chatkit;
+	public $updater;
 	public $webhook;
 	public $appearance;
 	public $changelog;
@@ -58,6 +59,7 @@ class Handik_Booking_App_Plugin {
 		$this->routing        = new Handik_Booking_App_Routing_Service();
 		$this->cal            = new Handik_Booking_App_Cal_Service( $this->settings, $this->job_requests, $this->contacts );
 		$this->chatkit        = new Handik_Booking_App_ChatKit_Service( $this->settings, $this->logger, $this->job_requests, $this->routing, $this->cal );
+		$this->updater        = new Handik_Booking_App_Updater_Service( $this->settings, $this->logger );
 		$this->webhook        = new Handik_Booking_App_Webhook_Service( $this->settings, $this->logger, $this->job_requests, $this->bookings );
 		$this->appearance     = new Handik_Booking_App_Appearance_Service( $this->settings );
 		$this->changelog      = new Handik_Booking_App_Changelog_Service();

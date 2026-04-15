@@ -15,6 +15,10 @@ class Handik_Booking_App_Settings {
 		'openai_project_id'      => 'HANDIK_BOOKING_APP_OPENAI_PROJECT_ID',
 		'openai_organization_id' => 'HANDIK_BOOKING_APP_OPENAI_ORGANIZATION_ID',
 		'chatkit_script_url'     => 'HANDIK_BOOKING_APP_CHATKIT_SCRIPT_URL',
+		'github_repo_url'        => 'HANDIK_BOOKING_APP_GITHUB_REPO_URL',
+		'github_repo_branch'     => 'HANDIK_BOOKING_APP_GITHUB_REPO_BRANCH',
+		'github_access_token'    => 'HANDIK_BOOKING_APP_GITHUB_ACCESS_TOKEN',
+		'github_release_asset_pattern' => 'HANDIK_BOOKING_APP_GITHUB_RELEASE_ASSET_PATTERN',
 		'cal_standard_event_url' => 'HANDIK_BOOKING_APP_CAL_STANDARD_EVENT_URL',
 		'cal_extended_event_url' => 'HANDIK_BOOKING_APP_CAL_EXTENDED_EVENT_URL',
 		'cal_large_event_url'    => 'HANDIK_BOOKING_APP_CAL_LARGE_EVENT_URL',
@@ -41,6 +45,10 @@ class Handik_Booking_App_Settings {
 			'openai_project_id'      => '',
 			'openai_organization_id' => '',
 			'chatkit_script_url'     => '',
+			'github_repo_url'        => 'https://github.com/kyrymoch/handik-booking-app/',
+			'github_repo_branch'     => 'main',
+			'github_access_token'    => '',
+			'github_release_asset_pattern' => '/handik-booking-app\.zip($|[?&#])/i',
 			'cal_standard_event_url' => '',
 			'cal_extended_event_url' => '',
 			'cal_large_event_url'    => '',
@@ -121,6 +129,7 @@ class Handik_Booking_App_Settings {
 			switch ( $key ) {
 				case 'openai_api_base':
 				case 'chatkit_script_url':
+				case 'github_repo_url':
 				case 'cal_standard_event_url':
 				case 'cal_extended_event_url':
 				case 'cal_large_event_url':
@@ -132,6 +141,12 @@ class Handik_Booking_App_Settings {
 					break;
 				case 'debug_mode':
 					$output[ $key ] = empty( $value ) ? 0 : 1;
+					break;
+				case 'github_repo_branch':
+					$output[ $key ] = preg_replace( '/[^A-Za-z0-9._\/-]/', '', (string) $value );
+					break;
+				case 'github_release_asset_pattern':
+					$output[ $key ] = sanitize_text_field( (string) $value );
 					break;
 				case 'app_radius':
 				case 'app_spacing':

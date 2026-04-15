@@ -1,0 +1,36 @@
+name: Release Plugin ZIP
+
+on:
+  release:
+    types:
+      - published
+
+permissions:
+  contents: write
+
+jobs:
+  build-release-asset:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Build plugin ZIP
+        run: |
+          mkdir -p dist/handik-booking-app
+          rsync -av ./ dist/handik-booking-app/ \
+            --exclude '.git' \
+            --exclude '.github' \
+            --exclude 'dist' \
+            --exclude 'node_modules' \
+            --exclude 'tests' \
+            --exclude '.DS_Store'
+          cd dist
+          zip -r handik-booking-app.zip handik-booking-app
+
+      - name: Upload release asset
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/handik-booking-app.zip
+          overwrite_files: true

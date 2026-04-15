@@ -219,11 +219,34 @@ App Settings include:
 - OpenAI project ID
 - OpenAI organization ID
 - custom ChatKit bridge URL
+- GitHub repo URL
+- GitHub release branch
+- GitHub access token for private-repo updates
+- GitHub release asset regex
 - Cal.com URLs for all 4 booking types
 - Cal.com webhook secret
 - email sender settings
 - debug mode
 - appearance settings
+
+## GitHub Auto-Updates
+
+The plugin now includes a built-in GitHub updater powered by Plugin Update Checker.
+
+Release flow:
+
+1. Bump the `Version` header in `handik-booking-app.php`.
+2. Commit and push to `main`.
+3. Publish a GitHub Release in `kyrymoch/handik-booking-app`.
+4. The included GitHub Actions workflow uploads `handik-booking-app.zip` to the release automatically.
+5. WordPress detects the new version from GitHub.
+6. Enable auto-updates for the plugin on the WordPress Plugins screen if you want unattended upgrades.
+
+Important notes:
+
+- For private repositories, the WordPress site needs a GitHub token with repository read access.
+- The plugin is configured to prefer a release asset that matches `/handik-booking-app\.zip($|[?&#])/i`.
+- `readme.txt` is included so the WordPress update modal can show changelog/details.
 
 ## Diagnostics
 
@@ -251,6 +274,10 @@ The admin logs screen now includes serialized `context` so you can see request i
 - `HANDIK_BOOKING_APP_OPENAI_PROJECT_ID`
 - `HANDIK_BOOKING_APP_OPENAI_ORGANIZATION_ID`
 - `HANDIK_BOOKING_APP_CHATKIT_SCRIPT_URL`
+- `HANDIK_BOOKING_APP_GITHUB_REPO_URL`
+- `HANDIK_BOOKING_APP_GITHUB_REPO_BRANCH`
+- `HANDIK_BOOKING_APP_GITHUB_ACCESS_TOKEN`
+- `HANDIK_BOOKING_APP_GITHUB_RELEASE_ASSET_PATTERN`
 - `HANDIK_BOOKING_APP_CAL_STANDARD_EVENT_URL`
 - `HANDIK_BOOKING_APP_CAL_EXTENDED_EVENT_URL`
 - `HANDIK_BOOKING_APP_CAL_LARGE_EVENT_URL`
@@ -265,7 +292,7 @@ The admin logs screen now includes serialized `context` so you can see request i
 1. Copy `handik-booking-app` into `wp-content/plugins/`.
 2. Activate the plugin.
 3. Open `Handik Booking > App Settings`.
-4. Configure OpenAI, ChatKit, Cal.com, email sender, and appearance settings.
+4. Configure OpenAI, ChatKit, Cal.com, GitHub updater, email sender, and appearance settings.
 5. Add the shortcode or Elementor widget to the desired page.
 6. Register the Cal webhook URL:
    - `https://your-site.com/wp-json/handik-booking-app/v1/cal-webhook`

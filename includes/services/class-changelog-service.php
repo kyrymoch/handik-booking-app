@@ -11,6 +11,16 @@ class Handik_Booking_App_Changelog_Service {
 	public function get_entries() {
 		return array(
 			array(
+				'version'      => '2.0.5',
+				'date'         => '2026-04-15',
+				'title'        => 'GitHub Auto-Updates',
+				'notes'        => array(
+					'Added a built-in GitHub release updater so WordPress can detect plugin updates from the kyrymoch/handik-booking-app repository.',
+					'Added private-repository token support, release asset matching, and updater settings in the admin app.',
+					'Added release packaging files so each GitHub Release can publish a ready-to-install handik-booking-app.zip asset for WordPress auto-updates.',
+				),
+			),
+			array(
 				'version'      => '2.0.4',
 				'date'         => '2026-04-15',
 				'title'        => 'Assistant Step Flow Fixes',
