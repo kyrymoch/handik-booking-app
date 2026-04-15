@@ -1,0 +1,247 @@
+.handik-booking-app {
+	font-size: calc(16px * var(--handik-font-scale, 1));
+	color: var(--handik-text, #0f172a);
+}
+
+.handik-booking-app__shell {
+	max-width: var(--handik-max-width, 980px);
+	margin: 0 auto;
+	padding: var(--handik-spacing, 20px);
+	background: linear-gradient(180deg, var(--handik-background, #f8fafc), #eef4f7);
+	border: 1px solid var(--handik-border, #dbe3ea);
+	border-radius: var(--handik-radius, 18px);
+	box-shadow: var(--handik-shadow, 0 24px 60px rgba(15, 23, 42, 0.12));
+}
+
+.handik-booking-app__screen {
+	background: var(--handik-surface, #fff);
+	border-radius: calc(var(--handik-radius, 18px) - 4px);
+	padding: calc(var(--handik-spacing, 20px) * 1.1);
+	border: 1px solid var(--handik-border, #dbe3ea);
+}
+
+.handik-booking-app__screen.is-wide {
+	padding: calc(var(--handik-spacing, 20px) * 1.1);
+}
+
+.handik-booking-app__screen-header h2 {
+	margin: 0 0 18px;
+	font-size: 1.9rem;
+	line-height: 1.1;
+}
+
+.handik-booking-app__loading {
+	padding: 40px;
+	text-align: center;
+}
+
+.handik-booking-app__alert {
+	margin-bottom: 14px;
+	padding: 12px 14px;
+	border-radius: 14px;
+	background: #ecfeff;
+	color: #155e75;
+}
+
+.handik-booking-app__alert.is-error,
+.handik-booking-app__assistant-note.is-error {
+	background: #fef2f2;
+	color: #b91c1c;
+}
+
+.handik-booking-app__progress {
+	display: grid;
+	grid-template-columns: repeat(8, 1fr);
+	gap: 8px;
+	margin-bottom: 18px;
+}
+
+.handik-booking-app__progress span {
+	height: 6px;
+	border-radius: 999px;
+	background: #dbe3ea;
+}
+
+.handik-booking-app__progress span.is-active {
+	background: var(--handik-accent, #0f766e);
+}
+
+.handik-choice-grid,
+.handik-task-grid,
+.handik-grid-3,
+.handik-footer-actions,
+.handik-inline-actions,
+.handik-photo-list,
+.handik-assistant-layout {
+	display: grid;
+	gap: 14px;
+}
+
+.handik-choice-grid {
+	grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.handik-choice,
+.handik-task {
+	appearance: none;
+	border: 1px solid var(--handik-border, #dbe3ea);
+	background: #fff;
+	color: var(--handik-text, #0f172a);
+	padding: 16px;
+	border-radius: calc(var(--handik-radius, 18px) - 4px);
+	text-align: left;
+	font-weight: 600;
+	cursor: pointer;
+}
+
+.handik-task.is-selected,
+.handik-choice:hover,
+.handik-task:hover {
+	border-color: var(--handik-accent, #0f766e);
+	box-shadow: 0 0 0 2px color-mix(in srgb, var(--handik-accent, #0f766e) 18%, transparent);
+}
+
+.handik-task-groups,
+.handik-task-group {
+	display: grid;
+	gap: 14px;
+}
+
+.handik-task-group h3,
+.handik-sidebar h3 {
+	margin: 0;
+	font-size: 1rem;
+}
+
+.handik-grid-3 {
+	grid-template-columns: repeat(3, 1fr);
+}
+
+.handik-field {
+	display: grid;
+	gap: 8px;
+	font-weight: 600;
+}
+
+.handik-field input,
+.handik-field select,
+.handik-field textarea {
+	width: 100%;
+	padding: 13px 14px;
+	border-radius: 14px;
+	border: 1px solid var(--handik-border, #dbe3ea);
+	font: inherit;
+	background: #fff;
+}
+
+.handik-field textarea {
+	min-height: 120px;
+	resize: vertical;
+}
+
+.handik-check {
+	display: inline-flex;
+	align-items: center;
+	gap: 10px;
+	font-weight: 600;
+}
+
+.handik-btn {
+	appearance: none;
+	border: 0;
+	cursor: pointer;
+	padding: 13px 18px;
+	border-radius: var(--handik-button-radius, 999px);
+	font: inherit;
+	font-weight: 700;
+}
+
+.handik-btn.is-primary {
+	background: var(--handik-accent, #0f766e);
+	color: #fff;
+}
+
+.handik-btn.is-secondary {
+	background: #e2e8f0;
+	color: #0f172a;
+}
+
+.handik-footer-actions {
+	grid-template-columns: repeat(auto-fit, minmax(180px, max-content));
+	align-items: center;
+	margin-top: 18px;
+}
+
+.handik-inline-actions {
+	grid-template-columns: max-content;
+	margin-bottom: 8px;
+}
+
+.handik-photo-list {
+	grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+
+.handik-photo-list span,
+.handik-admin-card-like,
+.handik-sidebar {
+	background: #f8fafc;
+	border: 1px solid var(--handik-border, #dbe3ea);
+	border-radius: 14px;
+	padding: 12px 14px;
+}
+
+.handik-assistant-layout {
+	grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr);
+	align-items: start;
+}
+
+.handik-booking-app__assistant-host {
+	min-height: 520px;
+	border: 1px solid var(--handik-border, #dbe3ea);
+	border-radius: 16px;
+	overflow: hidden;
+	background: #fff;
+}
+
+.handik-chatkit-bridge__loading {
+	min-height: 520px;
+	display: grid;
+	place-items: center;
+	color: #475569;
+	font-weight: 600;
+}
+
+.handik-booking-app__assistant-note {
+	margin: 0 0 12px;
+	padding: 12px 14px;
+	border-radius: 14px;
+	background: #ecfeff;
+	color: #155e75;
+}
+
+.handik-sidebar ul {
+	padding-left: 18px;
+	margin-bottom: 18px;
+}
+
+@media (max-width: 900px) {
+	.handik-assistant-layout,
+	.handik-grid-3 {
+		grid-template-columns: 1fr;
+	}
+}
+
+@media (max-width: 640px) {
+	.handik-booking-app__shell,
+	.handik-booking-app__screen {
+		padding: 14px;
+	}
+
+	.handik-footer-actions {
+		grid-template-columns: 1fr;
+	}
+
+	.handik-btn {
+		width: 100%;
+	}
+}

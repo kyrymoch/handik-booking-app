@@ -1,0 +1,44 @@
+.handik-admin-wrap {
+	max-width: 1220px;
+}
+
+.handik-admin-cards {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+	gap: 16px;
+	margin: 18px 0 24px;
+}
+
+.handik-admin-card,
+.handik-admin-panel {
+	background: #fff;
+	border: 1px solid #dbe3ea;
+	border-radius: 16px;
+	padding: 18px;
+	box-shadow: 0 10px 26px rgba(15, 23, 42, 0.06);
+}
+
+.handik-admin-card strong {
+	display: block;
+	font-size: 24px;
+	margin-bottom: 6px;
+}
+
+.handik-admin-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+	gap: 16px;
+	margin-bottom: 20px;
+}
+
+.handik-admin-grid label {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	font-weight: 600;
+}
+
+.handik-admin-grid input,
+.handik-admin-grid select {
+	width: 100%;
+}

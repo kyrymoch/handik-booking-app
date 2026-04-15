@@ -1,0 +1,81 @@
+<?php
+
+if ( ! defined( 'ABSPATH' ) ) {
+	exit;
+}
+
+class Handik_Booking_App_Plugin {
+	/**
+	 * @var Handik_Booking_App_Plugin|null
+	 */
+	protected static $instance = null;
+
+	public $settings;
+	public $logger;
+	public $contacts;
+	public $addresses;
+	public $job_requests;
+	public $bookings;
+	public $auth;
+	public $routing;
+	public $cal;
+	public $chatkit;
+	public $webhook;
+	public $appearance;
+	public $changelog;
+	public $app_state;
+	public $app_schema;
+	public $upload_service;
+	public $app_controller;
+	public $assets;
+	public $frontend_app;
+	public $shortcode;
+	public $rest_api;
+	public $admin;
+	public $widget_registry;
+
+	/**
+	 * @return Handik_Booking_App_Plugin
+	 */
+	public static function instance() {
+		if ( null === self::$instance ) {
+			self::$instance = new self();
+		}
+		return self::$instance;
+	}
+
+	protected function __construct() {
+		$migrations = new Handik_Booking_App_Migrations();
+		$migrations->migrate();
+
+		$this->settings       = new Handik_Booking_App_Settings();
+		$this->logger         = new Handik_Booking_App_Logger( $this->settings );
+		$this->contacts       = new Handik_Booking_App_Contacts_Service( $this->logger );
+		$this->addresses      = new Handik_Booking_App_Addresses_Service();
+		$this->job_requests   = new Handik_Booking_App_Job_Requests_Service( $this->logger );
+		$this->bookings       = new Handik_Booking_App_Bookings_Service( $this->logger, $this->job_requests );
+		$this->auth           = new Handik_Booking_App_Auth_Service( $this->settings, $this->logger, $this->contacts, $this->addresses, $this->job_requests );
+		$this->routing        = new Handik_Booking_App_Routing_Service();
+		$this->cal            = new Handik_Booking_App_Cal_Service( $this->settings, $this->job_requests, $this->contacts );
+		$this->chatkit        = new Handik_Booking_App_ChatKit_Service( $this->settings, $this->logger, $this->job_requests, $this->routing, $this->cal );
+		$this->webhook        = new Handik_Booking_App_Webhook_Service( $this->settings, $this->logger, $this->job_requests, $this->bookings );
+		$this->appearance     = new Handik_Booking_App_Appearance_Service( $this->settings );
+		$this->changelog      = new Handik_Booking_App_Changelog_Service();
+		$this->app_state      = new Handik_Booking_App_State();
+		$this->app_schema     = new Handik_Booking_App_Schema();
+		$this->upload_service = new Handik_Booking_App_Upload_Service();
+		$this->app_controller = new Handik_Booking_App_Controller( $this->app_state, $this->app_schema, $this->upload_service, $this->settings, $this->appearance, $this->auth, $this->contacts, $this->addresses, $this->job_requests, $this->routing, $this->cal, $this->changelog );
+		$this->assets         = new Handik_Booking_App_Assets( $this->appearance, $this->settings );
+		$this->frontend_app   = new Handik_Booking_App_Frontend_App( $this->assets, $this->appearance );
+		$this->shortcode      = new Handik_Booking_App_Shortcode( $this->frontend_app );
+		$this->rest_api       = new Handik_Booking_App_REST_API( $this->app_controller, $this->auth, $this->chatkit, $this->webhook );
+		$this->admin          = new Handik_Booking_App_Admin( $this->settings, $this->assets, $this->contacts, $this->addresses, $this->job_requests, $this->bookings, $this->logger, $this->changelog );
+		$this->widget_registry = new Handik_Booking_App_Widget_Registry();
+
+		add_action( 'template_redirect', array( $this, 'maybe_process_magic_link' ) );
+	}
+
+	public function maybe_process_magic_link() {
+		$this->auth->maybe_process_magic_link();
+	}
+}
