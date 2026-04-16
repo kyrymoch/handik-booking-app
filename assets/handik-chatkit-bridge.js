@@ -274,7 +274,7 @@
 			};
 		};
 
-		options.container.innerHTML = '<div class="handik-chatkit-bridge__loading"><span class="handik-spinner" aria-hidden="true"></span><span>Loading virtual assistant...</span></div>';
+		options.container.innerHTML = '<div class="handik-chatkit-bridge__loading"><div class="handik-loading-visual handik-loading-visual--assistant" aria-hidden="true"><span class="handik-bot-antenna"></span><span class="handik-bot-head"></span><span class="handik-battery"><span class="handik-battery-cell"></span><span class="handik-battery-cell"></span><span class="handik-battery-cell"></span></span></div><strong>Loading virtual assistant...</strong><span class="handik-booking-app__loading-subtitle">Charging the tiny robot brain for your next step.</span></div>';
 		log( 'info', 'Bridge mount started.', { request_id: record.options.requestId } );
 
 		const ready = waitForChatKitElement().then( function() {
@@ -369,6 +369,9 @@
 					message_type: detail.type || '',
 					role: detail.role || ''
 				} );
+				if ( typeof record.options.onMessageActivity === 'function' ) {
+					record.options.onMessageActivity( detail );
+				}
 			} );
 
 			record.element.setOptions( buildOptions() );

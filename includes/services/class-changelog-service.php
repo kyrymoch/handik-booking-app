@@ -11,6 +11,16 @@ class Handik_Booking_App_Changelog_Service {
 	public function get_entries() {
 		return array(
 			array(
+				'version'      => '2.0.8',
+				'date'         => '2026-04-15',
+				'title'        => 'Custom Loading Polish',
+				'notes'        => array(
+					'Replaced simple spinners with custom handyman and virtual-assistant loading animations, plus delayed helper copy for long loads.',
+					'Refined the assistant screen copy and removed the extra helper textarea plus reload control so the chat stays cleaner.',
+					'Desktop back buttons now use text-only labels while mobile keeps a cleaner icon-based back action.',
+				),
+			),
+			array(
 				'version'      => '2.0.7',
 				'date'         => '2026-04-15',
 				'title'        => 'Assistant Flow And Mobile Controls',

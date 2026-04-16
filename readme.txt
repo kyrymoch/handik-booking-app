@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.0.7
+Stable tag: 2.0.8
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, returning-client auth, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,11 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.0.8 =
+* Replaced simple loaders with custom handyman and virtual-assistant animations, including delayed helper text for longer loads.
+* Cleaned up the assistant step copy and removed the extra fallback textarea plus reload control.
+* Desktop back buttons are now text-only while mobile keeps a cleaner icon-based back action.
 
 = 2.0.7 =
 * Added playful loading states, centered desktop client-choice buttons, and sticky mobile footer actions.

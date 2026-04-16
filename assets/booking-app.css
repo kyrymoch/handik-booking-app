@@ -51,6 +51,9 @@
 	max-width: 320px;
 	font-size: 0.95rem;
 	color: #64748b;
+	opacity: 0;
+	animation: handik-loading-subtitle 0.4s ease forwards;
+	animation-delay: 2.4s;
 }
 
 .handik-spinner {
@@ -60,6 +63,164 @@
 	border: 3px solid rgba(15, 118, 110, 0.16);
 	border-top-color: var(--handik-accent, #0f766e);
 	animation: handik-spin 0.9s linear infinite;
+}
+
+.handik-loading-visual {
+	position: relative;
+	display: inline-block;
+}
+
+.handik-loading-visual--roller {
+	width: 154px;
+	height: 72px;
+}
+
+.handik-roller-track {
+	position: absolute;
+	left: 20px;
+	right: 20px;
+	top: 18px;
+	height: 18px;
+	border-radius: 999px;
+	background: linear-gradient(90deg, rgba(15, 118, 110, 0.14), rgba(15, 118, 110, 0.32), rgba(15, 118, 110, 0.14));
+}
+
+.handik-roller-head,
+.handik-roller-arm,
+.handik-roller-handle {
+	position: absolute;
+	display: block;
+	background: currentColor;
+	color: var(--handik-accent, #0f766e);
+}
+
+.handik-roller-head {
+	top: 8px;
+	left: 18px;
+	width: 54px;
+	height: 24px;
+	border-radius: 999px;
+	animation: handik-roller-slide 1.6s ease-in-out infinite;
+}
+
+.handik-roller-arm {
+	top: 30px;
+	left: 62px;
+	width: 12px;
+	height: 18px;
+	border-radius: 6px;
+	transform: rotate(18deg);
+	transform-origin: top center;
+	animation: handik-roller-arm 1.6s ease-in-out infinite;
+}
+
+.handik-roller-handle {
+	top: 44px;
+	left: 58px;
+	width: 10px;
+	height: 22px;
+	border-radius: 999px;
+	background: #92400e;
+	transform: rotate(18deg);
+	transform-origin: top center;
+	animation: handik-roller-arm 1.6s ease-in-out infinite;
+}
+
+.handik-loading-visual--assistant {
+	width: 148px;
+	height: 84px;
+}
+
+.handik-bot-head {
+	position: absolute;
+	top: 0;
+	left: 38px;
+	width: 72px;
+	height: 52px;
+	border-radius: 18px;
+	background: linear-gradient(180deg, #e2e8f0, #cbd5e1);
+	box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.08);
+}
+
+.handik-bot-head::before,
+.handik-bot-head::after {
+	content: '';
+	position: absolute;
+	top: 18px;
+	width: 10px;
+	height: 10px;
+	border-radius: 999px;
+	background: var(--handik-accent, #0f766e);
+	animation: handik-bot-blink 1.8s ease-in-out infinite;
+}
+
+.handik-bot-head::before {
+	left: 18px;
+}
+
+.handik-bot-head::after {
+	right: 18px;
+}
+
+.handik-bot-antenna {
+	position: absolute;
+	top: -12px;
+	left: 70px;
+	width: 8px;
+	height: 16px;
+	border-radius: 999px;
+	background: #94a3b8;
+}
+
+.handik-bot-antenna::after {
+	content: '';
+	position: absolute;
+	top: -6px;
+	left: -2px;
+	width: 12px;
+	height: 12px;
+	border-radius: 999px;
+	background: var(--handik-accent, #0f766e);
+	animation: handik-pulse 1.6s ease-in-out infinite;
+}
+
+.handik-battery {
+	position: absolute;
+	left: 28px;
+	right: 28px;
+	bottom: 0;
+	height: 24px;
+	padding: 4px;
+	border-radius: 999px;
+	background: #e2e8f0;
+	display: grid;
+	grid-template-columns: repeat(3, 1fr);
+	gap: 4px;
+}
+
+.handik-battery::after {
+	content: '';
+	position: absolute;
+	right: -8px;
+	top: 7px;
+	width: 6px;
+	height: 10px;
+	border-radius: 3px;
+	background: #94a3b8;
+}
+
+.handik-battery-cell {
+	border-radius: 999px;
+	background: rgba(15, 118, 110, 0.14);
+	animation: handik-charge 1.4s ease-in-out infinite;
+}
+
+.handik-battery-cell:nth-child(2) {
+	animation-delay: 0.2s;
+}
+
+.handik-battery-cell:nth-child(3) {
+	animation-delay: 0.4s;
 }
 
 .handik-booking-app__alert {
@@ -210,6 +371,13 @@
 	justify-content: center;
 }
 
+.handik-btn__icon svg {
+	display: block;
+	width: 20px;
+	height: 20px;
+	fill: currentColor;
+}
+
 .handik-btn__label {
 	display: inline-flex;
 	align-items: center;
@@ -262,23 +430,6 @@
 	gap: 14px;
 }
 
-.handik-assistant-toolbar {
-	display: flex;
-	justify-content: flex-end;
-}
-
-.handik-icon-btn {
-	appearance: none;
-	border: 1px solid var(--handik-border, #dbe3ea);
-	background: #fff;
-	color: var(--handik-text, #0f172a);
-	width: 42px;
-	height: 42px;
-	border-radius: 999px;
-	font-size: 1.05rem;
-	cursor: pointer;
-}
-
 .handik-booking-app__intro {
 	margin: 0 0 18px;
 	text-align: center;
@@ -303,11 +454,10 @@
 }
 
 .handik-booking-app__assistant-note {
-	margin: 0 0 12px;
-	padding: 12px 14px;
-	border-radius: 14px;
-	background: #ecfeff;
-	color: #155e75;
+	margin: -2px 0 2px;
+	color: #64748b;
+	font-size: 0.92rem;
+	line-height: 1.45;
 	text-align: center;
 }
 
@@ -410,6 +560,7 @@
 	}
 
 	.handik-btn.is-back .handik-btn__icon {
+		display: inline-flex;
 		font-size: 1.1rem;
 	}
 
@@ -423,11 +574,84 @@
 	}
 }
 
+@media (min-width: 641px) {
+	.handik-btn.is-back .handik-btn__icon {
+		display: none;
+	}
+}
+
 @keyframes handik-spin {
 	from {
 		transform: rotate(0deg);
 	}
 	to {
 		transform: rotate(360deg);
+	}
+}
+
+@keyframes handik-roller-slide {
+	0%,
+	100% {
+		transform: translateX(0);
+	}
+	50% {
+		transform: translateX(82px);
+	}
+}
+
+@keyframes handik-roller-arm {
+	0%,
+	100% {
+		transform: translateX(0) rotate(18deg);
+	}
+	50% {
+		transform: translateX(82px) rotate(-18deg);
+	}
+}
+
+@keyframes handik-charge {
+	0%,
+	100% {
+		background: rgba(15, 118, 110, 0.14);
+		transform: scaleY(0.82);
+	}
+	50% {
+		background: var(--handik-accent, #0f766e);
+		transform: scaleY(1);
+	}
+}
+
+@keyframes handik-pulse {
+	0%,
+	100% {
+		transform: scale(0.92);
+		opacity: 0.7;
+	}
+	50% {
+		transform: scale(1.08);
+		opacity: 1;
+	}
+}
+
+@keyframes handik-bot-blink {
+	0%,
+	42%,
+	100% {
+		transform: scaleY(1);
+	}
+	46%,
+	50% {
+		transform: scaleY(0.2);
+	}
+}
+
+@keyframes handik-loading-subtitle {
+	from {
+		opacity: 0;
+		transform: translateY(4px);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
 	}
 }
