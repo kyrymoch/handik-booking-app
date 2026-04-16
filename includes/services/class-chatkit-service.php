@@ -238,9 +238,23 @@ class Handik_Booking_App_ChatKit_Service {
 			return array( 'error' => __( 'Draft request not found.', 'handik-booking-app' ), 'status' => 404 );
 		}
 
-		$assistant = $this->sanitize_assistant_result( $assistant_result );
+		$assistant = $this->merge_assistant_result(
+			$this->sanitize_assistant_result( is_array( $request['assistant_result'] ?? null ) ? $request['assistant_result'] : array() ),
+			$this->sanitize_assistant_result( $assistant_result )
+		);
 		$routing   = $this->routing->route( $request, $assistant );
 		$this->job_requests->apply_routing( $request_id, $routing, $assistant );
+		$this->logger->info(
+			'Assistant result processed.',
+			array(
+				'request_id'          => $request_id,
+				'enough_information'  => ! empty( $assistant['enough_information'] ),
+				'booking_type'        => $routing['booking_type'] ?? '',
+				'status'              => $routing['status'] ?? '',
+				'routing_status'      => $routing['routing_status'] ?? '',
+				'used_stored_result'  => ! empty( $request['assistant_result'] ),
+			)
+		);
 
 		$booking_url = '';
 		if ( 'ready_for_booking' === $routing['status'] && ! empty( $routing['booking_type'] ) ) {
@@ -249,6 +263,7 @@ class Handik_Booking_App_ChatKit_Service {
 
 		return array(
 			'success'       => true,
+			'assistant_result' => $assistant,
 			'routing'       => $routing,
 			'booking_url'   => $booking_url,
 			'unsafe_flag'   => ! empty( $routing['unsafe_flag'] ),
@@ -327,5 +342,32 @@ class Handik_Booking_App_ChatKit_Service {
 			'unsafe_reason'     => sanitize_textarea_field( $result['unsafe_reason'] ?? '' ),
 			'is_project'        => ! empty( $result['is_project'] ),
 		);
+	}
+
+	/**
+	 * @param array<string, mixed> $stored Stored assistant result.
+	 * @param array<string, mixed> $incoming Incoming assistant result.
+	 * @return array<string, mixed>
+	 */
+	protected function merge_assistant_result( array $stored, array $incoming ) {
+		$merged = $stored;
+
+		foreach ( $incoming as $key => $value ) {
+			if ( is_bool( $value ) ) {
+				$merged[ $key ] = ! empty( $stored[ $key ] ) || $value;
+				continue;
+			}
+
+			if ( '' !== (string) $value ) {
+				$merged[ $key ] = $value;
+				continue;
+			}
+
+			if ( ! isset( $merged[ $key ] ) ) {
+				$merged[ $key ] = $value;
+			}
+		}
+
+		return $merged;
 	}
 }

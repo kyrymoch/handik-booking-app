@@ -106,7 +106,11 @@
 		}
 
 		assistantCanContinue() {
-			return !! ( this.state.assistantResult && true === this.state.assistantResult.enough_information );
+			return !! (
+				( this.state.assistantResult && true === this.state.assistantResult.enough_information ) ||
+				this.state.assistantUserMessageSent ||
+				this.state.assistantThreadId
+			);
 		}
 
 		goTo( step ) {
@@ -447,30 +451,32 @@
 				return;
 			}
 
-			const hasEnoughInformation = this.assistantCanContinue();
-			if ( ! hasEnoughInformation && ! this.state.assistantUserMessageSent ) {
-				this.setAssistantNotice( 'Please send the virtual assistant a short description of the job before continuing.', true );
-				return;
-			}
+			const hasEnoughInformation = !! ( this.state.assistantResult && true === this.state.assistantResult.enough_information );
+			const hasUserInteraction = !! ( this.state.assistantUserMessageSent || this.state.assistantThreadId );
 
 			try {
 				this.state.loading = true;
 				this.setAssistantContinueBusy( true );
 				const assistantPayload = this.state.assistantResult ? Object.assign( {}, this.state.assistantResult ) : {};
-				assistantPayload.enough_information = hasEnoughInformation || this.state.assistantUserMessageSent;
+				assistantPayload.enough_information = hasEnoughInformation || hasUserInteraction || !! assistantPayload.enough_information;
 				const payload = await this.api( 'assistant-result', {
 					request_id: this.state.requestId,
 					draft_token: this.state.draftToken,
 					assistant_result: assistantPayload
 				} );
 
-				this.state.assistantResult = Object.assign( {}, payload.routing || {}, this.state.assistantResult || {} );
+				this.state.assistantResult = Object.assign( {}, payload.assistant_result || {}, payload.routing || {}, this.state.assistantResult || {} );
 				this.state.loading = false;
 				this.setAssistantContinueBusy( false );
 
 				if ( payload && payload.unsafe_flag ) {
 					this.state.unsafeReason = payload.unsafe_reason || 'Unsafe request detected.';
 					this.goTo( 'unsafe' );
+					return;
+				}
+
+				if ( ! ( this.state.assistantResult && true === this.state.assistantResult.enough_information ) && ! hasUserInteraction ) {
+					this.setAssistantNotice( 'Please send the virtual assistant a short description of the job before continuing.', true );
 					return;
 				}
 
@@ -534,6 +540,10 @@
 				},
 				onThreadChange: ( threadId ) => {
 					this.state.assistantThreadId = threadId || this.state.assistantThreadId;
+					if ( threadId ) {
+						this.state.assistantUserMessageSent = true;
+					}
+					this.setAssistantContinueBusy( false );
 				},
 				onMessageActivity: ( detail ) => {
 					const role = detail && ( detail.role || detail.author_role || ( detail.message && detail.message.role ) ) ? String( detail.role || detail.author_role || detail.message.role ).toLowerCase() : '';
@@ -544,6 +554,7 @@
 					if ( isUserLike ) {
 						this.state.assistantUserMessageSent = true;
 						this.setAssistantNotice( config.strings.assistantHelper || 'Describe the job in chat, ask questions if needed, then tap Continue when you are ready.', false );
+						this.setAssistantContinueBusy( false );
 					}
 				},
 				onComplete: ( normalized, payload ) => {

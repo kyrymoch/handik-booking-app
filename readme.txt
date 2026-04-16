@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.0.11
+Stable tag: 2.0.12
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, returning-client auth, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,11 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.0.12 =
+* Virtual assistant Continue now re-checks the stored draft classification on the backend before blocking the user.
+* The assistant-result endpoint now merges the incoming payload with any previously saved ChatKit classification from the same draft request.
+* Added assistant-result logs so it is easier to diagnose whether routing used stored enough-information data or needed more client input.
 
 = 2.0.11 =
 * Virtual assistant Continue now stays muted until the workflow returns `enough_information = true`.

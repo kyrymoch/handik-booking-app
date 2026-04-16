@@ -11,6 +11,16 @@ class Handik_Booking_App_Changelog_Service {
 	public function get_entries() {
 		return array(
 			array(
+				'version'      => '2.0.12',
+				'date'         => '2026-04-15',
+				'title'        => 'Assistant Step Backend Fallback',
+				'notes'        => array(
+					'Virtual assistant Continue now re-checks the saved draft assistant result on the backend instead of relying only on the current frontend state.',
+					'If ChatKit already stored a valid classification with enough_information=true, the client can move forward even when the browser missed the completion callback.',
+					'Added assistant-result processing logs so it is easier to see whether routing used the newly submitted payload or the previously stored classification.',
+				),
+			),
+			array(
 				'version'      => '2.0.11',
 				'date'         => '2026-04-15',
 				'title'        => 'Assistant Continue Button State',
