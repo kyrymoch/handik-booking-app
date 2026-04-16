@@ -230,6 +230,9 @@
 						return normalized || currentSecret || '';
 					}
 				},
+				startScreen: options.startScreenGreeting ? {
+					greeting: options.startScreenGreeting
+				} : undefined,
 				initialThread: latestThreadId || undefined,
 				composer: {
 					attachments: {

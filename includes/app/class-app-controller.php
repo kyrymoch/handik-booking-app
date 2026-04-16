@@ -51,6 +51,11 @@ class Handik_Booking_App_Controller {
 	protected $job_requests;
 
 	/**
+	 * @var Handik_Booking_App_Bookings_Service
+	 */
+	protected $bookings;
+
+	/**
 	 * @var Handik_Booking_App_Routing_Service
 	 */
 	protected $routing;
@@ -75,11 +80,12 @@ class Handik_Booking_App_Controller {
 	 * @param Handik_Booking_App_Contacts_Service      $contacts Contacts.
 	 * @param Handik_Booking_App_Addresses_Service     $addresses Addresses.
 	 * @param Handik_Booking_App_Job_Requests_Service  $job_requests Requests.
+	 * @param Handik_Booking_App_Bookings_Service      $bookings Bookings.
 	 * @param Handik_Booking_App_Routing_Service       $routing Routing.
 	 * @param Handik_Booking_App_Cal_Service           $cal Cal.
 	 * @param Handik_Booking_App_Changelog_Service     $changelog Changelog.
 	 */
-	public function __construct( $state, $schema, $upload_service, $settings, $appearance, $auth, $contacts, $addresses, $job_requests, $routing, $cal, $changelog ) {
+	public function __construct( $state, $schema, $upload_service, $settings, $appearance, $auth, $contacts, $addresses, $job_requests, $bookings, $routing, $cal, $changelog ) {
 		$this->state          = $state;
 		$this->schema         = $schema;
 		$this->upload_service = $upload_service;
@@ -89,6 +95,7 @@ class Handik_Booking_App_Controller {
 		$this->contacts       = $contacts;
 		$this->addresses      = $addresses;
 		$this->job_requests   = $job_requests;
+		$this->bookings       = $bookings;
 		$this->routing        = $routing;
 		$this->cal            = $cal;
 		$this->changelog      = $changelog;
@@ -224,6 +231,7 @@ class Handik_Booking_App_Controller {
 		if ( ! $url ) {
 			return array( 'error' => __( 'Cal.com is not configured for this booking type.', 'handik-booking-app' ), 'status' => 400 );
 		}
+		$this->job_requests->mark_booking_pending( $request_id );
 		return array( 'success' => true, 'booking_url' => $url );
 	}
 
@@ -233,10 +241,40 @@ class Handik_Booking_App_Controller {
 	 * @return array<string, mixed>
 	 */
 	public function complete_booking_step( $request_id, $draft_token ) {
+		return $this->booking_status( $request_id, $draft_token );
+	}
+
+	/**
+	 * @param int    $request_id Request.
+	 * @param string $draft_token Token.
+	 * @return array<string, mixed>
+	 */
+	public function booking_status( $request_id, $draft_token ) {
 		if ( ! $this->job_requests->verify_draft_token( $request_id, $draft_token ) ) {
 			return array( 'error' => __( 'Invalid draft token.', 'handik-booking-app' ), 'status' => 403 );
 		}
-		$this->job_requests->mark_complete( $request_id, 'booking_started' );
-		return array( 'success' => true );
+		$request = $this->job_requests->get( $request_id );
+		if ( ! $request ) {
+			return array( 'error' => __( 'Draft request not found.', 'handik-booking-app' ), 'status' => 404 );
+		}
+
+		$booking       = $this->bookings->find_latest_for_request( $request_id );
+		$status        = sanitize_key( (string) ( $booking['status'] ?? $request['status'] ?? 'booking_pending' ) );
+		$is_confirmed  = in_array( $status, array( 'booked', 'rescheduled' ), true );
+
+		if ( $is_confirmed && empty( $request['completed_at'] ) ) {
+			$this->job_requests->mark_complete( $request_id, $status );
+			$request = $this->job_requests->get( $request_id );
+		}
+
+		return array(
+			'success'         => true,
+			'request_id'      => $request_id,
+			'status'          => $status,
+			'is_confirmed'    => $is_confirmed,
+			'cal_booking_id'  => $request['cal_booking_id'] ?? '',
+			'booking'         => $booking,
+			'request'         => $request,
+		);
 	}
 }

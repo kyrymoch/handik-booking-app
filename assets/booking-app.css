@@ -1,12 +1,14 @@
 .handik-booking-app {
-	font-size: calc(16px * var(--handik-font-scale, 1));
+	width: 100%;
+	font-size: calc(15px * var(--handik-font-scale, 1));
 	color: var(--handik-text, #0f172a);
 }
 
 .handik-booking-app__shell {
-	max-width: var(--handik-max-width, 980px);
+	width: 100%;
+	max-width: 100%;
 	margin: 0 auto;
-	padding: var(--handik-spacing, 20px);
+	padding: min(var(--handik-spacing, 20px), 16px);
 	background: linear-gradient(180deg, var(--handik-background, #f8fafc), #eef4f7);
 	border: 1px solid var(--handik-border, #dbe3ea);
 	border-radius: var(--handik-radius, 18px);
@@ -26,8 +28,9 @@
 
 .handik-booking-app__screen-header h2 {
 	margin: 0 0 18px;
-	font-size: 1.9rem;
+	font-size: clamp(1.45rem, 4.8vw, 1.95rem);
 	line-height: 1.1;
+	text-align: center;
 }
 
 .handik-booking-app__loading {
@@ -51,9 +54,10 @@
 
 .handik-booking-app__progress {
 	display: grid;
-	grid-template-columns: repeat(8, 1fr);
 	gap: 8px;
 	margin-bottom: 18px;
+	width: 100%;
+	align-items: center;
 }
 
 .handik-booking-app__progress span {
@@ -67,7 +71,6 @@
 }
 
 .handik-choice-grid,
-.handik-task-grid,
 .handik-grid-3,
 .handik-footer-actions,
 .handik-inline-actions,
@@ -78,7 +81,7 @@
 }
 
 .handik-choice-grid {
-	grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+	grid-template-columns: 1fr;
 }
 
 .handik-choice,
@@ -87,9 +90,9 @@
 	border: 1px solid var(--handik-border, #dbe3ea);
 	background: #fff;
 	color: var(--handik-text, #0f172a);
-	padding: 16px;
+	padding: 12px 14px;
 	border-radius: calc(var(--handik-radius, 18px) - 4px);
-	text-align: left;
+	text-align: center;
 	font-weight: 600;
 	cursor: pointer;
 }
@@ -104,13 +107,28 @@
 .handik-task-groups,
 .handik-task-group {
 	display: grid;
-	gap: 14px;
+	gap: 10px;
 }
 
 .handik-task-group h3,
 .handik-sidebar h3 {
 	margin: 0;
-	font-size: 1rem;
+	font-size: 0.95rem;
+	text-align: left;
+}
+
+.handik-task-grid {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+}
+
+.handik-task {
+	flex: 0 0 auto;
+	padding: 10px 12px;
+	font-size: 0.84rem;
+	line-height: 1.2;
+	text-align: center;
 }
 
 .handik-grid-3 {
@@ -127,7 +145,7 @@
 .handik-field select,
 .handik-field textarea {
 	width: 100%;
-	padding: 13px 14px;
+	padding: 12px 14px;
 	border-radius: 14px;
 	border: 1px solid var(--handik-border, #dbe3ea);
 	font: inherit;
@@ -150,7 +168,7 @@
 	appearance: none;
 	border: 0;
 	cursor: pointer;
-	padding: 13px 18px;
+	padding: 12px 16px;
 	border-radius: var(--handik-button-radius, 999px);
 	font: inherit;
 	font-weight: 700;
@@ -195,6 +213,12 @@
 	align-items: start;
 }
 
+.handik-booking-app__intro {
+	margin: 0 0 18px;
+	text-align: center;
+	color: #475569;
+}
+
 .handik-booking-app__assistant-host {
 	min-height: 520px;
 	border: 1px solid var(--handik-border, #dbe3ea);
@@ -217,11 +241,41 @@
 	border-radius: 14px;
 	background: #ecfeff;
 	color: #155e75;
+	text-align: center;
 }
 
 .handik-sidebar ul {
 	padding-left: 18px;
 	margin-bottom: 18px;
+}
+
+.handik-booking-app__booking-note {
+	margin: 14px 0 16px;
+	padding: 12px 14px;
+	border-radius: 14px;
+	background: #ecfeff;
+	color: #155e75;
+	text-align: center;
+}
+
+.handik-booking-app__booking-note.is-error {
+	background: #fef2f2;
+	color: #b91c1c;
+}
+
+.handik-booking-app__booking-frame-wrap {
+	border: 1px solid var(--handik-border, #dbe3ea);
+	border-radius: 16px;
+	overflow: hidden;
+	background: #fff;
+}
+
+.handik-booking-app__booking-frame {
+	display: block;
+	width: 100%;
+	min-height: 720px;
+	border: 0;
+	background: #fff;
 }
 
 @media (max-width: 900px) {
@@ -234,7 +288,7 @@
 @media (max-width: 640px) {
 	.handik-booking-app__shell,
 	.handik-booking-app__screen {
-		padding: 14px;
+		padding: 12px;
 	}
 
 	.handik-footer-actions {
@@ -243,5 +297,24 @@
 
 	.handik-btn {
 		width: 100%;
+	}
+
+	.handik-task {
+		padding: 8px 10px;
+		font-size: 0.78rem;
+	}
+
+	.handik-choice {
+		font-size: 0.95rem;
+		padding: 12px;
+	}
+
+	.handik-booking-app__assistant-host,
+	.handik-chatkit-bridge__loading {
+		min-height: 420px;
+	}
+
+	.handik-booking-app__booking-frame {
+		min-height: 640px;
 	}
 }

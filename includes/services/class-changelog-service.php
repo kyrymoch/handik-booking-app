@@ -11,6 +11,16 @@ class Handik_Booking_App_Changelog_Service {
 	public function get_entries() {
 		return array(
 			array(
+				'version'      => '2.0.6',
+				'date'         => '2026-04-15',
+				'title'        => 'Mobile Booking Flow Refresh',
+				'notes'        => array(
+					'Redesigned the booking flow for mobile-first use, full-width layout, centered headers, tighter task chips, and cleaner progress indicators.',
+					'Added Google Maps Places autocomplete support for the single-line job address field.',
+					'Embedded the Cal.com booking step in the app and now wait for webhook-confirmed booking status before showing Success.',
+				),
+			),
+			array(
 				'version'      => '2.0.5',
 				'date'         => '2026-04-15',
 				'title'        => 'GitHub Auto-Updates',

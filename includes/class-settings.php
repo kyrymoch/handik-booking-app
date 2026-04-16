@@ -15,6 +15,8 @@ class Handik_Booking_App_Settings {
 		'openai_project_id'      => 'HANDIK_BOOKING_APP_OPENAI_PROJECT_ID',
 		'openai_organization_id' => 'HANDIK_BOOKING_APP_OPENAI_ORGANIZATION_ID',
 		'chatkit_script_url'     => 'HANDIK_BOOKING_APP_CHATKIT_SCRIPT_URL',
+		'google_maps_api_key'    => 'HANDIK_BOOKING_APP_GOOGLE_MAPS_API_KEY',
+		'google_maps_country'    => 'HANDIK_BOOKING_APP_GOOGLE_MAPS_COUNTRY',
 		'github_repo_url'        => 'HANDIK_BOOKING_APP_GITHUB_REPO_URL',
 		'github_repo_branch'     => 'HANDIK_BOOKING_APP_GITHUB_REPO_BRANCH',
 		'github_access_token'    => 'HANDIK_BOOKING_APP_GITHUB_ACCESS_TOKEN',
@@ -45,6 +47,8 @@ class Handik_Booking_App_Settings {
 			'openai_project_id'      => '',
 			'openai_organization_id' => '',
 			'chatkit_script_url'     => '',
+			'google_maps_api_key'    => '',
+			'google_maps_country'    => 'us',
 			'github_repo_url'        => 'https://github.com/kyrymoch/handik-booking-app/',
 			'github_repo_branch'     => 'main',
 			'github_access_token'    => '',
@@ -143,6 +147,7 @@ class Handik_Booking_App_Settings {
 					$output[ $key ] = empty( $value ) ? 0 : 1;
 					break;
 				case 'github_repo_branch':
+				case 'google_maps_country':
 					$output[ $key ] = preg_replace( '/[^A-Za-z0-9._\/-]/', '', (string) $value );
 					break;
 				case 'github_release_asset_pattern':

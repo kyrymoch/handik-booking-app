@@ -163,6 +163,22 @@ class Handik_Booking_App_Job_Requests_Service {
 	}
 
 	/**
+	 * @param int $request_id Request.
+	 */
+	public function mark_booking_pending( $request_id ) {
+		global $wpdb;
+		$table = Handik_Booking_App_DB::table( 'job_requests' );
+		$wpdb->update(
+			$table,
+			array(
+				'status'   => 'booking_pending',
+				'app_step' => 'booking',
+			),
+			array( 'id' => $request_id )
+		);
+	}
+
+	/**
 	 * @param int    $request_id Request.
 	 * @param string $booking_id Booking ID.
 	 * @param string $status Status.

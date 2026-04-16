@@ -76,6 +76,17 @@ class Handik_Booking_App_Bookings_Service {
 	}
 
 	/**
+	 * @param int $job_request_id Request.
+	 * @return array<string, mixed>|null
+	 */
+	public function find_latest_for_request( $job_request_id ) {
+		global $wpdb;
+		$table = Handik_Booking_App_DB::table( 'bookings' );
+		$row   = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$table} WHERE job_request_id = %d ORDER BY updated_at DESC, id DESC LIMIT 1", $job_request_id ), ARRAY_A );
+		return $row ?: null;
+	}
+
+	/**
 	 * @param array<string, mixed> $payload Payload.
 	 * @return string
 	 */

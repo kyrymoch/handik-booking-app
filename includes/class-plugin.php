@@ -66,7 +66,7 @@ class Handik_Booking_App_Plugin {
 		$this->app_state      = new Handik_Booking_App_State();
 		$this->app_schema     = new Handik_Booking_App_Schema();
 		$this->upload_service = new Handik_Booking_App_Upload_Service();
-		$this->app_controller = new Handik_Booking_App_Controller( $this->app_state, $this->app_schema, $this->upload_service, $this->settings, $this->appearance, $this->auth, $this->contacts, $this->addresses, $this->job_requests, $this->routing, $this->cal, $this->changelog );
+		$this->app_controller = new Handik_Booking_App_Controller( $this->app_state, $this->app_schema, $this->upload_service, $this->settings, $this->appearance, $this->auth, $this->contacts, $this->addresses, $this->job_requests, $this->bookings, $this->routing, $this->cal, $this->changelog );
 		$this->assets         = new Handik_Booking_App_Assets( $this->appearance, $this->settings );
 		$this->frontend_app   = new Handik_Booking_App_Frontend_App( $this->assets, $this->appearance );
 		$this->shortcode      = new Handik_Booking_App_Shortcode( $this->frontend_app );

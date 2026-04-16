@@ -219,6 +219,8 @@ App Settings include:
 - OpenAI project ID
 - OpenAI organization ID
 - custom ChatKit bridge URL
+- Google Maps API key
+- Google Maps country bias
 - GitHub repo URL
 - GitHub release branch
 - GitHub access token for private-repo updates
@@ -274,6 +276,8 @@ The admin logs screen now includes serialized `context` so you can see request i
 - `HANDIK_BOOKING_APP_OPENAI_PROJECT_ID`
 - `HANDIK_BOOKING_APP_OPENAI_ORGANIZATION_ID`
 - `HANDIK_BOOKING_APP_CHATKIT_SCRIPT_URL`
+- `HANDIK_BOOKING_APP_GOOGLE_MAPS_API_KEY`
+- `HANDIK_BOOKING_APP_GOOGLE_MAPS_COUNTRY`
 - `HANDIK_BOOKING_APP_GITHUB_REPO_URL`
 - `HANDIK_BOOKING_APP_GITHUB_REPO_BRANCH`
 - `HANDIK_BOOKING_APP_GITHUB_ACCESS_TOKEN`
@@ -292,7 +296,7 @@ The admin logs screen now includes serialized `context` so you can see request i
 1. Copy `handik-booking-app` into `wp-content/plugins/`.
 2. Activate the plugin.
 3. Open `Handik Booking > App Settings`.
-4. Configure OpenAI, ChatKit, Cal.com, GitHub updater, email sender, and appearance settings.
+4. Configure OpenAI, ChatKit, Google Maps, Cal.com, GitHub updater, email sender, and appearance settings.
 5. Add the shortcode or Elementor widget to the desired page.
 6. Register the Cal webhook URL:
    - `https://your-site.com/wp-json/handik-booking-app/v1/cal-webhook`

@@ -161,6 +161,8 @@ class Handik_Booking_App_Admin {
 				<?php $this->field( 'openai_project_id', __( 'OpenAI Project ID', 'handik-booking-app' ), $s['openai_project_id'] ); ?>
 				<?php $this->field( 'openai_organization_id', __( 'OpenAI Organization ID', 'handik-booking-app' ), $s['openai_organization_id'] ); ?>
 				<?php $this->field( 'chatkit_script_url', __( 'Custom ChatKit Bridge URL', 'handik-booking-app' ), $s['chatkit_script_url'] ); ?>
+				<?php $this->field( 'google_maps_api_key', __( 'Google Maps API Key', 'handik-booking-app' ), $s['google_maps_api_key'], 'password' ); ?>
+				<?php $this->field( 'google_maps_country', __( 'Google Maps Country', 'handik-booking-app' ), $s['google_maps_country'] ); ?>
 				<?php $this->field( 'github_repo_url', __( 'GitHub Repo URL', 'handik-booking-app' ), $s['github_repo_url'] ); ?>
 				<?php $this->field( 'github_repo_branch', __( 'GitHub Release Branch', 'handik-booking-app' ), $s['github_repo_branch'] ); ?>
 				<?php $this->field( 'github_access_token', __( 'GitHub Access Token', 'handik-booking-app' ), $s['github_access_token'], 'password' ); ?>
@@ -206,6 +208,8 @@ class Handik_Booking_App_Admin {
 			<p><?php esc_html_e( 'GitHub updater reads releases from:', 'handik-booking-app' ); ?> <code><?php echo esc_html( $this->settings->get( 'github_repo_url', '' ) ); ?></code></p>
 			<p><?php esc_html_e( 'For private repositories, add a GitHub token in App Settings so WordPress can fetch release metadata and ZIP assets.', 'handik-booking-app' ); ?></p>
 			<p><?php esc_html_e( 'Release flow: bump Version in the main plugin file, publish a GitHub Release, and ensure the release contains the plugin ZIP asset that matches the configured regex.', 'handik-booking-app' ); ?></p>
+			<p><?php esc_html_e( 'Google Maps Places autocomplete uses the browser-side API key, so restrict it by domain/referrer in Google Cloud.', 'handik-booking-app' ); ?></p>
+			<p><?php esc_html_e( 'The booking step now waits for webhook-synced Cal.com status before showing Success.', 'handik-booking-app' ); ?></p>
 		</div>
 		<?php
 		$this->page_end();

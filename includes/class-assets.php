@@ -52,6 +52,8 @@ class Handik_Booking_App_Assets {
 				'restNonce'  => wp_create_nonce( 'wp_rest' ),
 				'version'    => HANDIK_BOOKING_APP_VERSION,
 				'appearance' => $this->appearance->css_variables(),
+				'googleMapsApiKey' => (string) $this->settings->get( 'google_maps_api_key', '' ),
+				'googleMapsCountry' => strtolower( (string) $this->settings->get( 'google_maps_country', 'us' ) ),
 				'strings'    => array(
 					'loading'            => __( 'Loading booking app...', 'handik-booking-app' ),
 					'verify'             => __( 'Verify', 'handik-booking-app' ),
@@ -59,12 +61,17 @@ class Handik_Booking_App_Assets {
 					'continue'           => __( 'Continue', 'handik-booking-app' ),
 					'back'               => __( 'Back', 'handik-booking-app' ),
 					'bookNow'            => __( 'Book a visit', 'handik-booking-app' ),
-					'openBooking'        => __( 'Open booking calendar', 'handik-booking-app' ),
-					'completeBooking'    => __( 'I opened the booking calendar', 'handik-booking-app' ),
+					'openBooking'        => __( 'Open calendar in new tab', 'handik-booking-app' ),
+					'completeBooking'    => __( 'Check booking status', 'handik-booking-app' ),
 					'launchAssistant'    => __( 'Open assistant', 'handik-booking-app' ),
 					'uploading'          => __( 'Uploading photos...', 'handik-booking-app' ),
 					'unsafeTitle'        => __( 'We need to stop the normal booking flow', 'handik-booking-app' ),
 					'successTitle'       => __( 'Your booking flow is in progress', 'handik-booking-app' ),
+					'assistantGreeting'  => __( 'Describe the job, and I will help estimate time, materials, and the next step.', 'handik-booking-app' ),
+					'bookingWaiting'     => __( 'Stay on this screen while we wait for Cal.com to confirm the booking.', 'handik-booking-app' ),
+					'bookingConfirmed'   => __( 'Booking confirmed. Finishing your request...', 'handik-booking-app' ),
+					'bookingCancelled'   => __( 'This booking was cancelled. You can book another slot below.', 'handik-booking-app' ),
+					'addressPlaceholder' => __( 'Start typing the address of the job', 'handik-booking-app' ),
 				),
 			)
 		);

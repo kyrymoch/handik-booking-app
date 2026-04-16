@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.0.5
+Stable tag: 2.0.6
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, returning-client auth, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -26,11 +26,16 @@ Features:
 1. Upload the plugin folder to `/wp-content/plugins/`.
 2. Activate the plugin.
 3. Open `Handik Booking > App Settings`.
-4. Configure OpenAI, Cal.com, email sender, and GitHub updater settings.
+4. Configure OpenAI, Google Maps, Cal.com, email sender, and GitHub updater settings.
 5. Add `[handik_booking_app]` to a page or use the Elementor widget.
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.0.6 =
+* Reworked the booking flow for mobile-first use and full-width layout.
+* Added Google Maps autocomplete to the single-line job address field.
+* Embedded the Cal.com booking step and wait for webhook-confirmed booking status before showing success.
 
 = 2.0.5 =
 * Added GitHub release updater with private-repository token support.

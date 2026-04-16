@@ -2,11 +2,15 @@
 	'use strict';
 
 	const config = window.HandikBookingAppConfig || {};
+	const GOOGLE_SCRIPT_ID = 'handik-google-maps-places';
 
 	class HandikBookingApp {
 		constructor( root ) {
 			this.root = root;
 			this.bootstrap = null;
+			this.addressAutocomplete = null;
+			this.bookingStatusTimer = null;
+			this.googleMapsPromise = null;
 			this.state = {
 				step: 'client_type',
 				clientType: '',
@@ -23,6 +27,8 @@
 				assistantResult: null,
 				contact: { first_name: '', last_name: '', full_name: '', email: '', phone: '' },
 				bookingUrl: '',
+				bookingStatus: '',
+				bookingStatusMessage: '',
 				unsafeReason: '',
 				appSessionKey: 'app_' + Math.random().toString( 36 ).slice( 2 ),
 				message: '',
@@ -78,10 +84,20 @@
 		}
 
 		goTo( step ) {
+			if ( 'booking' === this.state.step && 'booking' !== step ) {
+				this.stopBookingStatusPolling();
+			}
+
 			this.state.step = step;
 			this.render();
 			if ( 'assistant' === step ) {
 				window.setTimeout( () => this.mountAssistant(), 0 );
+			}
+			if ( 'address_photos' === step ) {
+				window.setTimeout( () => this.mountAddressAutocomplete(), 0 );
+			}
+			if ( 'booking' === step ) {
+				window.setTimeout( () => this.startBookingStatusPolling(), 0 );
 			}
 		}
 
@@ -146,16 +162,18 @@
 					if ( this.state.bookingUrl ) {
 						window.open( this.state.bookingUrl, '_blank', 'noopener,noreferrer' );
 						this.state.bookingOpened = true;
-						this.render();
+						this.setBookingStatusMessage( config.strings.bookingWaiting || 'Stay on this screen while we wait for Cal.com to confirm the booking.', false );
 					}
 					break;
 				case 'booking-complete':
+				case 'refresh-booking-status':
 					await this.completeBookingStep();
 					break;
 				case 'assistant-next':
 					await this.completeAssistantStep();
 					break;
 				case 'restart':
+					this.stopBookingStatusPolling();
 					this.state = Object.assign( this.state, {
 						step: 'client_type',
 						clientType: '',
@@ -171,6 +189,8 @@
 						assistantResult: null,
 						contact: { first_name: '', last_name: '', full_name: '', email: '', phone: '' },
 						bookingUrl: '',
+						bookingStatus: '',
+						bookingStatusMessage: '',
 						unsafeReason: '',
 						message: '',
 						bookingOpened: false
@@ -307,6 +327,8 @@
 					draft_token: this.state.draftToken
 				} );
 				this.state.bookingUrl = booking.booking_url;
+				this.state.bookingStatus = 'booking_pending';
+				this.state.bookingStatusMessage = config.strings.bookingWaiting || 'Stay on this screen while we wait for Cal.com to confirm the booking.';
 				this.state.loading = false;
 				this.goTo( 'booking' );
 			} catch ( error ) {
@@ -317,19 +339,71 @@
 		}
 
 		async completeBookingStep() {
+			await this.checkBookingStatus( true );
+		}
+
+		async checkBookingStatus( showMessage ) {
+			if ( ! this.state.requestId || ! this.state.draftToken ) {
+				return false;
+			}
+
 			try {
-				this.state.loading = true;
-				this.render();
-				await this.api( 'booking-complete', {
+				const payload = await this.api( 'booking-status', {
 					request_id: this.state.requestId,
 					draft_token: this.state.draftToken
 				} );
-				this.state.loading = false;
-				this.goTo( 'success' );
+
+				this.state.bookingStatus = payload.status || '';
+
+				if ( payload.is_confirmed ) {
+					this.state.bookingStatusMessage = config.strings.bookingConfirmed || 'Booking confirmed. Finishing your request...';
+					this.stopBookingStatusPolling();
+					this.goTo( 'success' );
+					return true;
+				}
+
+				if ( 'cancelled' === this.state.bookingStatus ) {
+					this.setBookingStatusMessage( config.strings.bookingCancelled || 'This booking was cancelled. You can book another slot below.', true );
+				} else if ( payload.cal_booking_id ) {
+					this.setBookingStatusMessage( config.strings.bookingWaiting || 'Stay on this screen while we wait for Cal.com to confirm the booking.', false );
+				} else if ( showMessage ) {
+					this.setBookingStatusMessage( 'We have not received a Cal.com booking confirmation yet.', false );
+				}
+
+				return false;
 			} catch ( error ) {
-				this.state.loading = false;
-				this.state.message = error.message;
-				this.render();
+				if ( showMessage ) {
+					this.setBookingStatusMessage( error.message, true );
+				}
+				return false;
+			}
+		}
+
+		startBookingStatusPolling() {
+			if ( 'booking' !== this.state.step || ! this.state.requestId || ! this.state.draftToken ) {
+				return;
+			}
+
+			this.stopBookingStatusPolling();
+			this.checkBookingStatus( false );
+			this.bookingStatusTimer = window.setInterval( () => {
+				this.checkBookingStatus( false );
+			}, 7000 );
+		}
+
+		stopBookingStatusPolling() {
+			if ( this.bookingStatusTimer ) {
+				window.clearInterval( this.bookingStatusTimer );
+				this.bookingStatusTimer = null;
+			}
+		}
+
+		setBookingStatusMessage( message, isError ) {
+			this.state.bookingStatusMessage = message || '';
+			const note = this.root.querySelector( '.handik-booking-app__booking-note' );
+			if ( note ) {
+				note.textContent = this.state.bookingStatusMessage;
+				note.classList.toggle( 'is-error', !! isError );
 			}
 		}
 
@@ -405,6 +479,7 @@
 				container: container,
 				requestId: this.state.requestId,
 				draftToken: this.state.draftToken,
+				startScreenGreeting: config.strings.assistantGreeting || 'Describe the job, and I will help estimate time, materials, and the next step.',
 				endpoints: {
 					createSession: config.restBase + 'chatkit-session',
 					saveAssistantResult: config.restBase + 'assistant-result',
@@ -421,7 +496,7 @@
 				onSessionReady: () => {
 					const note = this.root.querySelector( '.handik-booking-app__assistant-note' );
 					if ( note ) {
-						note.textContent = 'Assistant UI loaded.';
+						note.textContent = config.strings.assistantGreeting || 'Describe the job, and I will help estimate time, materials, and the next step.';
 					}
 				},
 				onComplete: ( normalized, payload ) => {
@@ -451,7 +526,7 @@
 			}
 			const visible = this.bootstrap.steps.filter( ( step ) => ! [ 'welcome', 'returning_verify', 'unsafe' ].includes( step ) );
 			const activeIndex = Math.max( 0, visible.indexOf( this.state.step ) );
-			return '<div class="handik-booking-app__progress">' + visible.map( ( step, index ) => '<span class="' + ( index <= activeIndex ? 'is-active' : '' ) + '"></span>' ).join( '' ) + '</div>';
+			return '<div class="handik-booking-app__progress" style="grid-template-columns: repeat(' + visible.length + ', minmax(0, 1fr));">' + visible.map( ( step, index ) => '<span class="' + ( index <= activeIndex ? 'is-active' : '' ) + '"></span>' ).join( '' ) + '</div>';
 		}
 
 		render() {
@@ -460,6 +535,12 @@
 			this.bind();
 			if ( 'assistant' === this.state.step ) {
 				window.setTimeout( () => this.mountAssistant(), 0 );
+			}
+			if ( 'address_photos' === this.state.step ) {
+				window.setTimeout( () => this.mountAddressAutocomplete(), 0 );
+			}
+			if ( 'booking' === this.state.step ) {
+				window.setTimeout( () => this.startBookingStatusPolling(), 0 );
 			}
 		}
 
@@ -470,7 +551,7 @@
 				case 'returning_verify':
 					return this.screen(
 						'Returning client verification',
-						'<p>Enter your email or phone to receive a one-time code.</p>' +
+						'<p class="handik-booking-app__intro">Enter your email or phone to receive a one-time code.</p>' +
 						this.input( 'Email', 'contact.email', 'email' ) +
 						this.input( 'Phone', 'contact.phone', 'tel' ) +
 						'<div class="handik-inline-actions"><button data-action="send-code" class="handik-btn is-secondary">' + this.escape( config.strings.sendCode ) + '</button></div>' +
@@ -482,15 +563,15 @@
 				case 'address_photos':
 					return this.screen( 'Address and photos', this.addressMarkup() );
 				case 'assistant':
-					return this.screen( 'Assistant step', this.assistantMarkup(), 'is-wide' );
+					return this.screen( 'Assistant', this.assistantMarkup(), 'is-wide' );
 				case 'contact_details':
 					return this.screen( 'Contact details', this.contactMarkup() );
 				case 'booking':
 					return this.screen( 'Book your time slot', this.bookingMarkup() );
 				case 'success':
-					return this.screen( 'Success', '<p>Your booking flow has been saved. If you opened the Cal.com calendar, your booking status will sync back automatically after confirmation.</p><button data-action="restart" class="handik-btn is-secondary">Start another booking</button>' );
+					return this.screen( 'Success', '<p class="handik-booking-app__intro">Your booking has been confirmed and saved.</p><button data-action="restart" class="handik-btn is-secondary">Start another booking</button>' );
 				case 'unsafe':
-					return this.screen( config.strings.unsafeTitle || 'Unsafe request', '<p>' + this.escape( this.state.unsafeReason || 'This request needs manual review before booking.' ) + '</p><button data-action="restart" class="handik-btn is-secondary">Back to start</button>' );
+					return this.screen( config.strings.unsafeTitle || 'Unsafe request', '<p class="handik-booking-app__intro">' + this.escape( this.state.unsafeReason || 'This request needs manual review before booking.' ) + '</p><button data-action="restart" class="handik-btn is-secondary">Back to start</button>' );
 				default:
 					return this.screen( 'Booking App', '<p>Unknown step.</p>' );
 			}
@@ -526,9 +607,7 @@
 			const addressOptions = this.state.verifiedProfile && Array.isArray( this.state.verifiedProfile.addresses ) ? this.state.verifiedProfile.addresses : [];
 			return (
 				( addressOptions.length ? '<label class="handik-field"><span>Saved address</span><select id="handik-saved-address"><option value="">Choose saved address</option>' + addressOptions.map( ( item ) => '<option value="' + item.id + '">' + this.escape( item.address_full ) + '</option>' ).join( '' ) + '</select></label>' : '' ) +
-				this.input( 'Full address', 'address.address_full', 'text' ) +
-				this.input( 'Address line 1', 'address.address_line_1', 'text' ) +
-				'<div class="handik-grid-3">' + this.input( 'City', 'address.city', 'text' ) + this.input( 'State', 'address.state', 'text' ) + this.input( 'ZIP', 'address.zip_code', 'text' ) + '</div>' +
+				'<label class="handik-field handik-field--address"><span>Address of the job</span><input id="handik-job-address" type="text" data-model="address.address_full" placeholder="' + this.escape( config.strings.addressPlaceholder || 'Start typing the address of the job' ) + '" value="' + this.escape( this.state.address.address_full || '' ) + '" /></label>' +
 				'<label class="handik-field"><span>Photos</span><input type="file" id="handik-photo-input" multiple accept="image/*" />' +
 				( this.state.photos.length ? '<div class="handik-photo-list">' + this.state.photos.map( ( photo ) => '<span>' + this.escape( photo.name || photo.url || 'photo' ) + '</span>' ).join( '' ) + '</div>' : '' ) +
 				'</label>' +
@@ -538,7 +617,7 @@
 
 		assistantMarkup() {
 			const continueLabel = this.state.assistantResult ? 'Continue to contact details' : 'Continue when ready';
-			return '<div class="handik-assistant-layout"><div><p class="handik-booking-app__assistant-note">OpenAI assistant opens here with your draft request context already attached.</p><div class="handik-booking-app__assistant-host"></div><div class="handik-footer-actions"><button data-action="back-tasks" class="handik-btn is-secondary">' + this.escape( config.strings.back ) + '</button><button data-action="assistant-next" class="handik-btn is-primary">' + this.escape( this.state.loading ? 'Saving...' : continueLabel ) + '</button></div></div><aside class="handik-sidebar"><h3>Draft summary</h3><ul><li><strong>Client type:</strong> ' + this.escape( this.state.clientType || 'n/a' ) + '</li><li><strong>Job shape:</strong> ' + this.escape( this.state.jobShape || 'n/a' ) + '</li><li><strong>Tasks:</strong> ' + this.escape( this.state.selectedTasks.join( ', ' ) || 'n/a' ) + '</li><li><strong>Address:</strong> ' + this.escape( this.state.address.address_full || 'n/a' ) + '</li></ul><button data-action="retry-assistant" class="handik-btn is-secondary">Retry assistant</button></aside></div>';
+			return '<div class="handik-assistant-layout"><div><p class="handik-booking-app__assistant-note">' + this.escape( config.strings.assistantGreeting || 'Describe the job, and I will help estimate time, materials, and the next step.' ) + '</p><div class="handik-booking-app__assistant-host"></div><div class="handik-footer-actions"><button data-action="back-tasks" class="handik-btn is-secondary">' + this.escape( config.strings.back ) + '</button><button data-action="assistant-next" class="handik-btn is-primary">' + this.escape( this.state.loading ? 'Saving...' : continueLabel ) + '</button></div></div><aside class="handik-sidebar"><h3>Draft summary</h3><ul><li><strong>Client type:</strong> ' + this.escape( this.state.clientType || 'n/a' ) + '</li><li><strong>Job shape:</strong> ' + this.escape( this.state.jobShape || 'n/a' ) + '</li><li><strong>Tasks:</strong> ' + this.escape( this.state.selectedTasks.join( ', ' ) || 'n/a' ) + '</li><li><strong>Address:</strong> ' + this.escape( this.state.address.address_full || 'n/a' ) + '</li></ul><button data-action="retry-assistant" class="handik-btn is-secondary">Retry assistant</button></aside></div>';
 		}
 
 		contactMarkup() {
@@ -553,8 +632,115 @@
 
 		bookingMarkup() {
 			const summary = this.state.assistantResult ? ( this.state.assistantResult.assistant_summary || '' ) : '';
+			const note = this.state.bookingStatusMessage || config.strings.bookingWaiting || 'Stay on this screen while we wait for Cal.com to confirm the booking.';
+			const frame = this.state.bookingUrl
+				? '<div class="handik-booking-app__booking-frame-wrap"><iframe class="handik-booking-app__booking-frame" src="' + this.escape( this.state.bookingUrl ) + '" title="Cal.com booking calendar" loading="lazy" referrerpolicy="strict-origin-when-cross-origin" allow="fullscreen"></iframe></div>'
+				: '<div class="handik-admin-card-like"><p>Booking calendar is not ready yet.</p></div>';
+
 			return '<div class="handik-admin-card-like"><p><strong>Booking type:</strong> ' + this.escape( this.state.assistantResult && this.state.assistantResult.booking_type ? this.state.assistantResult.booking_type : 'pending' ) + '</p><p><strong>Assistant summary:</strong> ' + this.escape( summary || 'Summary will be sent to booking notes.' ) + '</p></div>' +
-				'<div class="handik-footer-actions"><button data-action="open-booking" class="handik-btn is-primary">' + this.escape( config.strings.openBooking ) + '</button><button data-action="booking-complete" class="handik-btn is-secondary">' + this.escape( config.strings.completeBooking ) + '</button></div>';
+				'<p class="handik-booking-app__booking-note">' + this.escape( note ) + '</p>' +
+				frame +
+				'<div class="handik-footer-actions"><button data-action="open-booking" class="handik-btn is-secondary">' + this.escape( config.strings.openBooking ) + '</button><button data-action="refresh-booking-status" class="handik-btn is-primary">' + this.escape( config.strings.completeBooking ) + '</button></div>';
+		}
+
+		async loadGoogleMapsPlaces() {
+			if ( ! config.googleMapsApiKey ) {
+				return null;
+			}
+
+			if ( window.google && window.google.maps && window.google.maps.places ) {
+				return window.google.maps;
+			}
+
+			if ( this.googleMapsPromise ) {
+				return this.googleMapsPromise;
+			}
+
+			this.googleMapsPromise = new Promise( ( resolve, reject ) => {
+				const existingScript = document.getElementById( GOOGLE_SCRIPT_ID );
+				if ( existingScript ) {
+					existingScript.addEventListener( 'load', () => resolve( window.google && window.google.maps ? window.google.maps : null ), { once: true } );
+					existingScript.addEventListener( 'error', () => reject( new Error( 'Google Maps script failed to load.' ) ), { once: true } );
+					return;
+				}
+
+				const script = document.createElement( 'script' );
+				script.id = GOOGLE_SCRIPT_ID;
+				script.async = true;
+				script.defer = true;
+				script.src = 'https://maps.googleapis.com/maps/api/js?key=' + encodeURIComponent( config.googleMapsApiKey ) + '&libraries=places';
+				script.onload = () => resolve( window.google && window.google.maps ? window.google.maps : null );
+				script.onerror = () => reject( new Error( 'Google Maps script failed to load.' ) );
+				document.head.appendChild( script );
+			} );
+
+			return this.googleMapsPromise;
+		}
+
+		parseAddressComponents( place ) {
+			const components = Array.isArray( place.address_components ) ? place.address_components : [];
+			const componentValue = ( type, useShort ) => {
+				const match = components.find( ( item ) => Array.isArray( item.types ) && item.types.includes( type ) );
+				if ( ! match ) {
+					return '';
+				}
+				return useShort ? ( match.short_name || '' ) : ( match.long_name || '' );
+			};
+
+			const streetNumber = componentValue( 'street_number', false );
+			const route = componentValue( 'route', false );
+			const subpremise = componentValue( 'subpremise', false );
+			const lineOne = [ streetNumber, route, subpremise ].filter( Boolean ).join( ' ' ).trim();
+
+			return {
+				address_full: place.formatted_address || this.state.address.address_full || '',
+				address_line_1: lineOne || place.formatted_address || '',
+				city: componentValue( 'locality', false ) || componentValue( 'postal_town', false ) || componentValue( 'sublocality_level_1', false ),
+				state: componentValue( 'administrative_area_level_1', true ),
+				zip_code: componentValue( 'postal_code', false )
+			};
+		}
+
+		async mountAddressAutocomplete() {
+			const input = this.root.querySelector( '#handik-job-address' );
+			if ( ! input || ! config.googleMapsApiKey ) {
+				return;
+			}
+
+			if ( '1' === input.getAttribute( 'data-google-mounted' ) ) {
+				return;
+			}
+
+			try {
+				await this.loadGoogleMapsPlaces();
+				if ( ! window.google || ! window.google.maps || ! window.google.maps.places ) {
+					return;
+				}
+
+				this.addressAutocomplete = new window.google.maps.places.Autocomplete(
+					input,
+					{
+						fields: [ 'address_components', 'formatted_address', 'geometry' ],
+						types: [ 'address' ],
+						componentRestrictions: config.googleMapsCountry ? { country: config.googleMapsCountry } : undefined
+					}
+				);
+
+				this.addressAutocomplete.addListener( 'place_changed', () => {
+					const place = this.addressAutocomplete.getPlace();
+					if ( ! place ) {
+						return;
+					}
+
+					this.state.address = Object.assign( {}, this.state.address, this.parseAddressComponents( place ) );
+					input.value = this.state.address.address_full || input.value;
+				} );
+
+				input.setAttribute( 'data-google-mounted', '1' );
+			} catch ( error ) {
+				this.googleMapsPromise = Promise.resolve( null );
+				console.error( '[HandikBookingApp] Google Maps autocomplete failed.', error );
+			}
 		}
 
 		bind() {
