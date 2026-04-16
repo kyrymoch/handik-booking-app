@@ -5,6 +5,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 class Handik_Booking_App_Updater_Service {
+	const CHECK_PERIOD_HOURS = 24;
+	const INIT_LOG_OPTION    = 'handik_booking_app_updater_init_log';
+
 	/**
 	 * @var Handik_Booking_App_Settings
 	 */
@@ -58,7 +61,8 @@ class Handik_Booking_App_Updater_Service {
 		$this->checker = $factory_class::buildUpdateChecker(
 			$repo_url,
 			HANDIK_BOOKING_APP_FILE,
-			'handik-booking-app'
+			'handik-booking-app',
+			self::CHECK_PERIOD_HOURS
 		);
 
 		if ( ! empty( $branch ) ) {
@@ -76,8 +80,7 @@ class Handik_Booking_App_Updater_Service {
 			}
 		}
 
-		$this->logger->info(
-			'GitHub updater initialized.',
+		$this->maybe_log_initialization(
 			array(
 				'repo_url'          => $repo_url,
 				'branch'            => $branch,
@@ -85,7 +88,35 @@ class Handik_Booking_App_Updater_Service {
 				'asset_pattern'     => $asset_pattern,
 				'plugin_version'    => HANDIK_BOOKING_APP_VERSION,
 				'auto_update_ui'    => true,
+				'check_period_hours'=> self::CHECK_PERIOD_HOURS,
+				'manual_check_link' => true,
 			)
+		);
+	}
+
+	/**
+	 * @param array<string, mixed> $context Context.
+	 * @return void
+	 */
+	protected function maybe_log_initialization( array $context ) {
+		$signature = md5( wp_json_encode( $context ) );
+		$stored    = get_option( self::INIT_LOG_OPTION, array() );
+		$last_time = ! empty( $stored['time'] ) ? strtotime( (string) $stored['time'] ) : 0;
+		$last_sig  = ! empty( $stored['signature'] ) ? (string) $stored['signature'] : '';
+
+		$should_log = ( $signature !== $last_sig ) || ( ! $last_time ) || ( time() - $last_time >= DAY_IN_SECONDS );
+		if ( ! $should_log ) {
+			return;
+		}
+
+		$this->logger->info( 'GitHub updater initialized.', $context );
+		update_option(
+			self::INIT_LOG_OPTION,
+			array(
+				'signature' => $signature,
+				'time'      => current_time( 'mysql' ),
+			),
+			false
 		);
 	}
 

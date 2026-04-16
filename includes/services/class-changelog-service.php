@@ -11,6 +11,16 @@ class Handik_Booking_App_Changelog_Service {
 	public function get_entries() {
 		return array(
 			array(
+				'version'      => '2.0.13',
+				'date'         => '2026-04-15',
+				'title'        => 'Updater Quiet Period',
+				'notes'        => array(
+					'Changed GitHub auto-update checks to run on a 24-hour cadence instead of the shorter default interval.',
+					'Kept the manual Check for updates link in the WordPress Plugins screen for on-demand refreshes.',
+					'Throttled the updater initialization log so it only appears once per day or when updater settings change.',
+				),
+			),
+			array(
 				'version'      => '2.0.12',
 				'date'         => '2026-04-15',
 				'title'        => 'Assistant Step Backend Fallback',

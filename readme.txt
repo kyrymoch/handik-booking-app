@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.0.12
+Stable tag: 2.0.13
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, returning-client auth, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,11 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.0.13 =
+* Changed GitHub auto-update checks to a 24-hour cadence instead of the shorter default interval.
+* Kept the manual `Check for updates` link in the WordPress Plugins screen for on-demand checks.
+* Throttled the updater initialization log so it only appears once per day or when updater settings change.
 
 = 2.0.12 =
 * Virtual assistant Continue now re-checks the stored draft classification on the backend before blocking the user.
