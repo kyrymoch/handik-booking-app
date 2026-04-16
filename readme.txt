@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.0.9
+Stable tag: 2.0.10
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, returning-client auth, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,11 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.0.10 =
+* Hardened structured assistant-result capture so classification output can be detected by schema shape, not only by specific effect names.
+* Added fallback extraction from ChatKit effect, deeplink, message, and log payloads.
+* Broadened chat-interaction detection so Continue is less likely to block after a real user conversation.
 
 = 2.0.9 =
 * Fixed the virtual assistant Continue flow so it no longer remounts the chat before moving forward.

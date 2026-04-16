@@ -48,8 +48,77 @@
 			enough_information: Boolean( value.enough_information ),
 			unsafe: Boolean( value.unsafe ),
 			unsafe_reason: sanitizeText( value.unsafe_reason ),
-			is_project: Boolean( value.is_project )
+			is_project: Boolean( value.is_project ),
+			next_message: sanitizeText( value.next_message )
 		};
+	}
+
+	function tryParseJson( value ) {
+		if ( ! value || 'string' !== typeof value ) {
+			return null;
+		}
+		try {
+			const parsed = JSON.parse( value );
+			return parsed && 'object' === typeof parsed ? parsed : null;
+		} catch ( error ) {
+			return null;
+		}
+	}
+
+	function looksLikeStructuredResult( value ) {
+		if ( ! value || 'object' !== typeof value ) {
+			return false;
+		}
+
+		const required = [ 'service_family', 'rate_family', 'duration_bucket', 'booking_type', 'assistant_summary', 'estimate_notes', 'enough_information', 'unsafe', 'unsafe_reason', 'is_project', 'next_message' ];
+		const hasRequired = required.every( function( key ) {
+			return Object.prototype.hasOwnProperty.call( value, key );
+		} );
+
+		if ( hasRequired ) {
+			return true;
+		}
+
+		return Object.prototype.hasOwnProperty.call( value, 'enough_information' ) &&
+			(
+				Object.prototype.hasOwnProperty.call( value, 'booking_type' ) ||
+				Object.prototype.hasOwnProperty.call( value, 'assistant_summary' ) ||
+				Object.prototype.hasOwnProperty.call( value, 'next_message' )
+			);
+	}
+
+	function extractStructuredResult( detail ) {
+		const candidates = [];
+		const queueCandidate = function( candidate ) {
+			if ( candidate && 'object' === typeof candidate ) {
+				candidates.push( candidate );
+			}
+			const parsed = tryParseJson( candidate );
+			if ( parsed ) {
+				candidates.push( parsed );
+			}
+		};
+
+		if ( detail && 'object' === typeof detail ) {
+			queueCandidate( detail );
+			queueCandidate( detail.data );
+			queueCandidate( detail.result );
+			queueCandidate( detail.output );
+			queueCandidate( detail.payload );
+			queueCandidate( detail.arguments );
+			queueCandidate( detail.message );
+			if ( detail.message && 'object' === typeof detail.message ) {
+				queueCandidate( detail.message.data );
+				queueCandidate( detail.message.result );
+				queueCandidate( detail.message.output );
+				queueCandidate( detail.message.payload );
+				queueCandidate( detail.message.arguments );
+			}
+		}
+
+		return candidates.find( function( candidate ) {
+			return looksLikeStructuredResult( candidate );
+		} ) || null;
 	}
 
 	function normalizeClientSecret( data ) {
@@ -334,6 +403,10 @@
 					name: detail.name || '',
 					data: detail.data || {}
 				} );
+				const structured = extractStructuredResult( detail );
+				if ( structured ) {
+					saveStructuredResult( structured, 'log:' + ( detail.name || 'unknown' ) );
+				}
 			} );
 
 			record.element.addEventListener( 'chatkit.thread.change', function( event ) {
@@ -348,8 +421,9 @@
 				const detail = event && event.detail ? event.detail : {};
 				markChatActive( 'chatkit.effect' );
 				log( 'debug', 'ChatKit effect event.', { name: detail.name || '' } );
-				if ( COMPLETE_EVENTS.includes( detail.name ) ) {
-					saveStructuredResult( detail.data || {}, 'effect:' + detail.name );
+				const structured = extractStructuredResult( detail );
+				if ( COMPLETE_EVENTS.includes( detail.name ) || structured ) {
+					saveStructuredResult( structured || detail.data || {}, 'effect:' + ( detail.name || 'unknown' ) );
 				}
 			} );
 
@@ -357,8 +431,9 @@
 				const detail = event && event.detail ? event.detail : {};
 				markChatActive( 'chatkit.deeplink' );
 				log( 'debug', 'ChatKit deeplink event.', { name: detail.name || '' } );
-				if ( DEEPLINK_EVENTS.includes( detail.name ) ) {
-					saveStructuredResult( detail.data || {}, 'deeplink:' + detail.name );
+				const structured = extractStructuredResult( detail );
+				if ( DEEPLINK_EVENTS.includes( detail.name ) || structured ) {
+					saveStructuredResult( structured || detail.data || {}, 'deeplink:' + ( detail.name || 'unknown' ) );
 				}
 			} );
 
@@ -371,6 +446,10 @@
 				} );
 				if ( typeof record.options.onMessageActivity === 'function' ) {
 					record.options.onMessageActivity( detail );
+				}
+				const structured = extractStructuredResult( detail );
+				if ( structured ) {
+					saveStructuredResult( structured, 'message' );
 				}
 			} );
 

@@ -11,6 +11,16 @@ class Handik_Booking_App_Changelog_Service {
 	public function get_entries() {
 		return array(
 			array(
+				'version'      => '2.0.10',
+				'date'         => '2026-04-15',
+				'title'        => 'Assistant Result Capture Hardening',
+				'notes'        => array(
+					'Extended the ChatKit bridge to recognize classification payloads by schema shape, not only by a small set of effect names.',
+					'Added fallback extraction for structured assistant output from effect, deeplink, message, and log event payloads.',
+					'Broadened user-message detection heuristics so Continue no longer blocks when the client has clearly interacted with chat.',
+				),
+			),
+			array(
 				'version'      => '2.0.9',
 				'date'         => '2026-04-15',
 				'title'        => 'Assistant Continue Logic Fix',

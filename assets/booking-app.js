@@ -530,7 +530,9 @@
 				onMessageActivity: ( detail ) => {
 					const role = detail && ( detail.role || detail.author_role || ( detail.message && detail.message.role ) ) ? String( detail.role || detail.author_role || detail.message.role ).toLowerCase() : '';
 					const messageType = detail && ( detail.type || detail.message_type || ( detail.message && detail.message.type ) ) ? String( detail.type || detail.message_type || detail.message.type ).toLowerCase() : '';
-					const isUserLike = 'user' === role || false !== messageType.indexOf( 'user' );
+					const direction = detail && ( detail.direction || ( detail.message && detail.message.direction ) ) ? String( detail.direction || detail.message.direction ).toLowerCase() : '';
+					const source = detail && ( detail.source || detail.origin || ( detail.message && ( detail.message.source || detail.message.origin ) ) ) ? String( detail.source || detail.origin || detail.message.source || detail.message.origin ).toLowerCase() : '';
+					const isUserLike = 'user' === role || false !== messageType.indexOf( 'user' ) || 'outgoing' === direction || 'user' === source || 'client' === source;
 					if ( isUserLike ) {
 						this.state.assistantUserMessageSent = true;
 						this.setAssistantNotice( config.strings.assistantHelper || 'Describe the job in chat, ask questions if needed, then tap Continue when you are ready.', false );
