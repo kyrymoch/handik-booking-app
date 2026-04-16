@@ -85,6 +85,22 @@
 			this.render();
 		}
 
+		setAssistantNotice( message, isError ) {
+			const note = this.root.querySelector( '.handik-booking-app__assistant-note' );
+			if ( note ) {
+				note.textContent = message || '';
+				note.classList.toggle( 'is-error', !! isError );
+			}
+		}
+
+		setAssistantContinueBusy( isBusy ) {
+			const button = this.root.querySelector( '[data-action="assistant-next"]' );
+			if ( button ) {
+				button.disabled = !! isBusy;
+				button.textContent = isBusy ? 'Saving...' : ( this.state.assistantResult ? 'Continue to contact details' : this.escape( config.strings.continue || 'Continue' ) );
+			}
+		}
+
 		goTo( step ) {
 			if ( 'booking' === this.state.step && 'booking' !== step ) {
 				this.stopBookingStatusPolling();
@@ -419,19 +435,21 @@
 
 		async completeAssistantStep() {
 			if ( ! this.state.requestId || ! this.state.draftToken ) {
-				this.setMessage( 'Assistant draft is not ready yet.' );
+				this.setAssistantNotice( 'Assistant draft is not ready yet.', true );
 				return;
 			}
 
-			if ( ! this.state.assistantResult && ! this.state.assistantUserMessageSent ) {
-				this.setMessage( 'Send the virtual assistant a short message about the job before continuing.' );
+			const hasEnoughInformation = !! ( this.state.assistantResult && true === this.state.assistantResult.enough_information );
+			if ( ! hasEnoughInformation && ! this.state.assistantUserMessageSent ) {
+				this.setAssistantNotice( 'Please send the virtual assistant a short description of the job before continuing.', true );
 				return;
 			}
 
 			try {
 				this.state.loading = true;
-				this.render();
-				const assistantPayload = this.state.assistantResult ? Object.assign( {}, this.state.assistantResult ) : { enough_information: true };
+				this.setAssistantContinueBusy( true );
+				const assistantPayload = this.state.assistantResult ? Object.assign( {}, this.state.assistantResult ) : {};
+				assistantPayload.enough_information = hasEnoughInformation || this.state.assistantUserMessageSent;
 				const payload = await this.api( 'assistant-result', {
 					request_id: this.state.requestId,
 					draft_token: this.state.draftToken,
@@ -440,6 +458,7 @@
 
 				this.state.assistantResult = Object.assign( {}, payload.routing || {}, this.state.assistantResult || {} );
 				this.state.loading = false;
+				this.setAssistantContinueBusy( false );
 
 				if ( payload && payload.unsafe_flag ) {
 					this.state.unsafeReason = payload.unsafe_reason || 'Unsafe request detected.';
@@ -450,8 +469,8 @@
 				this.goTo( 'contact_details' );
 			} catch ( error ) {
 				this.state.loading = false;
-				this.state.message = error.message;
-				this.render();
+				this.setAssistantContinueBusy( false );
+				this.setAssistantNotice( error.message || 'We could not save the assistant step yet.', true );
 			}
 		}
 
@@ -503,33 +522,33 @@
 					clientLog: config.restBase + 'client-log'
 				},
 				onSessionReady: () => {
-					const note = this.root.querySelector( '.handik-booking-app__assistant-note' );
-					if ( note ) {
-						note.textContent = config.strings.assistantHelper || 'Describe the job in chat, ask questions if needed, then tap Continue when you are ready.';
-					}
+					this.setAssistantNotice( config.strings.assistantHelper || 'Describe the job in chat, ask questions if needed, then tap Continue when you are ready.', false );
 				},
 				onThreadChange: ( threadId ) => {
 					this.state.assistantThreadId = threadId || this.state.assistantThreadId;
 				},
 				onMessageActivity: ( detail ) => {
 					const role = detail && ( detail.role || detail.author_role || ( detail.message && detail.message.role ) ) ? String( detail.role || detail.author_role || detail.message.role ).toLowerCase() : '';
-					if ( 'user' === role ) {
+					const messageType = detail && ( detail.type || detail.message_type || ( detail.message && detail.message.type ) ) ? String( detail.type || detail.message_type || detail.message.type ).toLowerCase() : '';
+					const isUserLike = 'user' === role || false !== messageType.indexOf( 'user' );
+					if ( isUserLike ) {
 						this.state.assistantUserMessageSent = true;
+						this.setAssistantNotice( config.strings.assistantHelper || 'Describe the job in chat, ask questions if needed, then tap Continue when you are ready.', false );
 					}
 				},
 				onComplete: ( normalized, payload ) => {
 					this.state.assistantResult = Object.assign( {}, payload && payload.routing ? payload.routing : {}, normalized );
 					this.state.assistantUserMessageSent = true;
+					this.setAssistantContinueBusy( false );
 					if ( payload && payload.unsafe_flag ) {
 						this.state.unsafeReason = payload.unsafe_reason || 'Unsafe request detected.';
 						this.goTo( 'unsafe' );
 						return;
 					}
-					this.state.message = 'The virtual assistant is ready. Continue when you are ready.';
-					this.render();
+					this.setAssistantNotice( 'The virtual assistant has enough information. Continue when you are ready.', false );
 				},
 				onError: ( error ) => {
-					this.setMessage( error.message || 'The virtual assistant had trouble loading. Give it another moment, then send a short message about the job.' );
+					this.setAssistantNotice( error.message || 'The virtual assistant had trouble loading. Give it another moment, then send a short message about the job.', true );
 				}
 			} );
 		}

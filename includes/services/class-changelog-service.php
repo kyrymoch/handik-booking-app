@@ -11,6 +11,16 @@ class Handik_Booking_App_Changelog_Service {
 	public function get_entries() {
 		return array(
 			array(
+				'version'      => '2.0.9',
+				'date'         => '2026-04-15',
+				'title'        => 'Assistant Continue Logic Fix',
+				'notes'        => array(
+					'Fixed the virtual assistant Continue flow so it no longer re-renders and remounts the chat before moving to the next step.',
+					'Continue now follows the intended rule: block only when the client has not sent anything in chat and there is no assistant result with enough_information=true.',
+					'Assistant notices are now updated inline on the current screen instead of forcing a full step re-render.',
+				),
+			),
+			array(
 				'version'      => '2.0.8',
 				'date'         => '2026-04-15',
 				'title'        => 'Custom Loading Polish',

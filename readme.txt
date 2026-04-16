@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.0.8
+Stable tag: 2.0.9
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, returning-client auth, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,11 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.0.9 =
+* Fixed the virtual assistant Continue flow so it no longer remounts the chat before moving forward.
+* Continue now blocks only when the client has not sent anything in chat and there is no assistant result with `enough_information = true`.
+* Assistant notices now update inline on the current screen instead of forcing a full assistant step rerender.
 
 = 2.0.8 =
 * Replaced simple loaders with custom handyman and virtual-assistant animations, including delayed helper text for longer loads.
