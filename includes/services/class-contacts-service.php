@@ -119,6 +119,25 @@ class Handik_Booking_App_Contacts_Service {
 	 * @return string
 	 */
 	public function normalize_phone( $phone ) {
-		return trim( (string) preg_replace( '/[^\d+]/', '', (string) $phone ) );
+		$raw    = trim( (string) $phone );
+		$digits = preg_replace( '/\D+/', '', $raw );
+
+		if ( empty( $digits ) ) {
+			return '';
+		}
+
+		if ( 10 === strlen( $digits ) ) {
+			return '+1' . $digits;
+		}
+
+		if ( 11 === strlen( $digits ) && '1' === substr( $digits, 0, 1 ) ) {
+			return '+' . $digits;
+		}
+
+		if ( '+' === substr( $raw, 0, 1 ) ) {
+			return '+' . $digits;
+		}
+
+		return '+' . $digits;
 	}
 }

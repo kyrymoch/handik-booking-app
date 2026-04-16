@@ -11,6 +11,7 @@
 			this.addressAutocomplete = null;
 			this.bookingStatusTimer = null;
 			this.googleMapsPromise = null;
+			this.assistantBridge = null;
 			this.state = {
 				step: 'client_type',
 				clientType: '',
@@ -20,11 +21,11 @@
 				selectedTasks: [],
 				isProject: false,
 				jobShape: '',
-				preferredTimeframe: '',
 				address: { address_id: 0, address_full: '', address_line_1: '', city: '', state: '', zip_code: '' },
 				photos: [],
 				shortDescription: '',
 				assistantResult: null,
+				assistantThreadId: '',
 				contact: { first_name: '', last_name: '', full_name: '', email: '', phone: '' },
 				bookingUrl: '',
 				bookingStatus: '',
@@ -51,7 +52,7 @@
 		}
 
 		renderLoading() {
-			this.root.innerHTML = '<div class="handik-booking-app__shell"><div class="handik-booking-app__loading">' + this.escape( config.strings.loading || 'Loading...' ) + '</div></div>';
+			this.root.innerHTML = '<div class="handik-booking-app__shell"><div class="handik-booking-app__loading"><span class="handik-spinner" aria-hidden="true"></span><strong>' + this.escape( config.strings.loading || 'Loading...' ) + '</strong><span class="handik-booking-app__loading-subtitle">' + this.escape( config.strings.loadingSubtext || 'Our toolbox is waking up and the coffee is still hot.' ) + '</span></div></div>';
 		}
 
 		async api( path, data, method, formData ) {
@@ -174,6 +175,9 @@
 					break;
 				case 'restart':
 					this.stopBookingStatusPolling();
+					if ( window.HandikChatKitBridge && typeof window.HandikChatKitBridge.reset === 'function' && this.state.requestId ) {
+						window.HandikChatKitBridge.reset( 'request_' + String( this.state.requestId ) );
+					}
 					this.state = Object.assign( this.state, {
 						step: 'client_type',
 						clientType: '',
@@ -182,11 +186,11 @@
 						selectedTasks: [],
 						isProject: false,
 						jobShape: '',
-						preferredTimeframe: '',
 						address: { address_id: 0, address_full: '', address_line_1: '', city: '', state: '', zip_code: '' },
 						photos: [],
 						shortDescription: '',
 						assistantResult: null,
+						assistantThreadId: '',
 						contact: { first_name: '', last_name: '', full_name: '', email: '', phone: '' },
 						bookingUrl: '',
 						bookingStatus: '',
@@ -207,12 +211,15 @@
 					this.goTo( 'task_selection' );
 					break;
 				case 'back-address':
-					this.goTo( this.state.clientType === 'returning_client' ? 'returning_verify' : 'client_type' );
+					this.goTo( 'address_photos' );
 					break;
 				case 'back-contact':
 					this.goTo( 'assistant' );
 					break;
 				case 'retry-assistant':
+					if ( window.HandikChatKitBridge && typeof window.HandikChatKitBridge.reset === 'function' && this.state.requestId ) {
+						window.HandikChatKitBridge.reset( 'request_' + String( this.state.requestId ) );
+					}
 					this.mountAssistant();
 					break;
 			}
@@ -316,6 +323,7 @@
 				this.setMessage( 'Name and email are required.' );
 				return;
 			}
+			this.state.contact.phone = this.normalizePhone( this.state.contact.phone );
 			try {
 				this.state.loading = true;
 				this.render();
@@ -413,10 +421,25 @@
 				return;
 			}
 
+			if ( ! this.state.assistantResult && this.state.shortDescription.trim().length < 8 ) {
+				this.setMessage( 'Give the virtual assistant at least a short description before continuing.' );
+				const field = this.root.querySelector( '#handik-assistant-description' );
+				if ( field ) {
+					field.focus();
+				}
+				return;
+			}
+
 			try {
 				this.state.loading = true;
 				this.render();
-				const assistantPayload = this.state.assistantResult ? this.state.assistantResult : { enough_information: true };
+				const fallbackDescription = this.state.shortDescription.trim();
+				const assistantPayload = this.state.assistantResult ? Object.assign( {}, this.state.assistantResult ) : { enough_information: true };
+				if ( fallbackDescription ) {
+					assistantPayload.assistant_summary = assistantPayload.assistant_summary || fallbackDescription;
+					assistantPayload.estimate_notes = assistantPayload.estimate_notes || fallbackDescription;
+					assistantPayload.enough_information = true;
+				}
 				const payload = await this.api( 'assistant-result', {
 					request_id: this.state.requestId,
 					draft_token: this.state.draftToken,
@@ -448,14 +471,14 @@
 				selected_tasks: this.state.selectedTasks,
 				is_project: this.state.isProject,
 				job_shape: this.state.jobShape,
-				preferred_timeframe: this.state.preferredTimeframe,
+				preferred_timeframe: '',
 				address_id: this.state.address.address_id,
 				address_full: this.state.address.address_full,
 				address_line_1: this.state.address.address_line_1,
 				city: this.state.address.city,
 				state: this.state.address.state,
 				zip_code: this.state.address.zip_code,
-				short_description: '',
+				short_description: this.state.shortDescription,
 				photos: this.state.photos,
 				first_name: this.state.contact.first_name,
 				last_name: this.state.contact.last_name,
@@ -474,30 +497,27 @@
 				return;
 			}
 
-			container.innerHTML = '';
-			window.HandikChatKitBridge.mount( {
+			this.assistantBridge = window.HandikChatKitBridge.mount( {
 				container: container,
 				requestId: this.state.requestId,
 				draftToken: this.state.draftToken,
-				startScreenGreeting: config.strings.assistantGreeting || 'Describe the job, and I will help estimate time, materials, and the next step.',
+				cacheKey: 'request_' + String( this.state.requestId ),
+				initialThreadId: this.state.assistantThreadId,
+				startScreenGreeting: config.strings.assistantGreeting || 'Describe the task and I will help estimate time, materials, and the next step.',
 				endpoints: {
 					createSession: config.restBase + 'chatkit-session',
 					saveAssistantResult: config.restBase + 'assistant-result',
 					associateThread: config.restBase + 'chatkit-thread',
 					clientLog: config.restBase + 'client-log'
 				},
-				onStatus: ( message ) => {
-					const note = this.root.querySelector( '.handik-booking-app__assistant-note' );
-					if ( note ) {
-						note.textContent = message;
-						note.classList.remove( 'is-error' );
-					}
-				},
 				onSessionReady: () => {
 					const note = this.root.querySelector( '.handik-booking-app__assistant-note' );
 					if ( note ) {
-						note.textContent = config.strings.assistantGreeting || 'Describe the job, and I will help estimate time, materials, and the next step.';
+						note.textContent = config.strings.assistantHelper || 'This is our virtual AI assistant, not a live person. Describe the task, ask questions about time or materials, or type a quick summary below and continue.';
 					}
+				},
+				onThreadChange: ( threadId ) => {
+					this.state.assistantThreadId = threadId || this.state.assistantThreadId;
 				},
 				onComplete: ( normalized, payload ) => {
 					this.state.assistantResult = Object.assign( {}, payload && payload.routing ? payload.routing : {}, normalized );
@@ -506,16 +526,11 @@
 						this.goTo( 'unsafe' );
 						return;
 					}
-					this.state.message = '';
-					this.prefillFromProfile();
-					this.goTo( 'contact_details' );
+					this.state.message = 'The virtual assistant is ready. Continue when you are ready.';
+					this.render();
 				},
 				onError: ( error ) => {
-					const note = this.root.querySelector( '.handik-booking-app__assistant-note' );
-					if ( note ) {
-						note.textContent = error.message;
-						note.classList.add( 'is-error' );
-					}
+					this.setMessage( error.message || 'The virtual assistant had trouble loading. You can retry or continue with a short description.' );
 				}
 			} );
 		}
@@ -563,7 +578,7 @@
 				case 'address_photos':
 					return this.screen( 'Address and photos', this.addressMarkup() );
 				case 'assistant':
-					return this.screen( 'Assistant', this.assistantMarkup(), 'is-wide' );
+					return this.screen( 'Virtual assistant', this.assistantMarkup(), 'is-wide' );
 				case 'contact_details':
 					return this.screen( 'Contact details', this.contactMarkup() );
 				case 'booking':
@@ -592,14 +607,12 @@
 
 		tasksMarkup() {
 			const groups = ( this.bootstrap && this.bootstrap.task_catalog ) || [];
-			const timeframe = this.state.preferredTimeframe || '';
 			return '<div class="handik-task-groups">' +
 				groups.map( ( group ) => '<div class="handik-task-group"><h3>' + this.escape( group.group ) + '</h3><div class="handik-task-grid">' +
 					group.tasks.map( ( task ) => '<button type="button" class="handik-task ' + ( this.taskSelected( task.id ) ? 'is-selected' : '' ) + '" data-task-id="' + this.escape( task.id ) + '">' + this.escape( task.label ) + '</button>' ).join( '' ) +
 				'</div></div>' ).join( '' ) +
 				'<label class="handik-check"><input type="checkbox" data-model="isProject" ' + ( this.state.isProject ? 'checked' : '' ) + ' /> Project / Large Job</label>' +
-				'<label class="handik-field"><span>Preferred timeframe</span><select data-model="preferredTimeframe"><option value="">Choose timeframe</option><option value="asap" ' + ( 'asap' === timeframe ? 'selected' : '' ) + '>ASAP</option><option value="this_week" ' + ( 'this_week' === timeframe ? 'selected' : '' ) + '>This week</option><option value="next_1_2_weeks" ' + ( 'next_1_2_weeks' === timeframe ? 'selected' : '' ) + '>Next 1-2 weeks</option><option value="flexible" ' + ( 'flexible' === timeframe ? 'selected' : '' ) + '>Flexible</option></select></label>' +
-				'<div class="handik-footer-actions"><button data-action="' + ( this.state.clientType === 'returning_client' ? 'back-returning' : 'back-client' ) + '" class="handik-btn is-secondary">' + this.escape( config.strings.back ) + '</button><button data-action="tasks-next" class="handik-btn is-primary">' + this.escape( config.strings.continue ) + '</button></div>' +
+				this.footerActions( this.state.clientType === 'returning_client' ? 'back-returning' : 'back-client', 'tasks-next', this.escape( config.strings.continue ) ) +
 			'</div>';
 		}
 
@@ -611,13 +624,13 @@
 				'<label class="handik-field"><span>Photos</span><input type="file" id="handik-photo-input" multiple accept="image/*" />' +
 				( this.state.photos.length ? '<div class="handik-photo-list">' + this.state.photos.map( ( photo ) => '<span>' + this.escape( photo.name || photo.url || 'photo' ) + '</span>' ).join( '' ) + '</div>' : '' ) +
 				'</label>' +
-				'<div class="handik-footer-actions"><button data-action="back-tasks" class="handik-btn is-secondary">' + this.escape( config.strings.back ) + '</button><button data-action="address-next" class="handik-btn is-primary">' + ( this.state.loading ? 'Saving...' : this.escape( config.strings.continue ) ) + '</button></div>'
+				this.footerActions( 'back-tasks', 'address-next', this.state.loading ? 'Saving...' : this.escape( config.strings.continue ) )
 			);
 		}
 
 		assistantMarkup() {
-			const continueLabel = this.state.assistantResult ? 'Continue to contact details' : 'Continue when ready';
-			return '<div class="handik-assistant-layout"><div><p class="handik-booking-app__assistant-note">' + this.escape( config.strings.assistantGreeting || 'Describe the job, and I will help estimate time, materials, and the next step.' ) + '</p><div class="handik-booking-app__assistant-host"></div><div class="handik-footer-actions"><button data-action="back-tasks" class="handik-btn is-secondary">' + this.escape( config.strings.back ) + '</button><button data-action="assistant-next" class="handik-btn is-primary">' + this.escape( this.state.loading ? 'Saving...' : continueLabel ) + '</button></div></div><aside class="handik-sidebar"><h3>Draft summary</h3><ul><li><strong>Client type:</strong> ' + this.escape( this.state.clientType || 'n/a' ) + '</li><li><strong>Job shape:</strong> ' + this.escape( this.state.jobShape || 'n/a' ) + '</li><li><strong>Tasks:</strong> ' + this.escape( this.state.selectedTasks.join( ', ' ) || 'n/a' ) + '</li><li><strong>Address:</strong> ' + this.escape( this.state.address.address_full || 'n/a' ) + '</li></ul><button data-action="retry-assistant" class="handik-btn is-secondary">Retry assistant</button></aside></div>';
+			const continueLabel = this.state.assistantResult ? 'Continue to contact details' : 'Continue';
+			return '<div class="handik-assistant-layout"><div class="handik-assistant-panel"><div class="handik-assistant-toolbar"><button type="button" data-action="retry-assistant" class="handik-icon-btn" aria-label="Reload virtual assistant" title="Reload virtual assistant">&#x21bb;</button></div><p class="handik-booking-app__assistant-note">' + this.escape( config.strings.assistantHelper || 'This is our virtual AI assistant, not a live person. Describe the task, ask questions about time or materials, or type a quick summary below and continue.' ) + '</p><label class="handik-field"><span>Quick task description</span><textarea id="handik-assistant-description" data-model="shortDescription" placeholder="' + this.escape( config.strings.assistantPlaceholder || 'Example: install two curtain rods and fix a loose kitchen cabinet hinge.' ) + '">' + this.escape( this.state.shortDescription || '' ) + '</textarea></label><div class="handik-booking-app__assistant-host"></div>' + this.footerActions( 'back-address', 'assistant-next', this.state.loading ? 'Saving...' : continueLabel ) + '</div></div>';
 		}
 
 		contactMarkup() {
@@ -625,9 +638,11 @@
 				this.prefillFromProfile();
 			}
 			return this.input( 'Full name', 'contact.full_name', 'text' ) +
+				'<div class="handik-grid-2">' +
 				this.input( 'Email', 'contact.email', 'email' ) +
 				this.input( 'Phone', 'contact.phone', 'tel' ) +
-				'<div class="handik-footer-actions"><button data-action="back-contact" class="handik-btn is-secondary">' + this.escape( config.strings.back ) + '</button><button data-action="contact-next" class="handik-btn is-primary">' + ( this.state.loading ? 'Preparing...' : this.escape( config.strings.continue ) ) + '</button></div>';
+				'</div>' +
+				this.footerActions( 'back-contact', 'contact-next', this.state.loading ? 'Preparing...' : this.escape( config.strings.continue ) );
 		}
 
 		bookingMarkup() {
@@ -640,7 +655,34 @@
 			return '<div class="handik-admin-card-like"><p><strong>Booking type:</strong> ' + this.escape( this.state.assistantResult && this.state.assistantResult.booking_type ? this.state.assistantResult.booking_type : 'pending' ) + '</p><p><strong>Assistant summary:</strong> ' + this.escape( summary || 'Summary will be sent to booking notes.' ) + '</p></div>' +
 				'<p class="handik-booking-app__booking-note">' + this.escape( note ) + '</p>' +
 				frame +
-				'<div class="handik-footer-actions"><button data-action="open-booking" class="handik-btn is-secondary">' + this.escape( config.strings.openBooking ) + '</button><button data-action="refresh-booking-status" class="handik-btn is-primary">' + this.escape( config.strings.completeBooking ) + '</button></div>';
+				this.footerActions( 'open-booking', 'refresh-booking-status', this.escape( config.strings.completeBooking ), this.escape( config.strings.openBooking ), { backIsUtility: true } );
+		}
+
+		footerActions( backAction, continueAction, continueLabel, backLabel, options ) {
+			const settings = options || {};
+			const backText = backLabel || this.escape( config.strings.back );
+			const backClass = settings.backIsUtility ? 'handik-btn is-secondary' : 'handik-btn is-secondary is-back';
+			const backInner = settings.backIsUtility ? '<span class="handik-btn__label">' + backText + '</span>' : '<span class="handik-btn__icon" aria-hidden="true">&#8592;</span><span class="handik-btn__label">' + backText + '</span>';
+			return '<div class="handik-footer-actions is-sticky-mobile"><button data-action="' + this.escape( backAction ) + '" class="' + backClass + '">' + backInner + '</button><button data-action="' + this.escape( continueAction ) + '" class="handik-btn is-primary is-continue">' + continueLabel + '</button></div>';
+		}
+
+		normalizePhone( value ) {
+			const raw = String( value || '' ).trim();
+			if ( ! raw ) {
+				return '';
+			}
+
+			const digits = raw.replace( /\D/g, '' );
+			if ( 10 === digits.length ) {
+				return '+1' + digits;
+			}
+			if ( 11 === digits.length && '1' === digits.charAt( 0 ) ) {
+				return '+' + digits;
+			}
+			if ( raw.charAt( 0 ) === '+' && digits.length >= 10 ) {
+				return '+' + digits;
+			}
+			return digits ? '+' + digits : raw;
 		}
 
 		async loadGoogleMapsPlaces() {
@@ -761,6 +803,13 @@
 					const value = 'checkbox' === input.type ? input.checked : input.value;
 					this.setByPath( input.getAttribute( 'data-model' ), value );
 				} );
+				if ( 'contact.phone' === input.getAttribute( 'data-model' ) ) {
+					input.addEventListener( 'blur', () => {
+						const normalized = this.normalizePhone( input.value );
+						this.state.contact.phone = normalized;
+						input.value = normalized;
+					} );
+				}
 			} );
 
 			const savedAddress = this.root.querySelector( '#handik-saved-address' );

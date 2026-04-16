@@ -11,6 +11,16 @@ class Handik_Booking_App_Changelog_Service {
 	public function get_entries() {
 		return array(
 			array(
+				'version'      => '2.0.7',
+				'date'         => '2026-04-15',
+				'title'        => 'Assistant Flow And Mobile Controls',
+				'notes'        => array(
+					'Added playful loading states, desktop-centered client choice buttons, and sticky mobile navigation controls for the single-page booking flow.',
+					'Removed preferred timeframe from the task step, simplified the assistant screen, and added a required quick-description fallback before continuing.',
+					'Kept the same assistant thread when returning to the assistant step and updated Cal.com prefill for attendee address plus normalized US phone formatting.',
+				),
+			),
+			array(
 				'version'      => '2.0.6',
 				'date'         => '2026-04-15',
 				'title'        => 'Mobile Booking Flow Refresh',

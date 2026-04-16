@@ -62,6 +62,7 @@ class Handik_Booking_App_Cal_Service {
 			array(
 				'name'                            => $contact['full_name'] ?? '',
 				'email'                           => $contact['email'] ?? '',
+				'phone'                           => $contact['phone'] ?? '',
 				'notes'                           => $request['assistant_summary'] ?: $request['short_description'],
 				'metadata[handik_job_request_id]' => (string) $request_id,
 				'metadata[handik_booking_type]'   => (string) $request['booking_type'],
@@ -72,7 +73,14 @@ class Handik_Booking_App_Cal_Service {
 				return '' !== (string) $value;
 			}
 		);
-		if ( ! empty( $contact['phone'] ) ) {
+		if ( ! empty( $request['address_full'] ) ) {
+			$params['location'] = wp_json_encode(
+				array(
+					'value'       => 'attendeeInPerson',
+					'optionValue' => $request['address_full'],
+				)
+			);
+		} elseif ( ! empty( $contact['phone'] ) ) {
 			$params['location'] = wp_json_encode(
 				array(
 					'value'       => 'phone',

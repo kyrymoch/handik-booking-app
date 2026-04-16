@@ -5,6 +5,7 @@
 	const DEEPLINK_EVENTS = [ 'handik-submit-result', 'handik-complete' ];
 	const CHATKIT_TAG = 'openai-chatkit';
 	const CHATKIT_TIMEOUT = 12000;
+	const BRIDGE_CACHE = new Map();
 
 	function requestJson( url, data ) {
 		return window.fetch( url, {
@@ -101,17 +102,45 @@
 
 		const endpoints = options.endpoints || {};
 		const diagnosticId = 'diag_' + Math.random().toString( 36 ).slice( 2 );
-		let latestThreadId = '';
-		let cachedSession = null;
-		let handledSignature = '';
-		let readyTimer = null;
-		let chatkitReady = false;
-		let chatkitInteractive = false;
-		let element = null;
+		const cacheKey = String( options.cacheKey || options.requestId );
+		const cachedRecord = BRIDGE_CACHE.get( cacheKey );
+
+		if ( cachedRecord && cachedRecord.element ) {
+			cachedRecord.options = options;
+			options.container.innerHTML = '';
+			options.container.appendChild( cachedRecord.element );
+			if ( cachedRecord.ready && typeof options.onSessionReady === 'function' ) {
+				options.onSessionReady();
+			}
+			if ( cachedRecord.latestThreadId && typeof options.onThreadChange === 'function' ) {
+				options.onThreadChange( cachedRecord.latestThreadId );
+			}
+			return {
+				element: function() {
+					return cachedRecord.element;
+				},
+				ready: Promise.resolve( cachedRecord.session || null ),
+				unmount: function() {}
+			};
+		}
+
+		const record = {
+			options: options,
+			latestThreadId: options.initialThreadId || '',
+			cachedSession: null,
+			handledSignature: '',
+			readyTimer: null,
+			ready: false,
+			interactive: false,
+			element: null,
+			session: null
+		};
+
+		BRIDGE_CACHE.set( cacheKey, record );
 
 		const emitStatus = function( text, context ) {
-			if ( typeof options.onStatus === 'function' ) {
-				options.onStatus( text, context || {} );
+			if ( typeof record.options.onStatus === 'function' ) {
+				record.options.onStatus( text, context || {} );
 			}
 		};
 
@@ -140,24 +169,24 @@
 		const saveStructuredResult = function( result, source ) {
 			const normalized = normalizeResult( result );
 			const signature = JSON.stringify( normalized );
-			if ( handledSignature === signature ) {
+			if ( record.handledSignature === signature ) {
 				log( 'debug', 'Structured result skipped as duplicate.', { source: source || 'unknown' } );
 				return Promise.resolve();
 			}
-			handledSignature = signature;
+			record.handledSignature = signature;
 			log( 'info', 'Structured result captured.', { source: source || 'unknown', booking_type: normalized.booking_type, unsafe: normalized.unsafe } );
 
 			return requestJson( endpoints.saveAssistantResult, {
-				request_id: options.requestId,
-				draft_token: options.draftToken,
+				request_id: record.options.requestId,
+				draft_token: record.options.draftToken,
 				assistant_result: normalized
 			} ).then( function( payload ) {
 				log( 'info', 'Structured result stored.', { source: source || 'unknown', unsafe_flag: payload.unsafe_flag || false } );
-				if ( typeof options.onStructuredResult === 'function' ) {
-					options.onStructuredResult( normalized, payload );
+				if ( typeof record.options.onStructuredResult === 'function' ) {
+					record.options.onStructuredResult( normalized, payload );
 				}
-				if ( typeof options.onComplete === 'function' ) {
-					options.onComplete( normalized, payload );
+				if ( typeof record.options.onComplete === 'function' ) {
+					record.options.onComplete( normalized, payload );
 				}
 				return payload;
 			} ).catch( function( error ) {
@@ -170,37 +199,40 @@
 			if ( ! threadId || ! endpoints.associateThread ) {
 				return Promise.resolve();
 			}
-			latestThreadId = threadId;
+			record.latestThreadId = threadId;
 			log( 'info', 'Thread change received.', { thread_id: threadId } );
 			return requestJson( endpoints.associateThread, {
-				request_id: options.requestId,
-				draft_token: options.draftToken,
+				request_id: record.options.requestId,
+				draft_token: record.options.draftToken,
 				thread_id: threadId
 			} ).then( function() {
 				log( 'info', 'Thread associated to draft request.', { thread_id: threadId } );
+				if ( typeof record.options.onThreadChange === 'function' ) {
+					record.options.onThreadChange( threadId );
+				}
 			} ).catch( function( error ) {
 				log( 'error', 'Thread association failed.', { thread_id: threadId, error: summarizeError( error ) } );
-				if ( typeof options.onError === 'function' ) {
-					options.onError( error );
+				if ( typeof record.options.onError === 'function' ) {
+					record.options.onError( error );
 				}
 			} );
 		};
 
 		const handleMountError = function( error ) {
 			log( 'error', 'ChatKit mount failed.', { error: summarizeError( error ) } );
-			if ( typeof options.onError === 'function' ) {
-				options.onError( error );
+			if ( typeof record.options.onError === 'function' ) {
+				record.options.onError( error );
 			}
 			throw error;
 		};
 
 		const markChatActive = function( source ) {
-			if ( chatkitInteractive ) {
+			if ( record.interactive ) {
 				return;
 			}
-			chatkitInteractive = true;
-			if ( readyTimer ) {
-				window.clearTimeout( readyTimer );
+			record.interactive = true;
+			if ( record.readyTimer ) {
+				window.clearTimeout( record.readyTimer );
 			}
 			log( 'info', 'ChatKit became interactive.', { source: source } );
 		};
@@ -209,18 +241,18 @@
 			return {
 				api: {
 					getClientSecret: async function( currentSecret ) {
-						log( 'debug', 'getClientSecret called.', { has_cached_session: !! cachedSession, has_current_secret: !! currentSecret } );
-						if ( cachedSession ) {
-							const cached = normalizeClientSecret( cachedSession );
+						log( 'debug', 'getClientSecret called.', { has_cached_session: !! record.cachedSession, has_current_secret: !! currentSecret } );
+						if ( record.cachedSession ) {
+							const cached = normalizeClientSecret( record.cachedSession );
 							if ( cached ) {
-								log( 'info', 'Using cached client secret.', { expires_after: cachedSession.expires_after || null } );
-								cachedSession = null;
+								log( 'info', 'Using cached client secret.', { expires_after: record.cachedSession.expires_after || null } );
+								record.cachedSession = null;
 								return cached;
 							}
 						}
 						const payload = await requestJson( endpoints.createSession, {
-							request_id: options.requestId,
-							draft_token: options.draftToken
+							request_id: record.options.requestId,
+							draft_token: record.options.draftToken
 						} );
 						const normalized = normalizeClientSecret( payload );
 						log( normalized ? 'info' : 'error', normalized ? 'Fetched fresh client secret.' : 'Session payload missing client secret.', {
@@ -231,19 +263,19 @@
 					}
 				},
 				startScreen: options.startScreenGreeting ? {
-					greeting: options.startScreenGreeting
+					greeting: record.options.startScreenGreeting
 				} : undefined,
-				initialThread: latestThreadId || undefined,
+				initialThread: record.latestThreadId || undefined,
 				composer: {
 					attachments: {
-						enabled: true
+						enabled: false
 					}
 				}
 			};
 		};
 
-		options.container.innerHTML = '<div class="handik-chatkit-bridge__loading">Loading assistant...</div>';
-		log( 'info', 'Bridge mount started.', { request_id: options.requestId } );
+		options.container.innerHTML = '<div class="handik-chatkit-bridge__loading"><span class="handik-spinner" aria-hidden="true"></span><span>Loading virtual assistant...</span></div>';
+		log( 'info', 'Bridge mount started.', { request_id: record.options.requestId } );
 
 		const ready = waitForChatKitElement().then( function() {
 			log( 'info', 'ChatKit custom element is defined.' );
@@ -257,44 +289,45 @@
 				throw new Error( 'No client secret in session response.' );
 			}
 
-			cachedSession = session;
+			record.cachedSession = session;
+			record.session = session;
 			if ( session.draft_context && session.draft_context.chat_thread_id ) {
-				latestThreadId = session.draft_context.chat_thread_id;
+				record.latestThreadId = session.draft_context.chat_thread_id;
 			}
 
 			log( 'info', 'ChatKit session fetched.', {
 				has_client_secret: true,
-				has_thread: !! latestThreadId,
+				has_thread: !! record.latestThreadId,
 				has_file_upload: !! session.file_upload
 			} );
 
-			element = document.createElement( CHATKIT_TAG );
-			element.style.display = 'block';
-			element.style.width = '100%';
-			element.style.minHeight = '520px';
+			record.element = document.createElement( CHATKIT_TAG );
+			record.element.style.display = 'block';
+			record.element.style.width = '100%';
+			record.element.style.minHeight = '520px';
 
-			element.addEventListener( 'chatkit.ready', function() {
-				chatkitReady = true;
-				chatkitInteractive = true;
-				if ( readyTimer ) {
-					window.clearTimeout( readyTimer );
+			record.element.addEventListener( 'chatkit.ready', function() {
+				record.ready = true;
+				record.interactive = true;
+				if ( record.readyTimer ) {
+					window.clearTimeout( record.readyTimer );
 				}
 				log( 'info', 'ChatKit ready event fired.' );
-				if ( typeof options.onSessionReady === 'function' ) {
-					options.onSessionReady();
+				if ( typeof record.options.onSessionReady === 'function' ) {
+					record.options.onSessionReady();
 				}
 			} );
 
-			element.addEventListener( 'chatkit.error', function( event ) {
+			record.element.addEventListener( 'chatkit.error', function( event ) {
 				const detail = event && event.detail ? event.detail : {};
 				const error = detail.error || detail;
 				log( 'error', 'ChatKit runtime error.', { error: summarizeError( error ) } );
-				if ( typeof options.onError === 'function' ) {
-					options.onError( error && error.message ? error : new Error( summarizeError( error ) ) );
+				if ( typeof record.options.onError === 'function' ) {
+					record.options.onError( error && error.message ? error : new Error( summarizeError( error ) ) );
 				}
 			} );
 
-			element.addEventListener( 'chatkit.log', function( event ) {
+			record.element.addEventListener( 'chatkit.log', function( event ) {
 				const detail = event && event.detail ? event.detail : {};
 				markChatActive( 'chatkit.log' );
 				log( 'debug', 'ChatKit log event.', {
@@ -303,7 +336,7 @@
 				} );
 			} );
 
-			element.addEventListener( 'chatkit.thread.change', function( event ) {
+			record.element.addEventListener( 'chatkit.thread.change', function( event ) {
 				const detail = event && event.detail ? event.detail : {};
 				markChatActive( 'chatkit.thread.change' );
 				if ( detail.threadId ) {
@@ -311,7 +344,7 @@
 				}
 			} );
 
-			element.addEventListener( 'chatkit.effect', function( event ) {
+			record.element.addEventListener( 'chatkit.effect', function( event ) {
 				const detail = event && event.detail ? event.detail : {};
 				markChatActive( 'chatkit.effect' );
 				log( 'debug', 'ChatKit effect event.', { name: detail.name || '' } );
@@ -320,7 +353,7 @@
 				}
 			} );
 
-			element.addEventListener( 'chatkit.deeplink', function( event ) {
+			record.element.addEventListener( 'chatkit.deeplink', function( event ) {
 				const detail = event && event.detail ? event.detail : {};
 				markChatActive( 'chatkit.deeplink' );
 				log( 'debug', 'ChatKit deeplink event.', { name: detail.name || '' } );
@@ -329,7 +362,7 @@
 				}
 			} );
 
-			element.addEventListener( 'message', function( event ) {
+			record.element.addEventListener( 'message', function( event ) {
 				const detail = event && event.detail ? event.detail : {};
 				markChatActive( 'message' );
 				log( 'debug', 'ChatKit message event.', {
@@ -338,17 +371,14 @@
 				} );
 			} );
 
-			element.setOptions( buildOptions() );
+			record.element.setOptions( buildOptions() );
 			options.container.innerHTML = '';
-			options.container.appendChild( element );
+			options.container.appendChild( record.element );
 			log( 'info', 'ChatKit mounted into container.' );
 
-			readyTimer = window.setTimeout( function() {
-				if ( ! chatkitReady && ! chatkitInteractive ) {
-					log( 'error', 'ChatKit ready timeout reached.', { timeout_ms: CHATKIT_TIMEOUT } );
-					if ( typeof options.onError === 'function' ) {
-						options.onError( new Error( 'Assistant UI did not finish loading.' ) );
-					}
+			record.readyTimer = window.setTimeout( function() {
+				if ( ! record.ready && ! record.interactive ) {
+					log( 'debug', 'ChatKit ready timeout reached without a visible UI error.', { timeout_ms: CHATKIT_TIMEOUT } );
 				}
 			}, CHATKIT_TIMEOUT );
 
@@ -357,22 +387,31 @@
 
 		return {
 			element: function() {
-				return element;
+				return record.element;
 			},
 			ready: ready,
 			unmount: function() {
-				if ( readyTimer ) {
-					window.clearTimeout( readyTimer );
+				if ( record.readyTimer ) {
+					window.clearTimeout( record.readyTimer );
 				}
-				if ( element && options.container.contains( element ) ) {
-					options.container.removeChild( element );
+				if ( record.element && options.container.contains( record.element ) ) {
+					options.container.removeChild( record.element );
 				}
 				log( 'info', 'ChatKit unmounted.' );
 			}
 		};
 	}
 
+	function reset( cacheKey ) {
+		const key = String( cacheKey || '' );
+		if ( ! key || ! BRIDGE_CACHE.has( key ) ) {
+			return;
+		}
+		BRIDGE_CACHE.delete( key );
+	}
+
 	window.HandikChatKitBridge = {
-		mount: mount
+		mount: mount,
+		reset: reset
 	};
 }( window, document ) );
