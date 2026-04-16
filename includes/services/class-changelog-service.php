@@ -11,6 +11,16 @@ class Handik_Booking_App_Changelog_Service {
 	public function get_entries() {
 		return array(
 			array(
+				'version'      => '2.0.11',
+				'date'         => '2026-04-15',
+				'title'        => 'Assistant Continue Button State',
+				'notes'        => array(
+					'Virtual assistant Continue now stays visually muted until the workflow returns enough_information=true.',
+					'The button still shows the inline assistant notice when clicked too early, instead of silently failing.',
+					'Once enough information is captured, the same button turns green and behaves like the normal next-step action.',
+				),
+			),
+			array(
 				'version'      => '2.0.10',
 				'date'         => '2026-04-15',
 				'title'        => 'Assistant Result Capture Hardening',

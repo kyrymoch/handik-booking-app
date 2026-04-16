@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.0.10
+Stable tag: 2.0.11
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, returning-client auth, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,11 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.0.11 =
+* Virtual assistant Continue now stays muted until the workflow returns `enough_information = true`.
+* Clicking Continue too early keeps the user on the same step and shows the inline assistant notice.
+* Once enough information is captured, the same button turns green and acts like the normal next-step action.
 
 = 2.0.10 =
 * Hardened structured assistant-result capture so classification output can be detected by schema shape, not only by specific effect names.

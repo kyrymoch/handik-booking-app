@@ -96,9 +96,17 @@
 		setAssistantContinueBusy( isBusy ) {
 			const button = this.root.querySelector( '[data-action="assistant-next"]' );
 			if ( button ) {
+				const canContinue = this.assistantCanContinue();
 				button.disabled = !! isBusy;
-				button.textContent = isBusy ? 'Saving...' : ( this.state.assistantResult ? 'Continue to contact details' : this.escape( config.strings.continue || 'Continue' ) );
+				button.textContent = isBusy ? 'Saving...' : ( canContinue ? 'Continue to contact details' : this.escape( config.strings.continue || 'Continue' ) );
+				button.classList.toggle( 'is-pending', ! canContinue && ! isBusy );
+				button.classList.toggle( 'is-primary', canContinue && ! isBusy );
+				button.setAttribute( 'aria-disabled', canContinue ? 'false' : 'true' );
 			}
+		}
+
+		assistantCanContinue() {
+			return !! ( this.state.assistantResult && true === this.state.assistantResult.enough_information );
 		}
 
 		goTo( step ) {
@@ -439,7 +447,7 @@
 				return;
 			}
 
-			const hasEnoughInformation = !! ( this.state.assistantResult && true === this.state.assistantResult.enough_information );
+			const hasEnoughInformation = this.assistantCanContinue();
 			if ( ! hasEnoughInformation && ! this.state.assistantUserMessageSent ) {
 				this.setAssistantNotice( 'Please send the virtual assistant a short description of the job before continuing.', true );
 				return;
@@ -649,8 +657,9 @@
 		}
 
 		assistantMarkup() {
-			const continueLabel = this.state.assistantResult ? 'Continue to contact details' : 'Continue';
-			return '<div class="handik-assistant-layout"><div class="handik-assistant-panel"><p class="handik-booking-app__assistant-note">' + this.escape( config.strings.assistantHelper || 'Describe the job in chat, ask questions if needed, then tap Continue when you are ready.' ) + '</p><div class="handik-booking-app__assistant-host"></div>' + this.footerActions( 'back-address', 'assistant-next', this.state.loading ? 'Saving...' : continueLabel ) + '</div></div>';
+			const canContinue = this.assistantCanContinue();
+			const continueLabel = canContinue ? 'Continue to contact details' : 'Continue';
+			return '<div class="handik-assistant-layout"><div class="handik-assistant-panel"><p class="handik-booking-app__assistant-note">' + this.escape( config.strings.assistantHelper || 'Describe the job in chat, ask questions if needed, then tap Continue when you are ready.' ) + '</p><div class="handik-booking-app__assistant-host"></div>' + this.footerActions( 'back-address', 'assistant-next', this.state.loading ? 'Saving...' : continueLabel, '', { continueMuted: ! canContinue } ) + '</div></div>';
 		}
 
 		contactMarkup() {
@@ -683,7 +692,8 @@
 			const backText = backLabel || this.escape( config.strings.back );
 			const backClass = settings.backIsUtility ? 'handik-btn is-secondary' : 'handik-btn is-secondary is-back';
 			const backInner = settings.backIsUtility ? '<span class="handik-btn__label">' + backText + '</span>' : '<span class="handik-btn__icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false" aria-hidden="true"><path d="M19 11H7.83l4.88-4.88L11.29 4.7 4 12l7.29 7.3 1.42-1.42L7.83 13H19v-2z"></path></svg></span><span class="handik-btn__label">' + backText + '</span>';
-			return '<div class="handik-footer-actions is-sticky-mobile"><button data-action="' + this.escape( backAction ) + '" class="' + backClass + '">' + backInner + '</button><button data-action="' + this.escape( continueAction ) + '" class="handik-btn is-primary is-continue">' + continueLabel + '</button></div>';
+			const continueClass = 'handik-btn ' + ( settings.continueMuted ? 'is-pending' : 'is-primary' ) + ' is-continue';
+			return '<div class="handik-footer-actions is-sticky-mobile"><button data-action="' + this.escape( backAction ) + '" class="' + backClass + '">' + backInner + '</button><button data-action="' + this.escape( continueAction ) + '" class="' + continueClass + '" ' + ( settings.continueMuted ? 'aria-disabled="true"' : 'aria-disabled="false"' ) + '>' + continueLabel + '</button></div>';
 		}
 
 		normalizePhone( value ) {
