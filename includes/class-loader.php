@@ -13,6 +13,7 @@ class Handik_Booking_App_Loader {
 			'includes/db/class-migrations.php',
 			'includes/db/migrations/class-migration-100.php',
 			'includes/db/migrations/class-migration-110.php',
+			'includes/db/migrations/class-migration-120.php',
 			'includes/services/class-changelog-service.php',
 			'includes/services/class-appearance-service.php',
 			'includes/services/class-contacts-service.php',

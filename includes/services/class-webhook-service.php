@@ -46,15 +46,31 @@ class Handik_Booking_App_Webhook_Service {
 		$raw_body = $request->get_body();
 		$payload  = json_decode( $raw_body, true );
 		if ( ! is_array( $payload ) ) {
+			$this->logger->error( 'Cal webhook payload could not be decoded.', array( 'raw_body' => substr( (string) $raw_body, 0, 1000 ) ) );
 			return array( 'error' => __( 'Invalid webhook payload.', 'handik-booking-app' ), 'status' => 400 );
 		}
 		if ( ! $this->verify_signature( $request, $raw_body ) ) {
+			$this->logger->error(
+				'Cal webhook signature failed.',
+				array(
+					'has_secret_header'    => (bool) $request->get_header( 'x-cal-secret-key' ),
+					'has_signature_header' => (bool) ( $request->get_header( 'x-cal-signature-256' ) ?: $request->get_header( 'x-cal-signature' ) ),
+				)
+			);
 			return array( 'error' => __( 'Webhook signature failed.', 'handik-booking-app' ), 'status' => 403 );
 		}
 
-		$event     = sanitize_key( (string) ( $payload['triggerEvent'] ?? $payload['event'] ?? $payload['type'] ?? 'booking_created' ) );
+		$event     = $this->normalize_event_name( (string) ( $payload['triggerEvent'] ?? $payload['event'] ?? $payload['type'] ?? 'BOOKING_CREATED' ) );
 		$data      = ! empty( $payload['payload'] ) && is_array( $payload['payload'] ) ? $payload['payload'] : $payload;
-		$metadata  = ! empty( $data['metadata'] ) && is_array( $data['metadata'] ) ? $data['metadata'] : array();
+		$metadata  = array();
+		if ( ! empty( $data['metadata'] ) ) {
+			if ( is_array( $data['metadata'] ) ) {
+				$metadata = $data['metadata'];
+			} elseif ( is_string( $data['metadata'] ) ) {
+				$decoded = json_decode( $data['metadata'], true );
+				$metadata = is_array( $decoded ) ? $decoded : array();
+			}
+		}
 		$request_id = ! empty( $metadata['handik_job_request_id'] ) ? absint( $metadata['handik_job_request_id'] ) : 0;
 
 		if ( ! $request_id ) {
@@ -64,12 +80,40 @@ class Handik_Booking_App_Webhook_Service {
 		}
 
 		if ( ! $request_id ) {
-			$this->logger->error( 'Could not match Cal webhook to job request.', array( 'payload' => $payload ) );
+			$contact_match = $this->extract_contact_match( $data );
+			if ( ! empty( $contact_match['email'] ) || ! empty( $contact_match['phone'] ) ) {
+				$row        = $this->job_requests->find_latest_pending_by_contact( $contact_match['email'] ?? '', $contact_match['phone'] ?? '' );
+				$request_id = $row ? (int) $row['id'] : 0;
+				if ( $request_id ) {
+					$this->logger->info(
+						'Matched Cal webhook to request by contact fallback.',
+						array(
+							'request_id' => $request_id,
+							'event'      => $event,
+							'email'      => $contact_match['email'] ?? '',
+							'phone'      => $contact_match['phone'] ?? '',
+						)
+					);
+				}
+			}
+		}
+
+		if ( ! $request_id ) {
+			$this->logger->error( 'Could not match Cal webhook to job request.', array( 'event' => $event, 'payload' => $payload ) );
 			return array( 'error' => __( 'Matching request not found.', 'handik-booking-app' ), 'status' => 404 );
 		}
 
 		$data['booking_type'] = ! empty( $metadata['handik_booking_type'] ) ? sanitize_key( $metadata['handik_booking_type'] ) : '';
 		$this->bookings->upsert_from_cal( $request_id, $data, $this->map_status( $event ) );
+		$this->logger->info(
+			'Cal webhook synced booking.',
+			array(
+				'request_id' => $request_id,
+				'event'      => $event,
+				'booking_id' => $this->bookings->extract_booking_id( $data ),
+				'status'     => $this->map_status( $event ),
+			)
+		);
 
 		return array( 'success' => true, 'status' => $this->map_status( $event ) );
 	}
@@ -99,13 +143,52 @@ class Handik_Booking_App_Webhook_Service {
 	protected function map_status( $event ) {
 		switch ( $event ) {
 			case 'booking_cancelled':
-			case 'booking.cancelled':
 				return 'cancelled';
 			case 'booking_rescheduled':
-			case 'booking.rescheduled':
 				return 'rescheduled';
 			default:
 				return 'booked';
 		}
+	}
+
+	/**
+	 * @param string $event Raw event name.
+	 * @return string
+	 */
+	protected function normalize_event_name( $event ) {
+		$event = strtolower( trim( (string) $event ) );
+		$event = str_replace( array( '.', '-', ' ' ), '_', $event );
+		return preg_replace( '/[^a-z0-9_]/', '', $event );
+	}
+
+	/**
+	 * @param array<string, mixed> $data Payload data.
+	 * @return array<string, string>
+	 */
+	protected function extract_contact_match( array $data ) {
+		$email = '';
+		$phone = '';
+
+		if ( ! empty( $data['attendees'] ) && is_array( $data['attendees'] ) ) {
+			$attendee = reset( $data['attendees'] );
+			if ( is_array( $attendee ) ) {
+				$email = sanitize_email( (string) ( $attendee['email'] ?? $attendee['emailAddress'] ?? '' ) );
+				$phone = sanitize_text_field( (string) ( $attendee['phoneNumber'] ?? $attendee['phone'] ?? '' ) );
+			}
+		}
+
+		if ( ! $email && ! empty( $data['responses'] ) && is_array( $data['responses'] ) ) {
+			$email = sanitize_email( (string) ( $data['responses']['email'] ?? '' ) );
+			$phone = $phone ? $phone : sanitize_text_field( (string) ( $data['responses']['phone'] ?? '' ) );
+		}
+
+		if ( ! $email && ! empty( $data['userPrimaryEmail'] ) ) {
+			$email = sanitize_email( (string) $data['userPrimaryEmail'] );
+		}
+
+		return array(
+			'email' => $email,
+			'phone' => $phone,
+		);
 	}
 }

@@ -73,11 +73,12 @@ class Handik_Booking_App_Cal_Service {
 				return '' !== (string) $value;
 			}
 		);
-		if ( ! empty( $request['address_full'] ) ) {
+		$location_address = trim( implode( ', ', array_filter( array( $request['address_full'] ?? '', $request['address_unit'] ?? '' ) ) ) );
+		if ( $location_address ) {
 			$params['location'] = wp_json_encode(
 				array(
 					'value'       => 'attendeeInPerson',
-					'optionValue' => $request['address_full'],
+					'optionValue' => $location_address,
 				)
 			);
 		} elseif ( ! empty( $contact['phone'] ) ) {

@@ -11,6 +11,16 @@ class Handik_Booking_App_Changelog_Service {
 	public function get_entries() {
 		return array(
 			array(
+				'version'      => '2.0.14',
+				'date'         => '2026-04-16',
+				'title'        => 'Admin UI Controls And Booking Reliability',
+				'notes'        => array(
+					'Added a much larger admin-side UI control surface for texts, labels, colors, helper copy, and scoped custom CSS overrides.',
+					'Updated the booking wizard with muted Continue states, footer tooltip validation, client-type helper cards, a clearer photo uploader, and unit or apartment support.',
+					'Improved assistant-step persistence plus Cal.com webhook matching with metadata, booking ID, and contact-based fallback matching for booking confirmations.',
+				),
+			),
+			array(
 				'version'      => '2.0.13',
 				'date'         => '2026-04-15',
 				'title'        => 'Updater Quiet Period',

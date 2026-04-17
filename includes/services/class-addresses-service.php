@@ -23,6 +23,7 @@ class Handik_Booking_App_Addresses_Service {
 			'contact_id'     => $contact_id,
 			'address_full'   => ! empty( $payload['address_full'] ) ? sanitize_textarea_field( $payload['address_full'] ) : '',
 			'address_line_1' => ! empty( $payload['address_line_1'] ) ? sanitize_text_field( $payload['address_line_1'] ) : '',
+			'address_unit'   => ! empty( $payload['address_unit'] ) ? sanitize_text_field( $payload['address_unit'] ) : '',
 			'city'           => ! empty( $payload['city'] ) ? sanitize_text_field( $payload['city'] ) : '',
 			'state'          => ! empty( $payload['state'] ) ? sanitize_text_field( $payload['state'] ) : '',
 			'zip_code'       => ! empty( $payload['zip_code'] ) ? sanitize_text_field( $payload['zip_code'] ) : '',

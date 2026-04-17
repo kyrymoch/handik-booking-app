@@ -61,17 +61,80 @@ class Handik_Booking_App_Settings {
 			'email_from_name'        => get_bloginfo( 'name' ),
 			'email_from_address'     => get_option( 'admin_email' ),
 			'debug_mode'             => 0,
+			'app_custom_css'         => '',
 			'app_accent_color'       => '#0f766e',
 			'app_background'         => '#f8fafc',
 			'app_surface'            => '#ffffff',
 			'app_text_color'         => '#0f172a',
 			'app_border_color'       => '#dbe3ea',
+			'app_muted_text_color'   => '#64748b',
+			'app_button_text_color'  => '#ffffff',
+			'app_secondary_button_bg'   => '#e2e8f0',
+			'app_secondary_button_text' => '#0f172a',
+			'app_pending_button_bg'     => '#cbd5e1',
+			'app_pending_button_text'   => '#334155',
+			'app_progress_track'        => '#dbe3ea',
+			'app_font_family'        => 'inherit',
 			'app_radius'             => '18',
 			'app_shadow'             => '0 24px 60px rgba(15, 23, 42, 0.12)',
 			'app_spacing'            => '20',
 			'app_max_width'          => '980',
 			'app_font_scale'         => '1',
 			'app_button_style'       => 'pill',
+			'ui_loading_title'       => 'Getting your booking space ready...',
+			'ui_loading_subtitle'    => 'Laying out the tools and making room for the good stuff.',
+			'ui_client_type_title'   => 'Who is booking today?',
+			'ui_client_type_intro'   => 'Choose the option that best matches your situation.',
+			'ui_new_client_label'    => 'New client',
+			'ui_returning_client_label' => 'Returning client',
+			'ui_new_client_tooltip_title' => 'New client',
+			'ui_new_client_tooltip_text'  => 'Choose this if this is your first time booking with Handik or you have not used our booking flow before.',
+			'ui_returning_client_tooltip_title' => 'Returning client',
+			'ui_returning_client_tooltip_text'  => 'Choose this if you have booked with Handik before and want to reuse your saved details.',
+			'ui_returning_verify_title' => 'Returning client verification',
+			'ui_returning_verify_intro' => 'Enter your email or phone to receive a one-time code.',
+			'ui_task_selection_title'   => 'What do you need help with?',
+			'ui_project_label'          => 'Project / Large Job',
+			'ui_address_title'          => 'Address and photos',
+			'ui_address_label'          => 'Address of the job',
+			'ui_address_unit_label'     => 'Unit or apartment (optional)',
+			'ui_saved_address_label'    => 'Saved address',
+			'ui_saved_address_placeholder' => 'Choose saved address',
+			'ui_photos_label'           => 'Photos',
+			'ui_photos_help'            => 'Add a few clear photos so we can understand the job faster.',
+			'ui_photos_cta'             => 'Tap to add photos',
+			'ui_photos_empty'           => 'No photos added yet',
+			'ui_photos_loading'         => 'Uploading your photos...',
+			'ui_assistant_title'        => 'Virtual assistant',
+			'ui_assistant_helper'       => 'This is Handik\'s virtual assistant. Describe the job, mention anything important, and ask questions about time, materials, or the next step. If you want to move faster, give a short description and then tap Continue.',
+			'ui_assistant_greeting'     => 'Describe the task and I will help estimate time, materials, and the next step.',
+			'ui_assistant_ready_notice' => 'The virtual assistant has enough information. Continue when you are ready.',
+			'ui_contact_title'          => 'Contact details',
+			'ui_booking_title'          => 'Book your time slot',
+			'ui_success_title'          => 'Success',
+			'ui_success_body'           => 'Your booking has been confirmed and saved.',
+			'ui_unsafe_title'           => 'We need to stop the normal booking flow',
+			'ui_unsafe_body'            => 'This request needs manual review before booking.',
+			'ui_verify_button'          => 'Verify',
+			'ui_send_code_button'       => 'Send one-time code',
+			'ui_continue_button'        => 'Continue',
+			'ui_back_button'            => 'Back',
+			'ui_open_booking_button'    => 'Open calendar in new tab',
+			'ui_complete_booking_button'=> 'Check booking status',
+			'ui_restart_button'         => 'Start another booking',
+			'ui_loading_assistant_title'=> 'Loading virtual assistant...',
+			'ui_loading_assistant_subtitle' => 'Charging the tiny robot brain for your next step.',
+			'ui_error_pick_client_type' => 'Choose whether you are a new client or a returning client to continue.',
+			'ui_error_select_task'      => 'Select at least one task or mark this as a project.',
+			'ui_error_address_required' => 'Add the address of the job before continuing.',
+			'ui_error_invalid_code'     => 'Code or magic link is invalid or expired.',
+			'ui_error_assistant_required' => 'Please send the virtual assistant a short description of the job before continuing.',
+			'ui_error_name_email_required' => 'Name and email are required before you can continue.',
+			'ui_error_phone_or_email_required' => 'Enter your email or phone, then request a code.',
+			'ui_booking_waiting'        => 'Stay on this screen while we wait for Cal.com to confirm the booking.',
+			'ui_booking_confirmed'      => 'Booking confirmed. Finishing your request...',
+			'ui_booking_cancelled'      => 'This booking was cancelled. You can book another slot below.',
+			'ui_address_placeholder'    => 'Start typing the address of the job',
 		);
 	}
 
@@ -146,6 +209,9 @@ class Handik_Booking_App_Settings {
 				case 'debug_mode':
 					$output[ $key ] = empty( $value ) ? 0 : 1;
 					break;
+				case 'app_custom_css':
+					$output[ $key ] = trim( str_replace( "\0", '', (string) $value ) );
+					break;
 				case 'github_repo_branch':
 				case 'google_maps_country':
 					$output[ $key ] = preg_replace( '/[^A-Za-z0-9._\/-]/', '', (string) $value );
@@ -153,11 +219,37 @@ class Handik_Booking_App_Settings {
 				case 'github_release_asset_pattern':
 					$output[ $key ] = sanitize_text_field( (string) $value );
 					break;
+				case 'app_font_family':
+				case 'app_shadow':
+					$output[ $key ] = trim( (string) $value );
+					break;
 				case 'app_radius':
 				case 'app_spacing':
 				case 'app_max_width':
 				case 'app_font_scale':
 					$output[ $key ] = preg_replace( '/[^0-9.]/', '', (string) $value );
+					break;
+				case 'ui_loading_subtitle':
+				case 'ui_client_type_intro':
+				case 'ui_new_client_tooltip_text':
+				case 'ui_returning_client_tooltip_text':
+				case 'ui_returning_verify_intro':
+				case 'ui_photos_help':
+				case 'ui_assistant_helper':
+				case 'ui_assistant_ready_notice':
+				case 'ui_success_body':
+				case 'ui_unsafe_body':
+				case 'ui_error_pick_client_type':
+				case 'ui_error_select_task':
+				case 'ui_error_address_required':
+				case 'ui_error_invalid_code':
+				case 'ui_error_assistant_required':
+				case 'ui_error_name_email_required':
+				case 'ui_error_phone_or_email_required':
+				case 'ui_booking_waiting':
+				case 'ui_booking_confirmed':
+				case 'ui_booking_cancelled':
+					$output[ $key ] = sanitize_textarea_field( (string) $value );
 					break;
 				default:
 					$output[ $key ] = sanitize_text_field( (string) $value );

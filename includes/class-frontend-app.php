@@ -34,6 +34,7 @@ class Handik_Booking_App_Frontend_App {
 		$instance_id  = 'handik-booking-app-' . wp_generate_password( 8, false, false );
 		$title        = ! empty( $args['title'] ) ? sanitize_text_field( $args['title'] ) : __( 'Book a visit', 'handik-booking-app' );
 		$style        = $this->appearance->inline_style_string();
+		$custom_css   = $this->appearance->custom_css( '#' . $instance_id );
 
 		if ( ! empty( $args['accent'] ) ) {
 			$style .= '; --handik-accent: ' . sanitize_hex_color( $args['accent'] );
@@ -47,6 +48,7 @@ class Handik_Booking_App_Frontend_App {
 			'instance_id' => $instance_id,
 			'title'       => $title,
 			'style'       => $style,
+			'custom_css'  => $custom_css,
 			'display'     => ! empty( $args['display'] ) ? sanitize_key( $args['display'] ) : 'full',
 		);
 		include HANDIK_BOOKING_APP_PATH . 'views/frontend-app.php';

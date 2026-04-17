@@ -44,7 +44,7 @@ class Handik_Booking_App_Bookings_Service {
 			'job_request_id'   => $job_request_id,
 			'cal_booking_id'   => $booking_id,
 			'booking_type'     => ! empty( $payload['booking_type'] ) ? sanitize_key( $payload['booking_type'] ) : '',
-			'event_type_slug'  => ! empty( $payload['eventTypeSlug'] ) ? sanitize_key( $payload['eventTypeSlug'] ) : '',
+			'event_type_slug'  => ! empty( $payload['eventTypeSlug'] ) ? sanitize_key( $payload['eventTypeSlug'] ) : sanitize_key( (string) ( $payload['type'] ?? '' ) ),
 			'duration_minutes' => absint( $payload['duration'] ?? $payload['lengthInMinutes'] ?? 0 ),
 			'start_time'       => $this->normalize_datetime( $payload['startTime'] ?? $payload['start'] ?? '' ),
 			'end_time'         => $this->normalize_datetime( $payload['endTime'] ?? $payload['end'] ?? '' ),
@@ -91,7 +91,7 @@ class Handik_Booking_App_Bookings_Service {
 	 * @return string
 	 */
 	public function extract_booking_id( array $payload ) {
-		return sanitize_text_field( (string) ( $payload['bookingId'] ?? $payload['uid'] ?? $payload['id'] ?? '' ) );
+		return sanitize_text_field( (string) ( $payload['bookingId'] ?? $payload['bookingUid'] ?? $payload['uid'] ?? $payload['id'] ?? '' ) );
 	}
 
 	/**

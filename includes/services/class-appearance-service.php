@@ -27,6 +27,14 @@ class Handik_Booking_App_Appearance_Service {
 			'--handik-surface'        => (string) $this->settings->get( 'app_surface', '#ffffff' ),
 			'--handik-text'           => (string) $this->settings->get( 'app_text_color', '#0f172a' ),
 			'--handik-border'         => (string) $this->settings->get( 'app_border_color', '#dbe3ea' ),
+			'--handik-muted-text'     => (string) $this->settings->get( 'app_muted_text_color', '#64748b' ),
+			'--handik-primary-text'   => (string) $this->settings->get( 'app_button_text_color', '#ffffff' ),
+			'--handik-secondary-bg'   => (string) $this->settings->get( 'app_secondary_button_bg', '#e2e8f0' ),
+			'--handik-secondary-text' => (string) $this->settings->get( 'app_secondary_button_text', '#0f172a' ),
+			'--handik-pending-bg'     => (string) $this->settings->get( 'app_pending_button_bg', '#cbd5e1' ),
+			'--handik-pending-text'   => (string) $this->settings->get( 'app_pending_button_text', '#334155' ),
+			'--handik-progress-track' => (string) $this->settings->get( 'app_progress_track', '#dbe3ea' ),
+			'--handik-font-family'    => (string) $this->settings->get( 'app_font_family', 'inherit' ),
 			'--handik-radius'         => (string) $this->settings->get( 'app_radius', '18' ) . 'px',
 			'--handik-shadow'         => (string) $this->settings->get( 'app_shadow', '0 24px 60px rgba(15, 23, 42, 0.12)' ),
 			'--handik-spacing'        => (string) $this->settings->get( 'app_spacing', '20' ) . 'px',
@@ -46,5 +54,18 @@ class Handik_Booking_App_Appearance_Service {
 		}
 
 		return implode( '; ', $parts );
+	}
+
+	/**
+	 * @param string $wrapper_selector Wrapper selector.
+	 * @return string
+	 */
+	public function custom_css( $wrapper_selector ) {
+		$css = trim( (string) $this->settings->get( 'app_custom_css', '' ) );
+		if ( '' === $css ) {
+			return '';
+		}
+
+		return str_replace( '{{WRAPPER}}', $wrapper_selector, $css );
 	}
 }

@@ -58,7 +58,7 @@ class Handik_Booking_App_Auth_Service {
 		$redirect = $redirect ? esc_url_raw( $redirect ) : home_url( '/' );
 
 		if ( ! $email && ! $phone ) {
-			return array( 'error' => __( 'Email or phone is required.', 'handik-booking-app' ), 'status' => 400 );
+			return array( 'error' => (string) $this->settings->get( 'ui_error_phone_or_email_required', __( 'Email or phone is required.', 'handik-booking-app' ) ), 'status' => 400 );
 		}
 
 		$limit = $this->rate_limit( $email ? $email : $phone );
@@ -95,7 +95,7 @@ class Handik_Booking_App_Auth_Service {
 	public function verify( $email, $phone, $code, $token = '' ) {
 		$record = $this->consume_token( sanitize_email( $email ), $this->contacts->normalize_phone( $phone ), sanitize_text_field( $code ), sanitize_text_field( $token ) );
 		if ( ! $record ) {
-			return array( 'error' => __( 'Code or magic link is invalid or expired.', 'handik-booking-app' ), 'status' => 403 );
+			return array( 'error' => (string) $this->settings->get( 'ui_error_invalid_code', __( 'Code or magic link is invalid or expired.', 'handik-booking-app' ) ), 'status' => 403 );
 		}
 
 		$contact_id = (int) $record['contact_id'];

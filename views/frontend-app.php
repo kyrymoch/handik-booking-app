@@ -3,6 +3,9 @@
  * @var array<string, mixed> $view_args
  */
 ?>
+<?php if ( ! empty( $view_args['custom_css'] ) ) : ?>
+<style><?php echo esc_html( $view_args['custom_css'] ); ?></style>
+<?php endif; ?>
 <div
 	id="<?php echo esc_attr( $view_args['instance_id'] ); ?>"
 	class="handik-booking-app"

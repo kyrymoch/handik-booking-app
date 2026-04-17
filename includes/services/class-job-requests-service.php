@@ -40,6 +40,7 @@ class Handik_Booking_App_Job_Requests_Service {
 			'is_project'          => ! empty( $payload['is_project'] ) ? 1 : 0,
 			'address_id'          => $address_id ? $address_id : ( $existing ? (int) $existing['address_id'] : null ),
 			'address_full'        => ! empty( $payload['address_full'] ) ? sanitize_textarea_field( $payload['address_full'] ) : '',
+			'address_unit'        => ! empty( $payload['address_unit'] ) ? sanitize_text_field( $payload['address_unit'] ) : '',
 			'short_description'   => ! empty( $payload['short_description'] ) ? sanitize_textarea_field( $payload['short_description'] ) : '',
 			'photos_json'         => wp_json_encode( $payload['photos'] ?? array() ),
 			'preferred_timeframe' => ! empty( $payload['preferred_timeframe'] ) ? sanitize_text_field( $payload['preferred_timeframe'] ) : '',
@@ -237,6 +238,48 @@ class Handik_Booking_App_Job_Requests_Service {
 	}
 
 	/**
+	 * @param string $email Email.
+	 * @param string $phone Phone.
+	 * @return array<string, mixed>|null
+	 */
+	public function find_latest_pending_by_contact( $email = '', $phone = '' ) {
+		global $wpdb;
+
+		$requests_table = Handik_Booking_App_DB::table( 'job_requests' );
+		$contacts_table = Handik_Booking_App_DB::table( 'contacts' );
+		$email          = sanitize_email( $email );
+		$phone          = sanitize_text_field( $phone );
+
+		if ( $email ) {
+			$row = $wpdb->get_row(
+				$wpdb->prepare(
+					"SELECT jr.* FROM {$requests_table} jr INNER JOIN {$contacts_table} c ON c.id = jr.contact_id WHERE c.email = %s AND jr.status IN ('booking_pending', 'ready_for_booking', 'draft') ORDER BY jr.updated_at DESC, jr.id DESC LIMIT 1",
+					$email
+				),
+				ARRAY_A
+			);
+			if ( $row ) {
+				return $row;
+			}
+		}
+
+		if ( $phone ) {
+			$row = $wpdb->get_row(
+				$wpdb->prepare(
+					"SELECT jr.* FROM {$requests_table} jr INNER JOIN {$contacts_table} c ON c.id = jr.contact_id WHERE c.phone = %s AND jr.status IN ('booking_pending', 'ready_for_booking', 'draft') ORDER BY jr.updated_at DESC, jr.id DESC LIMIT 1",
+					$phone
+				),
+				ARRAY_A
+			);
+			if ( $row ) {
+				return $row;
+			}
+		}
+
+		return null;
+	}
+
+	/**
 	 * @param int    $request_id Request.
 	 * @param string $draft_token Token.
 	 * @return bool
@@ -262,6 +305,7 @@ class Handik_Booking_App_Job_Requests_Service {
 			'selected_tasks'      => $row['selected_tasks'],
 			'is_project'          => ! empty( $row['is_project'] ),
 			'address_full'        => $row['address_full'],
+			'address_unit'        => $row['address_unit'],
 			'preferred_timeframe' => $row['preferred_timeframe'],
 			'short_description'   => $row['short_description'],
 			'photos'              => $row['photos'],

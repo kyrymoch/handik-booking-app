@@ -13,6 +13,7 @@ class Handik_Booking_App_Migrations {
 	protected $map = array(
 		'1.0.0' => 'Handik_Booking_App_Migration_100',
 		'1.1.0' => 'Handik_Booking_App_Migration_110',
+		'1.2.0' => 'Handik_Booking_App_Migration_120',
 	);
 
 	public function migrate() {

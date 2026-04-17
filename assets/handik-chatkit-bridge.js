@@ -164,6 +164,35 @@
 		] );
 	}
 
+	function filesFromDraftPhotos( photos ) {
+		if ( ! Array.isArray( photos ) || ! photos.length ) {
+			return Promise.resolve( [] );
+		}
+
+		return Promise.all( photos.map( function( photo, index ) {
+			const url = photo && ( photo.url || photo.source_url || photo.guid );
+			if ( ! url ) {
+				return Promise.resolve( null );
+			}
+
+			return window.fetch( url, { credentials: 'same-origin' } ).then( function( response ) {
+				if ( ! response.ok ) {
+					throw new Error( 'Photo fetch failed.' );
+				}
+				return response.blob();
+			} ).then( function( blob ) {
+				const mime = blob.type || photo.mime_type || 'image/jpeg';
+				const extension = mime.split( '/' )[1] || 'jpg';
+				const name = photo.name || ( 'job-photo-' + String( index + 1 ) + '.' + extension );
+				return new window.File( [ blob ], name, { type: mime } );
+			} ).catch( function() {
+				return null;
+			} );
+		} ) ).then( function( files ) {
+			return files.filter( Boolean );
+		} );
+	}
+
 	function mount( options ) {
 		if ( ! options || ! options.container || ! options.requestId || ! options.draftToken ) {
 			throw new Error( 'ChatKit bridge requires container, requestId, and draftToken.' );
@@ -201,6 +230,7 @@
 			readyTimer: null,
 			ready: false,
 			interactive: false,
+			prefillApplied: false,
 			element: null,
 			session: null
 		};
@@ -336,14 +366,48 @@
 				} : undefined,
 				initialThread: record.latestThreadId || undefined,
 				composer: {
+					placeholder: record.options.composerPlaceholder || undefined,
 					attachments: {
-						enabled: false
+						enabled: false,
+						uploadStrategy: { type: 'hosted' }
 					}
 				}
 			};
 		};
 
-		options.container.innerHTML = '<div class="handik-chatkit-bridge__loading"><div class="handik-loading-visual handik-loading-visual--assistant" aria-hidden="true"><span class="handik-bot-antenna"></span><span class="handik-bot-head"></span><span class="handik-battery"><span class="handik-battery-cell"></span><span class="handik-battery-cell"></span><span class="handik-battery-cell"></span></span></div><strong>Loading virtual assistant...</strong><span class="handik-booking-app__loading-subtitle">Charging the tiny robot brain for your next step.</span></div>';
+		const prefillComposer = function( session ) {
+			if ( record.prefillApplied || record.latestThreadId || ! record.element || typeof record.element.setComposerValue !== 'function' ) {
+				return Promise.resolve();
+			}
+
+			const draftContext = session && session.draft_context ? session.draft_context : {};
+			const photos = Array.isArray( draftContext.photos ) ? draftContext.photos : [];
+			const prefillText = String( record.options.prefillText || '' ).trim();
+			if ( ! photos.length && ! prefillText ) {
+				return Promise.resolve();
+			}
+
+			return filesFromDraftPhotos( photos ).then( function( files ) {
+				const params = {};
+				if ( prefillText ) {
+					params.text = prefillText;
+				}
+				if ( files.length ) {
+					params.files = files;
+				}
+				if ( ! params.text && ! params.files ) {
+					return;
+				}
+				record.prefillApplied = true;
+				return record.element.setComposerValue( params ).then( function() {
+					log( 'info', 'Assistant composer prefilled from draft context.', { has_text: !! params.text, files: ( params.files || [] ).length } );
+				} ).catch( function( error ) {
+					log( 'error', 'Assistant composer prefill failed.', { error: summarizeError( error ) } );
+				} );
+			} );
+		};
+
+		options.container.innerHTML = '<div class="handik-chatkit-bridge__loading"><div class="handik-loading-visual handik-loading-visual--assistant" aria-hidden="true"><span class="handik-bot-antenna"></span><span class="handik-bot-head"></span><span class="handik-battery"><span class="handik-battery-cell"></span><span class="handik-battery-cell"></span><span class="handik-battery-cell"></span></span></div><strong>' + ( record.options.loadingTitle || 'Loading virtual assistant...' ) + '</strong><span class="handik-booking-app__loading-subtitle">' + ( record.options.loadingSubtitle || 'Charging the tiny robot brain for your next step.' ) + '</span></div>';
 		log( 'info', 'Bridge mount started.', { request_id: record.options.requestId } );
 
 		const ready = waitForChatKitElement().then( function() {
@@ -382,6 +446,7 @@
 					window.clearTimeout( record.readyTimer );
 				}
 				log( 'info', 'ChatKit ready event fired.' );
+				prefillComposer( record.session );
 				if ( typeof record.options.onSessionReady === 'function' ) {
 					record.options.onSessionReady();
 				}
