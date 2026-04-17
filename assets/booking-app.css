@@ -270,6 +270,13 @@
 .handik-choice-grid {
 	grid-template-columns: repeat(2, minmax(180px, 260px));
 	justify-content: center;
+	align-items: start;
+}
+
+.handik-choice-wrap {
+	position: relative;
+	display: grid;
+	gap: 10px;
 }
 
 .handik-choice,
@@ -321,6 +328,26 @@
 	font-size: 0.88rem;
 	line-height: 1.45;
 	color: var(--handik-muted-text, #64748b);
+}
+
+.handik-choice-tooltip.is-attached {
+	position: relative;
+	margin: 0;
+	max-width: 260px;
+}
+
+.handik-choice-tooltip::after,
+.handik-footer-hint::after {
+	content: '';
+	position: absolute;
+	left: 50%;
+	transform: translateX(-50%) rotate(45deg);
+	width: 12px;
+	height: 12px;
+	background: inherit;
+	border-right: 1px solid color-mix(in srgb, var(--handik-accent, #0f766e) 18%, var(--handik-border, #dbe3ea));
+	border-bottom: 1px solid color-mix(in srgb, var(--handik-accent, #0f766e) 18%, var(--handik-border, #dbe3ea));
+	bottom: -7px;
 }
 
 .handik-task.is-selected,
@@ -593,12 +620,19 @@
 
 .handik-footer-hint {
 	display: none;
+	position: absolute;
+	right: 0;
+	bottom: calc(100% + 10px);
+	max-width: min(320px, 100vw - 48px);
 	padding: 12px 14px;
 	border-radius: 14px;
 	background: #eff6ff;
 	color: #1d4ed8;
 	font-size: 0.92rem;
 	text-align: center;
+	box-shadow: 0 16px 32px rgba(15, 23, 42, 0.14);
+	border: 1px solid rgba(29, 78, 216, 0.12);
+	z-index: 20;
 }
 
 .handik-footer-hint.is-visible {
@@ -608,6 +642,12 @@
 .handik-footer-hint.is-error {
 	background: #fef2f2;
 	color: #b91c1c;
+	border-color: rgba(185, 28, 28, 0.12);
+}
+
+.handik-footer-hint.is-error::after {
+	border-right-color: rgba(185, 28, 28, 0.12);
+	border-bottom-color: rgba(185, 28, 28, 0.12);
 }
 
 .handik-sidebar ul {
@@ -642,6 +682,16 @@
 	min-height: 720px;
 	border: 0;
 	background: #fff;
+}
+
+.handik-footer-actions__continue {
+	position: relative;
+	display: grid;
+}
+
+.handik-footer-actions.is-single {
+	grid-template-columns: minmax(220px, 320px);
+	justify-content: center;
 }
 
 @media (max-width: 900px) {
@@ -684,6 +734,10 @@
 		padding: 12px 14px;
 	}
 
+	.handik-choice-tooltip.is-attached {
+		max-width: 100%;
+	}
+
 	.handik-booking-app__screen-body {
 		padding-bottom: calc(88px + env(safe-area-inset-bottom, 0px));
 	}
@@ -705,6 +759,12 @@
 		border: 1px solid var(--handik-border, #dbe3ea);
 		box-shadow: 0 10px 28px rgba(15, 23, 42, 0.16);
 		backdrop-filter: blur(10px);
+	}
+
+	.handik-footer-hint {
+		right: 0;
+		left: auto;
+		max-width: min(300px, calc(100vw - 36px));
 	}
 
 	.handik-btn.is-back {

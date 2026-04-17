@@ -164,33 +164,42 @@
 		] );
 	}
 
-	function filesFromDraftPhotos( photos ) {
-		if ( ! Array.isArray( photos ) || ! photos.length ) {
-			return Promise.resolve( [] );
+	function buildContextMessage( session, prefillText ) {
+		const draftContext = session && session.draft_context ? session.draft_context : {};
+		const pieces = [];
+		const tasks = Array.isArray( draftContext.selected_tasks ) ? draftContext.selected_tasks : [];
+		const photos = Array.isArray( draftContext.photos ) ? draftContext.photos : [];
+		const preparedPrefill = sanitizeText( prefillText );
+
+		if ( preparedPrefill ) {
+			pieces.push( preparedPrefill );
+		}
+		if ( draftContext.client_type ) {
+			pieces.push( 'Client type: ' + sanitizeText( draftContext.client_type ) );
+		}
+		if ( tasks.length ) {
+			pieces.push( 'Selected tasks: ' + tasks.join( ', ' ) );
+		}
+		if ( draftContext.is_project ) {
+			pieces.push( 'Project / large job: yes' );
+		}
+		if ( draftContext.address_full ) {
+			pieces.push( 'Address: ' + sanitizeText( draftContext.address_full ) );
+		}
+		if ( draftContext.address_unit ) {
+			pieces.push( 'Unit or apartment: ' + sanitizeText( draftContext.address_unit ) );
+		}
+		if ( photos.length ) {
+			pieces.push( 'Reference photos uploaded in the booking form:' );
+			photos.forEach( function( photo, index ) {
+				const url = photo && ( photo.url || photo.source_url || photo.guid );
+				if ( url ) {
+					pieces.push( 'Photo ' + String( index + 1 ) + ': ' + url );
+				}
+			} );
 		}
 
-		return Promise.all( photos.map( function( photo, index ) {
-			const url = photo && ( photo.url || photo.source_url || photo.guid );
-			if ( ! url ) {
-				return Promise.resolve( null );
-			}
-
-			return window.fetch( url, { credentials: 'same-origin' } ).then( function( response ) {
-				if ( ! response.ok ) {
-					throw new Error( 'Photo fetch failed.' );
-				}
-				return response.blob();
-			} ).then( function( blob ) {
-				const mime = blob.type || photo.mime_type || 'image/jpeg';
-				const extension = mime.split( '/' )[1] || 'jpg';
-				const name = photo.name || ( 'job-photo-' + String( index + 1 ) + '.' + extension );
-				return new window.File( [ blob ], name, { type: mime } );
-			} ).catch( function() {
-				return null;
-			} );
-		} ) ).then( function( files ) {
-			return files.filter( Boolean );
-		} );
+		return pieces.filter( Boolean ).join( '\n' ).trim();
 	}
 
 	function mount( options ) {
@@ -230,7 +239,7 @@
 			readyTimer: null,
 			ready: false,
 			interactive: false,
-			prefillApplied: false,
+			contextPrimed: false,
 			element: null,
 			session: null
 		};
@@ -366,44 +375,29 @@
 				} : undefined,
 				initialThread: record.latestThreadId || undefined,
 				composer: {
-					placeholder: record.options.composerPlaceholder || undefined,
-					attachments: {
-						enabled: false,
-						uploadStrategy: { type: 'hosted' }
-					}
+					placeholder: record.options.composerPlaceholder || undefined
 				}
 			};
 		};
 
-		const prefillComposer = function( session ) {
-			if ( record.prefillApplied || record.latestThreadId || ! record.element || typeof record.element.setComposerValue !== 'function' ) {
+		const primeConversation = function( session ) {
+			if ( record.contextPrimed || record.latestThreadId || ! record.element || typeof record.element.sendUserMessage !== 'function' ) {
 				return Promise.resolve();
 			}
 
-			const draftContext = session && session.draft_context ? session.draft_context : {};
-			const photos = Array.isArray( draftContext.photos ) ? draftContext.photos : [];
-			const prefillText = String( record.options.prefillText || '' ).trim();
-			if ( ! photos.length && ! prefillText ) {
+			const text = buildContextMessage( session, record.options.prefillText );
+			if ( ! text ) {
 				return Promise.resolve();
 			}
 
-			return filesFromDraftPhotos( photos ).then( function( files ) {
-				const params = {};
-				if ( prefillText ) {
-					params.text = prefillText;
-				}
-				if ( files.length ) {
-					params.files = files;
-				}
-				if ( ! params.text && ! params.files ) {
-					return;
-				}
-				record.prefillApplied = true;
-				return record.element.setComposerValue( params ).then( function() {
-					log( 'info', 'Assistant composer prefilled from draft context.', { has_text: !! params.text, files: ( params.files || [] ).length } );
-				} ).catch( function( error ) {
-					log( 'error', 'Assistant composer prefill failed.', { error: summarizeError( error ) } );
-				} );
+			record.contextPrimed = true;
+			return record.element.sendUserMessage( {
+				text: text
+			} ).then( function() {
+				log( 'info', 'Assistant conversation primed from draft context.', { has_text: true } );
+			} ).catch( function( error ) {
+				record.contextPrimed = false;
+				log( 'error', 'Assistant draft context prime failed.', { error: summarizeError( error ) } );
 			} );
 		};
 
@@ -446,10 +440,12 @@
 					window.clearTimeout( record.readyTimer );
 				}
 				log( 'info', 'ChatKit ready event fired.' );
-				prefillComposer( record.session );
 				if ( typeof record.options.onSessionReady === 'function' ) {
 					record.options.onSessionReady();
 				}
+				window.setTimeout( function() {
+					primeConversation( record.session );
+				}, 180 );
 			} );
 
 			record.element.addEventListener( 'chatkit.error', function( event ) {

@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.0.14
+Stable tag: 2.0.15
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, returning-client auth, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,11 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.0.15 =
+* Stabilized hosted ChatKit by removing unsupported composer upload configuration and unsupported composer-prefill commands that were crashing the embedded chat.
+* Switched assistant draft handoff to a safer auto-sent context message so the same chat can resume more reliably.
+* Removed the first-screen Back button and upgraded client-choice plus Continue validation hints into attached bubble-style tooltips.
 
 = 2.0.14 =
 * Added a much larger admin-side UI control surface for texts, labels, colors, helper copy, and scoped custom CSS overrides.

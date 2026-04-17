@@ -11,6 +11,16 @@ class Handik_Booking_App_Changelog_Service {
 	public function get_entries() {
 		return array(
 			array(
+				'version'      => '2.0.15',
+				'date'         => '2026-04-16',
+				'title'        => 'Hosted ChatKit Stabilization And Bubble Hints',
+				'notes'        => array(
+					'Stabilized the hosted ChatKit bridge by removing unsupported composer upload configuration and unsupported composer-prefill commands that were crashing the embedded chat.',
+					'Changed the assistant draft handoff to a safer auto-sent context message so the chat can resume reliably without remount failures.',
+					'Removed the Back button from the first screen and upgraded client-choice plus Continue validation hints into attached bubble-style tooltips.',
+				),
+			),
+			array(
 				'version'      => '2.0.14',
 				'date'         => '2026-04-16',
 				'title'        => 'Admin UI Controls And Booking Reliability',

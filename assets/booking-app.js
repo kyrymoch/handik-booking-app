@@ -169,12 +169,17 @@
 
 		clientTypeTooltipMarkup() {
 			if ( 'new_client' === this.state.clientType ) {
-				return '<div class="handik-choice-tooltip"><strong>' + this.escape( config.strings.newClientTooltipTitle || 'New client' ) + '</strong><span>' + this.escape( config.strings.newClientTooltipText || '' ) + '</span></div>';
+				return '<div class="handik-choice-tooltip" role="status"><strong>' + this.escape( config.strings.newClientTooltipTitle || 'New client' ) + '</strong><span>' + this.escape( config.strings.newClientTooltipText || '' ) + '</span></div>';
 			}
 			if ( 'returning_client' === this.state.clientType ) {
-				return '<div class="handik-choice-tooltip"><strong>' + this.escape( config.strings.returningClientTooltipTitle || 'Returning client' ) + '</strong><span>' + this.escape( config.strings.returningClientTooltipText || '' ) + '</span></div>';
+				return '<div class="handik-choice-tooltip" role="status"><strong>' + this.escape( config.strings.returningClientTooltipTitle || 'Returning client' ) + '</strong><span>' + this.escape( config.strings.returningClientTooltipText || '' ) + '</span></div>';
 			}
 			return '';
+		}
+
+		clientTypeChoiceMarkup( type, action, label, hintTitle, hintText ) {
+			const isSelected = type === this.state.clientType;
+			return '<div class="handik-choice-wrap"><button data-action="' + this.escape( action ) + '" class="handik-choice ' + ( isSelected ? 'is-selected' : '' ) + '"><span class="handik-choice__title">' + this.escape( label ) + '</span><span class="handik-choice__hint">' + this.escape( hintTitle ) + '</span></button>' + ( isSelected ? '<div class="handik-choice-tooltip is-attached" role="status"><strong>' + this.escape( hintTitle ) + '</strong><span>' + this.escape( hintText ) + '</span></div>' : '' ) + '</div>';
 		}
 
 		goTo( step ) {
@@ -738,11 +743,10 @@
 						config.strings.clientTypeTitle || 'Who is booking today?',
 						'<p class="handik-booking-app__intro">' + this.escape( config.strings.clientTypeIntro || 'Choose the option that best matches your situation.' ) + '</p>' +
 						'<div class="handik-choice-grid">' +
-							'<button data-action="choose-new" class="handik-choice ' + ( 'new_client' === this.state.clientType ? 'is-selected' : '' ) + '"><span class="handik-choice__title">' + this.escape( config.strings.newClientLabel || 'New client' ) + '</span><span class="handik-choice__hint">' + this.escape( config.strings.newClientTooltipTitle || 'New client' ) + '</span></button>' +
-							'<button data-action="choose-returning" class="handik-choice ' + ( 'returning_client' === this.state.clientType ? 'is-selected' : '' ) + '"><span class="handik-choice__title">' + this.escape( config.strings.returningClientLabel || 'Returning client' ) + '</span><span class="handik-choice__hint">' + this.escape( config.strings.returningClientTooltipTitle || 'Returning client' ) + '</span></button>' +
+							this.clientTypeChoiceMarkup( 'new_client', 'choose-new', config.strings.newClientLabel || 'New client', config.strings.newClientTooltipTitle || 'New client', config.strings.newClientTooltipText || '' ) +
+							this.clientTypeChoiceMarkup( 'returning_client', 'choose-returning', config.strings.returningClientLabel || 'Returning client', config.strings.returningClientTooltipTitle || 'Returning client', config.strings.returningClientTooltipText || '' ) +
 						'</div>' +
-						this.clientTypeTooltipMarkup() +
-						this.footerActions( 'back-start', 'client-type-next', this.escape( config.strings.continue ), '', { continueMuted: ! this.stepCanContinue( 'client_type' ), backMuted: true } )
+						this.footerActions( 'back-start', 'client-type-next', this.escape( config.strings.continue ), '', { continueMuted: ! this.stepCanContinue( 'client_type' ), hideBack: true } )
 					);
 				case 'returning_verify':
 					return this.screen(
@@ -845,7 +849,9 @@
 			const backClass = ( settings.backIsUtility ? 'handik-btn is-secondary' : 'handik-btn is-secondary is-back' ) + ( settings.backMuted ? ' is-disabled' : '' );
 			const backInner = settings.backIsUtility ? '<span class="handik-btn__label">' + backText + '</span>' : '<span class="handik-btn__icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false" aria-hidden="true"><path d="M19 11H7.83l4.88-4.88L11.29 4.7 4 12l7.29 7.3 1.42-1.42L7.83 13H19v-2z"></path></svg></span><span class="handik-btn__label">' + backText + '</span>';
 			const continueClass = 'handik-btn ' + ( settings.continueMuted ? 'is-pending' : 'is-primary' ) + ' is-continue';
-			return '<div class="handik-footer-wrap"><div class="handik-footer-hint ' + ( this.state.footerHint ? 'is-visible' : '' ) + ( this.state.footerHintError ? ' is-error' : '' ) + '">' + this.escape( this.state.footerHint || '' ) + '</div><div class="handik-footer-actions is-sticky-mobile"><button data-action="' + this.escape( backAction ) + '" class="' + backClass + '"' + ( settings.backMuted ? ' aria-disabled="true"' : '' ) + '>' + backInner + '</button><button data-action="' + this.escape( continueAction ) + '" class="' + continueClass + '" aria-disabled="' + ( settings.continueMuted ? 'true' : 'false' ) + '">' + continueLabel + '</button></div></div>';
+			const backButton = settings.hideBack ? '' : '<button data-action="' + this.escape( backAction ) + '" class="' + backClass + '"' + ( settings.backMuted ? ' aria-disabled="true"' : '' ) + '>' + backInner + '</button>';
+			const hintClass = 'handik-footer-hint' + ( this.state.footerHint ? ' is-visible' : '' ) + ( this.state.footerHintError ? ' is-error' : '' );
+			return '<div class="handik-footer-wrap"><div class="handik-footer-actions is-sticky-mobile' + ( settings.hideBack ? ' is-single' : '' ) + '">' + backButton + '<div class="handik-footer-actions__continue"><div class="' + hintClass + '" role="status">' + this.escape( this.state.footerHint || '' ) + '</div><button data-action="' + this.escape( continueAction ) + '" class="' + continueClass + '" aria-disabled="' + ( settings.continueMuted ? 'true' : 'false' ) + '">' + continueLabel + '</button></div></div></div>';
 		}
 
 		normalizePhone( value ) {
