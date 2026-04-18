@@ -166,7 +166,11 @@
 		}
 
 		assistantCanContinue() {
-			return !! ( this.state.assistantResult && true === this.state.assistantResult.enough_information );
+			return !! (
+				( this.state.assistantResult && true === this.state.assistantResult.enough_information ) ||
+				this.state.assistantUserMessageSent ||
+				this.state.assistantThreadId
+			);
 		}
 
 		stepCanContinue( step ) {
@@ -656,7 +660,7 @@
 			}
 
 			const hasEnoughInformation = !! ( this.state.assistantResult && true === this.state.assistantResult.enough_information );
-			const hasUserInteraction = !! this.state.assistantUserMessageSent;
+			const hasUserInteraction = !! ( this.state.assistantUserMessageSent || this.state.assistantThreadId );
 			if ( ! hasEnoughInformation && ! hasUserInteraction ) {
 				this.setFooterHint( ( config.strings.errors && config.strings.errors.assistantRequired ) || 'Please send the virtual assistant a short description of the job before continuing.', true );
 				return;
@@ -748,6 +752,9 @@
 				},
 				onThreadChange: ( threadId ) => {
 					this.state.assistantThreadId = threadId || this.state.assistantThreadId;
+					if ( threadId ) {
+						this.state.assistantUserMessageSent = true;
+					}
 					this.setAssistantContinueBusy( false );
 				},
 				onMessageActivity: ( detail ) => {

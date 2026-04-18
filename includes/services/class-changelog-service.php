@@ -11,6 +11,16 @@ class Handik_Booking_App_Changelog_Service {
 	public function get_entries() {
 		return array(
 			array(
+				'version'      => '2.0.18',
+				'date'         => '2026-04-17',
+				'title'        => 'Assistant Continue Fallback For Hosted ChatKit Thread Glitches',
+				'notes'        => array(
+					'Virtual assistant Continue now treats an active or restored ChatKit thread as valid client interaction, even when hosted ChatKit drops the user-message event.',
+					'The Continue button can recover from the hosted ChatKit React event glitch by using the saved thread state as a fallback instead of blocking the booking flow.',
+					'Assistant step state now marks thread association as meaningful interaction so clients can proceed after a real chat conversation without retyping the request.',
+				),
+			),
+			array(
 				'version'      => '2.0.17',
 				'date'         => '2026-04-17',
 				'title'        => 'Draft-Bound Upload Security And Returning Client History Fixes',
