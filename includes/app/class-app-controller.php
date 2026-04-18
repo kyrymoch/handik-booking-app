@@ -288,4 +288,73 @@ class Handik_Booking_App_Controller {
 			'request'         => $request,
 		);
 	}
+
+	/**
+	 * @param int                  $request_id Request.
+	 * @param string               $draft_token Token.
+	 * @param array<string, mixed> $booking_payload Booking payload from Cal embed.
+	 * @return array<string, mixed>
+	 */
+	public function capture_booking( $request_id, $draft_token, array $booking_payload ) {
+		if ( ! $this->job_requests->verify_draft_token( $request_id, $draft_token ) ) {
+			return array( 'error' => __( 'Invalid draft token.', 'handik-booking-app' ), 'status' => 403 );
+		}
+
+		$request = $this->job_requests->get( $request_id );
+		if ( ! $request ) {
+			return array( 'error' => __( 'Draft request not found.', 'handik-booking-app' ), 'status' => 404 );
+		}
+
+		$booking_uid = sanitize_text_field( (string) ( $booking_payload['uid'] ?? $booking_payload['bookingUid'] ?? $booking_payload['bookingId'] ?? $booking_payload['id'] ?? '' ) );
+		if ( ! $booking_uid ) {
+			return array( 'error' => __( 'Booking payload did not include a Cal.com booking ID.', 'handik-booking-app' ), 'status' => 400 );
+		}
+
+		$payload = array(
+			'uid'           => $booking_uid,
+			'bookingUid'    => $booking_uid,
+			'bookingId'     => $booking_uid,
+			'booking_type'  => sanitize_key( (string) ( $request['booking_type'] ?? $booking_payload['booking_type'] ?? '' ) ),
+			'eventTypeSlug' => sanitize_text_field( (string) ( $booking_payload['eventTypeSlug'] ?? $booking_payload['eventSlug'] ?? '' ) ),
+			'title'         => sanitize_text_field( (string) ( $booking_payload['title'] ?? '' ) ),
+			'startTime'     => sanitize_text_field( (string) ( $booking_payload['startTime'] ?? '' ) ),
+			'endTime'       => sanitize_text_field( (string) ( $booking_payload['endTime'] ?? '' ) ),
+			'status'        => sanitize_key( (string) ( $booking_payload['status'] ?? 'booked' ) ),
+		);
+
+		$raw_status     = strtolower( (string) $payload['status'] );
+		$booking_status = in_array( $raw_status, array( 'cancelled', 'rescheduled' ), true ) ? $raw_status : 'booked';
+
+		$this->bookings->upsert_from_cal( $request_id, $payload, $booking_status );
+		if ( in_array( $booking_status, array( 'booked', 'rescheduled' ), true ) ) {
+			$this->job_requests->mark_complete( $request_id, $booking_status );
+		}
+
+		if ( function_exists( 'handik_booking_app' ) ) {
+			$plugin = handik_booking_app();
+			if ( ! empty( $plugin->logger ) ) {
+				$plugin->logger->info(
+					'Cal embed booking captured.',
+					array(
+						'request_id' => $request_id,
+						'booking_id' => $booking_uid,
+						'status'     => $booking_status,
+					)
+				);
+			}
+		}
+
+		$request = $this->job_requests->get( $request_id );
+		$booking = $this->bookings->find_latest_for_request( $request_id );
+
+		return array(
+			'success'        => true,
+			'request_id'     => $request_id,
+			'status'         => $booking_status,
+			'is_confirmed'   => in_array( $booking_status, array( 'booked', 'rescheduled' ), true ),
+			'cal_booking_id' => $booking_uid,
+			'booking'        => $booking,
+			'request'        => $request,
+		);
+	}
 }

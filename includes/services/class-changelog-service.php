@@ -11,6 +11,16 @@ class Handik_Booking_App_Changelog_Service {
 	public function get_entries() {
 		return array(
 			array(
+				'version'      => '2.0.19',
+				'date'         => '2026-04-17',
+				'title'        => 'Cal Booking Capture And Booking Screen Refresh',
+				'notes'        => array(
+					'Switched the booking step to use Cal embed events so a successful booking can be captured immediately in WordPress instead of waiting only for a webhook.',
+					'Added a backend booking-capture endpoint that writes the confirmed Cal booking into the local CRM and finishes the flow even when webhook delivery is delayed.',
+					'Redesigned the booking screen status area so it uses the current in-app UI language instead of the old plain confirmation note block.',
+				),
+			),
+			array(
 				'version'      => '2.0.18',
 				'date'         => '2026-04-17',
 				'title'        => 'Assistant Continue Fallback For Hosted ChatKit Thread Glitches',

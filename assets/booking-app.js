@@ -3,6 +3,7 @@
 
 	const config = window.HandikBookingAppConfig || {};
 	const GOOGLE_SCRIPT_ID = 'handik-google-maps-places';
+	const CAL_EMBED_SCRIPT_ID = 'handik-cal-embed-script';
 
 	class HandikBookingApp {
 		constructor( root ) {
@@ -11,6 +12,10 @@
 			this.addressAutocomplete = null;
 			this.bookingStatusTimer = null;
 			this.googleMapsPromise = null;
+			this.calEmbedPromise = null;
+			this.calEmbedNamespace = '';
+			this.calEmbedMountKey = '';
+			this.calEmbedListenerKey = '';
 			this.assistantBridge = null;
 			this.state = {
 				step: 'client_type',
@@ -604,6 +609,7 @@
 				if ( payload.is_confirmed ) {
 					this.state.bookingStatusMessage = config.strings.bookingConfirmed || 'Booking confirmed. Finishing your request...';
 					this.stopBookingStatusPolling();
+					this.notify( 'success', config.strings.bookingTitle || 'Book your time slot', this.state.bookingStatusMessage, 3600 );
 					this.goTo( 'success' );
 					return true;
 				}
@@ -613,7 +619,9 @@
 				} else if ( payload.cal_booking_id ) {
 					this.setBookingStatusMessage( config.strings.bookingWaiting || 'Stay on this screen while we wait for Cal.com to confirm the booking.', false );
 				} else if ( showMessage ) {
-					this.setBookingStatusMessage( 'We have not received a Cal.com booking confirmation yet.', false );
+					const message = config.strings.bookingWaiting || 'Finish the booking in the calendar above. This page will update automatically once Cal.com confirms the slot.';
+					this.setBookingStatusMessage( message, false );
+					this.notify( 'info', config.strings.bookingTitle || 'Book your time slot', message, 3600 );
 				}
 
 				return false;
@@ -646,11 +654,165 @@
 
 		setBookingStatusMessage( message, isError ) {
 			this.state.bookingStatusMessage = message || '';
-			const note = this.root.querySelector( '.handik-booking-app__booking-note' );
-			if ( note ) {
-				note.textContent = this.state.bookingStatusMessage;
-				note.classList.toggle( 'is-error', !! isError );
+			const card = this.root.querySelector( '.handik-booking-app__booking-status' );
+			const text = this.root.querySelector( '.handik-booking-app__booking-status-text' );
+			if ( text ) {
+				text.textContent = this.state.bookingStatusMessage;
 			}
+			if ( card ) {
+				card.classList.toggle( 'is-error', !! isError );
+				card.classList.toggle( 'is-success', ! isError && [ 'booked', 'rescheduled' ].includes( this.state.bookingStatus ) );
+			}
+		}
+
+		loadCalEmbedScript( origin ) {
+			if ( window.Cal && 'function' === typeof window.Cal ) {
+				return Promise.resolve( window.Cal );
+			}
+
+			if ( this.calEmbedPromise ) {
+				return this.calEmbedPromise;
+			}
+
+			this.calEmbedPromise = new Promise( ( resolve, reject ) => {
+				const existing = document.getElementById( CAL_EMBED_SCRIPT_ID );
+				if ( existing ) {
+					existing.addEventListener( 'load', () => resolve( window.Cal ) );
+					existing.addEventListener( 'error', () => reject( new Error( 'Cal.com embed failed to load.' ) ) );
+					return;
+				}
+
+				const script = document.createElement( 'script' );
+				script.id = CAL_EMBED_SCRIPT_ID;
+				script.async = true;
+				script.src = ( origin || 'https://app.cal.com' ) + '/embed/embed.js';
+				script.addEventListener( 'load', () => resolve( window.Cal ) );
+				script.addEventListener( 'error', () => reject( new Error( 'Cal.com embed failed to load.' ) ) );
+				document.head.appendChild( script );
+			} );
+
+			return this.calEmbedPromise;
+		}
+
+		parseBookingEmbedConfig() {
+			if ( ! this.state.bookingUrl ) {
+				return null;
+			}
+
+			const bookingUrl = new window.URL( this.state.bookingUrl, window.location.href );
+			const calLink = bookingUrl.pathname.replace( /^\/+/, '' );
+			const embedConfig = {};
+			const ignoredKeys = [ 'overlayCalendar', 'month', 'date', 'slot' ];
+
+			bookingUrl.searchParams.forEach( ( value, key ) => {
+				if ( ignoredKeys.includes( key ) ) {
+					return;
+				}
+				if ( 'phone' === key ) {
+					const normalizedPhone = String( value || '' ).replace( /[\s()-]+/g, '' );
+					embedConfig[ key ] = normalizedPhone && '+' !== normalizedPhone.charAt( 0 ) ? '+' + normalizedPhone : normalizedPhone;
+					return;
+				}
+				embedConfig[ key ] = value;
+			} );
+
+			return {
+				origin: bookingUrl.origin || 'https://cal.com',
+				calLink: calLink,
+				config: embedConfig
+			};
+		}
+
+		getCalNamespaceApi( parsedConfig ) {
+			if ( ! parsedConfig || ! window.Cal || 'function' !== typeof window.Cal ) {
+				return null;
+			}
+
+			const namespace = 'handik_booking_' + String( this.state.requestId || 'draft' );
+			this.calEmbedNamespace = namespace;
+			window.__handikCalNamespaces = window.__handikCalNamespaces || {};
+
+			if ( ! window.__handikCalNamespaces[ namespace ] ) {
+				window.Cal( 'init', namespace, { origin: parsedConfig.origin } );
+				window.__handikCalNamespaces[ namespace ] = true;
+			}
+
+			return window.Cal.ns && window.Cal.ns[ namespace ] ? window.Cal.ns[ namespace ] : null;
+		}
+
+		async captureBookingSuccess( detail ) {
+			if ( ! this.state.requestId || ! this.state.draftToken ) {
+				return;
+			}
+
+			try {
+				const payload = await this.api( 'booking-capture', {
+					request_id: this.state.requestId,
+					draft_token: this.state.draftToken,
+					booking_payload: detail || {}
+				} );
+
+				this.state.bookingStatus = payload.status || 'booked';
+				this.state.bookingStatusMessage = config.strings.bookingConfirmed || 'Booking confirmed. Finishing your request...';
+				this.stopBookingStatusPolling();
+				this.notify( 'success', config.strings.bookingTitle || 'Book your time slot', this.state.bookingStatusMessage, 3600 );
+				this.goTo( 'success' );
+			} catch ( error ) {
+				this.setBookingStatusMessage( error.message || 'We could not save the booking yet.', true );
+				this.notify( 'error', config.strings.bookingTitle || 'Book your time slot', error.message || 'We could not save the booking yet.' );
+			}
+		}
+
+		mountBookingEmbed() {
+			const container = this.root.querySelector( '.handik-booking-app__booking-embed' );
+			if ( ! container || ! this.state.bookingUrl ) {
+				return;
+			}
+
+			const parsedConfig = this.parseBookingEmbedConfig();
+			if ( ! parsedConfig || ! parsedConfig.calLink ) {
+				container.innerHTML = '<div class="handik-admin-card-like"><p>Booking calendar is not ready yet.</p></div>';
+				return;
+			}
+
+			const mountKey = String( this.state.requestId ) + '|' + this.state.bookingUrl;
+			this.loadCalEmbedScript( 'https://app.cal.com' ).then( () => {
+				const calApi = this.getCalNamespaceApi( parsedConfig );
+				if ( ! calApi ) {
+					throw new Error( 'Cal.com embed API is not available.' );
+				}
+
+				if ( this.calEmbedListenerKey !== mountKey ) {
+					calApi( 'on', {
+						action: 'bookingSuccessfulV2',
+						callback: ( event ) => {
+							const detail = event && event.detail && event.detail.data ? event.detail.data : {};
+							this.captureBookingSuccess( detail );
+						}
+					} );
+					calApi( 'on', {
+						action: 'linkFailed',
+						callback: ( event ) => {
+							const detail = event && event.detail && event.detail.data ? event.detail.data : {};
+							const message = detail.msg || 'Cal.com could not load the booking calendar.';
+							this.setBookingStatusMessage( message, true );
+							this.notify( 'error', config.strings.bookingTitle || 'Book your time slot', message );
+						}
+					} );
+					this.calEmbedListenerKey = mountKey;
+				}
+
+				container.innerHTML = '';
+				calApi( 'inline', {
+					elementOrSelector: container,
+					calLink: parsedConfig.calLink,
+					config: parsedConfig.config
+				} );
+				this.calEmbedMountKey = mountKey;
+			} ).catch( ( error ) => {
+				container.innerHTML = '<div class="handik-booking-app__booking-frame-wrap"><iframe class="handik-booking-app__booking-frame" src="' + this.escape( this.state.bookingUrl ) + '" title="Cal.com booking calendar" loading="lazy" referrerpolicy="strict-origin-when-cross-origin" allow="fullscreen"></iframe></div>';
+				this.setBookingStatusMessage( error.message || 'Cal.com embed could not load, so we opened the standard booking view instead.', false );
+			} );
 		}
 
 		async completeAssistantStep() {
@@ -808,6 +970,9 @@
 			}
 			if ( 'booking' === this.state.step ) {
 				window.setTimeout( () => this.startBookingStatusPolling(), 0 );
+				window.setTimeout( () => this.mountBookingEmbed(), 0 );
+			} else {
+				this.stopBookingStatusPolling();
 			}
 		}
 
@@ -914,13 +1079,12 @@
 		}
 
 		bookingMarkup() {
-			const note = this.state.bookingStatusMessage || config.strings.bookingWaiting || 'Stay on this screen while we wait for Cal.com to confirm the booking.';
-			const frame = this.state.bookingUrl
-				? '<div class="handik-booking-app__booking-frame-wrap"><iframe class="handik-booking-app__booking-frame" src="' + this.escape( this.state.bookingUrl ) + '" title="Cal.com booking calendar" loading="lazy" referrerpolicy="strict-origin-when-cross-origin" allow="fullscreen"></iframe></div>'
-				: '<div class="handik-admin-card-like"><p>Booking calendar is not ready yet.</p></div>';
-
-			return '<p class="handik-booking-app__booking-note">' + this.escape( note ) + '</p>' +
-				frame +
+			const note = this.state.bookingStatusMessage || config.strings.bookingWaiting || 'Finish the booking in the calendar below. We will update this page as soon as Cal.com confirms the slot.';
+			return '<div class="handik-booking-app__booking-status' + ( this.state.bookingStatus && [ 'booked', 'rescheduled' ].includes( this.state.bookingStatus ) ? ' is-success' : '' ) + '">' +
+					'<strong>' + this.escape( config.strings.bookingTitle || 'Book your time slot' ) + '</strong>' +
+					'<span class="handik-booking-app__booking-status-text">' + this.escape( note ) + '</span>' +
+				'</div>' +
+				'<div class="handik-booking-app__booking-embed"></div>' +
 				this.footerActions( 'open-booking', 'refresh-booking-status', this.escape( config.strings.completeBooking ), this.escape( config.strings.openBooking ), { backIsUtility: true } );
 		}
 

@@ -672,25 +672,53 @@ openai-chatkit::part(history-button) {
 	margin-bottom: 18px;
 }
 
-.handik-booking-app__booking-note {
-	margin: 14px 0 16px;
-	padding: 12px 14px;
-	border-radius: 14px;
-	background: #ecfeff;
-	color: #155e75;
-	text-align: center;
+.handik-booking-app__booking-status {
+	margin: 10px 0 16px;
+	padding: 14px 16px;
+	border-radius: 16px;
+	border: 1px solid rgba(15, 118, 110, 0.14);
+	background: linear-gradient(180deg, rgba(236, 253, 245, 0.92), rgba(240, 249, 255, 0.95));
+	display: grid;
+	gap: 6px;
 }
 
-.handik-booking-app__booking-note.is-error {
-	background: #fef2f2;
+.handik-booking-app__booking-status strong {
+	font-size: 0.96rem;
+}
+
+.handik-booking-app__booking-status-text {
+	color: var(--handik-muted-text, #64748b);
+	font-size: 0.92rem;
+	line-height: 1.5;
+}
+
+.handik-booking-app__booking-status.is-error {
+	border-color: rgba(220, 38, 38, 0.16);
+	background: linear-gradient(180deg, rgba(254, 242, 242, 0.95), rgba(255, 255, 255, 0.98));
+}
+
+.handik-booking-app__booking-status.is-error .handik-booking-app__booking-status-text {
 	color: #b91c1c;
 }
 
+.handik-booking-app__booking-status.is-success {
+	border-color: rgba(22, 163, 74, 0.2);
+	background: linear-gradient(180deg, rgba(240, 253, 244, 0.98), rgba(255, 255, 255, 0.98));
+}
+
+.handik-booking-app__booking-embed,
 .handik-booking-app__booking-frame-wrap {
 	border: 1px solid var(--handik-border, #dbe3ea);
 	border-radius: 16px;
 	overflow: hidden;
 	background: #fff;
+	min-height: 720px;
+}
+
+.handik-booking-app__booking-embed iframe {
+	width: 100%;
+	min-height: 720px;
+	border: 0;
 }
 
 .handik-booking-app__booking-frame {
@@ -891,6 +919,11 @@ openai-chatkit::part(history-button) {
 	}
 
 	.handik-booking-app__booking-frame {
+		min-height: 640px;
+	}
+
+	.handik-booking-app__booking-embed,
+	.handik-booking-app__booking-embed iframe {
 		min-height: 640px;
 	}
 

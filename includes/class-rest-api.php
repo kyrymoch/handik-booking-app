@@ -54,6 +54,7 @@ class Handik_Booking_App_REST_API {
 		$this->route( $namespace, '/client-log', array( $this, 'client_log' ), WP_REST_Server::CREATABLE );
 		$this->route( $namespace, '/booking-url', array( $this, 'booking_url' ), WP_REST_Server::CREATABLE );
 		$this->route( $namespace, '/booking-status', array( $this, 'booking_status' ), WP_REST_Server::CREATABLE );
+		$this->route( $namespace, '/booking-capture', array( $this, 'booking_capture' ), WP_REST_Server::CREATABLE );
 		$this->route( $namespace, '/booking-complete', array( $this, 'booking_complete' ), WP_REST_Server::CREATABLE );
 		$this->route( $namespace, '/cal-webhook', array( $this, 'cal_webhook' ), WP_REST_Server::CREATABLE );
 	}
@@ -146,6 +147,10 @@ class Handik_Booking_App_REST_API {
 
 	public function booking_status( WP_REST_Request $request ) {
 		return $this->respond( $this->app->booking_status( absint( $request->get_param( 'request_id' ) ), (string) $request->get_param( 'draft_token' ) ) );
+	}
+
+	public function booking_capture( WP_REST_Request $request ) {
+		return $this->respond( $this->app->capture_booking( absint( $request->get_param( 'request_id' ) ), (string) $request->get_param( 'draft_token' ), (array) $request->get_param( 'booking_payload' ) ) );
 	}
 
 	public function booking_complete( WP_REST_Request $request ) {

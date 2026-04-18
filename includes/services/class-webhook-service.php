@@ -62,6 +62,15 @@ class Handik_Booking_App_Webhook_Service {
 
 		$event     = $this->normalize_event_name( (string) ( $payload['triggerEvent'] ?? $payload['event'] ?? $payload['type'] ?? 'BOOKING_CREATED' ) );
 		$data      = ! empty( $payload['payload'] ) && is_array( $payload['payload'] ) ? $payload['payload'] : $payload;
+		$this->logger->info(
+			'Cal webhook received.',
+			array(
+				'event'         => $event,
+				'booking_id'    => $data['bookingId'] ?? $data['bookingUid'] ?? $data['uid'] ?? $data['id'] ?? '',
+				'has_metadata'  => ! empty( $data['metadata'] ),
+				'payload_shape' => ! empty( $payload['payload'] ) && is_array( $payload['payload'] ) ? 'nested' : 'flat',
+			)
+		);
 		$metadata  = array();
 		if ( ! empty( $data['metadata'] ) ) {
 			if ( is_array( $data['metadata'] ) ) {

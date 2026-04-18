@@ -136,9 +136,9 @@ class Handik_Booking_App_Settings {
 			'ui_error_assistant_required' => 'Please send the virtual assistant a short description of the job before continuing.',
 			'ui_error_name_email_required' => 'Name and email are required before you can continue.',
 			'ui_error_phone_or_email_required' => 'Enter your email or phone, then request a code.',
-			'ui_booking_waiting'        => 'Stay on this screen while we wait for Cal.com to confirm the booking.',
-			'ui_booking_confirmed'      => 'Booking confirmed. Finishing your request...',
-			'ui_booking_cancelled'      => 'This booking was cancelled. You can book another slot below.',
+			'ui_booking_waiting'        => 'Choose a time in the calendar below. We will update this page automatically as soon as the booking is confirmed.',
+			'ui_booking_confirmed'      => 'Your time slot is booked. Finishing your request now...',
+			'ui_booking_cancelled'      => 'This booking was cancelled. You can choose another slot below.',
 			'ui_address_placeholder'    => 'Start typing the address of the job',
 		);
 	}
