@@ -11,6 +11,16 @@ class Handik_Booking_App_Changelog_Service {
 	public function get_entries() {
 		return array(
 			array(
+				'version'      => '2.0.21',
+				'date'         => '2026-04-17',
+				'title'        => 'Cal Embed Bootstrap Fix',
+				'notes'        => array(
+					'Switched Cal.com loading from a plain script include to the official bootstrap-snippet pattern that creates window.Cal, the command queue, and namespace APIs reliably.',
+					'This fixes the booking-step failure where the app was falling back to iframe mode because Cal embed never exposed the expected API object.',
+					'Cal booking capture, logging, and success listeners now run on top of the proper bootstrap flow instead of the previous brittle script-load assumption.',
+				),
+			),
+			array(
 				'version'      => '2.0.20',
 				'date'         => '2026-04-17',
 				'title'        => 'Cal Embed Diagnostics And Cleaner Booking Screen',

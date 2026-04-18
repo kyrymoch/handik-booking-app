@@ -691,20 +691,73 @@
 			}
 
 			this.calEmbedPromise = new Promise( ( resolve, reject ) => {
-				const existing = document.getElementById( CAL_EMBED_SCRIPT_ID );
-				if ( existing ) {
-					existing.addEventListener( 'load', () => resolve( window.Cal ) );
-					existing.addEventListener( 'error', () => reject( new Error( 'Cal.com embed failed to load.' ) ) );
-					return;
-				}
+				const embedOrigin = origin || 'https://app.cal.com';
+				const embedUrl = embedOrigin.replace( /\/+$/, '' ) + '/embed/embed.js';
+				const bootstrap = () => {
+					if ( window.Cal && 'function' === typeof window.Cal ) {
+						return;
+					}
 
-				const script = document.createElement( 'script' );
-				script.id = CAL_EMBED_SCRIPT_ID;
-				script.async = true;
-				script.src = 'https://app.cal.com/embed/embed.js';
-				script.addEventListener( 'load', () => resolve( window.Cal ) );
-				script.addEventListener( 'error', () => reject( new Error( 'Cal.com embed failed to load.' ) ) );
-				document.head.appendChild( script );
+					window.Cal = window.Cal || function() {
+						const cal = window.Cal;
+						const args = arguments;
+						const push = function( api, apiArgs ) {
+							api.q = api.q || [];
+							api.q.push( apiArgs );
+						};
+
+						if ( ! cal.loaded ) {
+							cal.ns = cal.ns || {};
+							cal.q = cal.q || [];
+							const existing = document.getElementById( CAL_EMBED_SCRIPT_ID );
+							if ( ! existing ) {
+								const script = document.createElement( 'script' );
+								script.id = CAL_EMBED_SCRIPT_ID;
+								script.async = true;
+								script.src = embedUrl;
+								script.addEventListener( 'error', () => reject( new Error( 'Cal.com embed failed to load.' ) ) );
+								document.head.appendChild( script );
+							}
+							cal.loaded = true;
+						}
+
+						if ( 'init' === args[0] ) {
+							const namespace = args[1];
+							const api = function() {
+								push( api, arguments );
+							};
+							api.q = api.q || [];
+							if ( 'string' === typeof namespace ) {
+								cal.ns[ namespace ] = cal.ns[ namespace ] || api;
+								push( cal.ns[ namespace ], args );
+								push( cal, [ 'initNamespace', namespace ] );
+							} else {
+								push( cal, args );
+							}
+							return;
+						}
+
+						push( cal, args );
+					};
+				};
+
+				bootstrap();
+
+				let attempts = 0;
+				const poll = () => {
+					attempts += 1;
+					if ( window.Cal && 'function' === typeof window.Cal ) {
+						resolve( window.Cal );
+						return;
+					}
+					if ( attempts >= 50 ) {
+						reject( new Error( 'Cal.com embed API is not available.' ) );
+						return;
+					}
+					window.setTimeout( poll, 100 );
+				};
+
+				poll();
 			} );
 
 			return this.calEmbedPromise;

@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.0.20
+Stable tag: 2.0.21
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, returning-client auth, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,11 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.0.21 =
+* Switched Cal.com loading to the official bootstrap-snippet pattern so the embed exposes `window.Cal` and namespace APIs reliably.
+* Fixed the booking-step failure where the app fell back to iframe mode because the previous integration assumed a plain script include was enough.
+* Kept the new Cal embed diagnostics and booking-capture path on top of the corrected bootstrap flow.
 
 = 2.0.20 =
 * Removed the old framed booking status banner so the final booking step stays visually clean around the embedded calendar.
