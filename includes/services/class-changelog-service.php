@@ -11,6 +11,16 @@ class Handik_Booking_App_Changelog_Service {
 	public function get_entries() {
 		return array(
 			array(
+				'version'      => '2.0.22',
+				'date'         => '2026-04-17',
+				'title'        => 'Admin Booking Details And Cleaner CRM Navigation',
+				'notes'        => array(
+					'Moved Bookings into its own admin menu section and regrouped requests with contacts and addresses under a clearer Clients & Requests CRM area.',
+					'Added a detailed booking view with booking status, Cal data, client info, request details, address map, attached photos, and saved chat activity for the request.',
+					'Expanded admin styling so booking details are easier to scan with cards, chips, galleries, and structured log blocks.',
+				),
+			),
+			array(
 				'version'      => '2.0.21',
 				'date'         => '2026-04-17',
 				'title'        => 'Cal Embed Bootstrap Fix',

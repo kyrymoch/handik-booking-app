@@ -76,6 +76,17 @@ class Handik_Booking_App_Bookings_Service {
 	}
 
 	/**
+	 * @param int $booking_id Booking ID.
+	 * @return array<string, mixed>|null
+	 */
+	public function get( $booking_id ) {
+		global $wpdb;
+		$table = Handik_Booking_App_DB::table( 'bookings' );
+		$row   = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$table} WHERE id = %d LIMIT 1", $booking_id ), ARRAY_A );
+		return $row ?: null;
+	}
+
+	/**
 	 * @param int $job_request_id Request.
 	 * @return array<string, mixed>|null
 	 */

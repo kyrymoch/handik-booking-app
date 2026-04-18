@@ -79,4 +79,15 @@ class Handik_Booking_App_Addresses_Service {
 		$table = Handik_Booking_App_DB::table( 'addresses' );
 		return $wpdb->get_results( $wpdb->prepare( "SELECT * FROM {$table} ORDER BY updated_at DESC LIMIT %d", $limit ), ARRAY_A );
 	}
+
+	/**
+	 * @param int $address_id Address ID.
+	 * @return array<string, mixed>|null
+	 */
+	public function get( $address_id ) {
+		global $wpdb;
+		$table = Handik_Booking_App_DB::table( 'addresses' );
+		$row   = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$table} WHERE id = %d LIMIT 1", $address_id ), ARRAY_A );
+		return $row ?: null;
+	}
 }
