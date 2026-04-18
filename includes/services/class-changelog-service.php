@@ -11,6 +11,16 @@ class Handik_Booking_App_Changelog_Service {
 	public function get_entries() {
 		return array(
 			array(
+				'version'      => '2.0.23',
+				'date'         => '2026-04-18',
+				'title'        => 'Interactive Notification System Refresh',
+				'notes'        => array(
+					'Replaced the old mix of inline hints, footer bubbles, and assistant helper blocks with one unified interactive notification system across the booking app.',
+					'Added success, error, warning, info, and task-description notifications with richer dark styling, timed progress bars, close controls, and pause-on-hover or touch-hold behavior.',
+					'Task selections, client-type choices, and blocked Continue actions now use the new notification layer instead of the previous scattered tooltip and hint UI.',
+				),
+			),
+			array(
 				'version'      => '2.0.22',
 				'date'         => '2026-04-17',
 				'title'        => 'Admin Booking Details And Cleaner CRM Navigation',

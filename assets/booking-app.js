@@ -16,6 +16,7 @@
 			this.calEmbedNamespace = '';
 			this.calEmbedMountKey = '';
 			this.calEmbedListenerKey = '';
+			this.notificationTimers = new Map();
 			this.assistantBridge = null;
 			this.state = {
 				step: 'client_type',
@@ -42,6 +43,7 @@
 				message: '',
 				footerHint: '',
 				footerHintError: false,
+				lastAssistantNotice: '',
 				loading: false,
 				photoUploading: false,
 				bookingOpened: false,
@@ -107,28 +109,166 @@
 		}
 
 		setMessage( message ) {
-			this.state.message = message || '';
-			this.render();
+			if ( message ) {
+				this.notify( 'info', config.strings.infoTitle || 'Notice', message, 4200 );
+			}
 		}
 
-		notify( type, title, message, duration ) {
+		notify( type, title, message, duration, options ) {
+			const settings = options || {};
 			const item = {
 				id: 'notice_' + Math.random().toString( 36 ).slice( 2 ),
 				type: type || 'info',
 				title: title || '',
 				message: message || '',
-				duration: duration || 3200
+				duration: duration || 3200,
+				visible: false,
+				closing: false,
+				paused: false,
+				remaining: duration || 3200,
+				startedAt: 0,
+				meta: Array.isArray( settings.meta ) ? settings.meta : []
 			};
 			this.state.notifications = this.state.notifications.concat( item ).slice( -4 );
 			this.renderNotifications();
-			window.setTimeout( () => {
-				this.dismissNotification( item.id );
-			}, item.duration );
+			window.requestAnimationFrame( () => {
+				this.updateNotification( item.id, { visible: true } );
+				this.resumeNotification( item.id );
+			} );
+		}
+
+		notifyTask( task ) {
+			if ( ! task ) {
+				return;
+			}
+
+			const meta = [
+				{ label: config.strings.taskNoticeBadge || 'Task details', tone: 'task' }
+			];
+
+			if ( task.rate_label ) {
+				meta.push( { label: task.rate_label, tone: 'rate' } );
+			}
+
+			this.notify( 'task', task.label || ( config.strings.taskTitle || 'Task' ), task.description || '', 5200, { meta: meta } );
+		}
+
+		updateNotification( id, patch ) {
+			let changed = false;
+			this.state.notifications = this.state.notifications.map( ( item ) => {
+				if ( item.id !== id ) {
+					return item;
+				}
+				changed = true;
+				return Object.assign( {}, item, patch || {} );
+			} );
+
+			if ( changed ) {
+				this.renderNotifications();
+			}
+		}
+
+		pauseNotification( id ) {
+			const timer = this.notificationTimers.get( id );
+			const item = this.state.notifications.find( ( entry ) => entry.id === id );
+			if ( ! item || item.paused || item.closing ) {
+				return;
+			}
+
+			if ( timer ) {
+				window.clearTimeout( timer );
+				this.notificationTimers.delete( id );
+			}
+
+			const elapsed = item.startedAt ? Date.now() - item.startedAt : 0;
+			this.updateNotification( id, {
+				paused: true,
+				remaining: Math.max( 0, ( item.remaining || item.duration || 3200 ) - elapsed ),
+				startedAt: 0
+			} );
+		}
+
+		resumeNotification( id ) {
+			const item = this.state.notifications.find( ( entry ) => entry.id === id );
+			if ( ! item || item.closing ) {
+				return;
+			}
+
+			const remaining = Math.max( 250, item.remaining || item.duration || 3200 );
+			const timeout = window.setTimeout( () => {
+				this.dismissNotification( id );
+			}, remaining );
+
+			this.notificationTimers.set( id, timeout );
+			this.updateNotification( id, {
+				paused: false,
+				startedAt: Date.now(),
+				remaining: remaining
+			} );
 		}
 
 		dismissNotification( id ) {
-			this.state.notifications = this.state.notifications.filter( ( item ) => item.id !== id );
-			this.renderNotifications();
+			const timer = this.notificationTimers.get( id );
+			if ( timer ) {
+				window.clearTimeout( timer );
+				this.notificationTimers.delete( id );
+			}
+			this.updateNotification( id, { visible: false, closing: true, paused: false } );
+			window.setTimeout( () => {
+				this.state.notifications = this.state.notifications.filter( ( item ) => item.id !== id );
+				this.renderNotifications();
+			}, 240 );
+		}
+
+		notificationIcon( type ) {
+			switch ( type ) {
+				case 'success':
+					return '&check;';
+				case 'error':
+					return '&times;';
+				case 'warning':
+					return '&#9888;';
+				case 'task':
+					return '&#128736;';
+				default:
+					return '&#9432;';
+			}
+		}
+
+		renderNotificationMeta( item ) {
+			if ( ! item.meta || ! item.meta.length ) {
+				return '';
+			}
+
+			return '<div class="handik-toast__meta">' + item.meta.map( ( meta ) => (
+				'<span class="handik-toast__pill handik-toast__pill--' + this.escape( meta.tone || 'neutral' ) + '">' + this.escape( meta.label || '' ) + '</span>'
+			) ).join( '' ) + '</div>';
+		}
+
+		renderNotificationClose( item ) {
+			return '<button type="button" class="handik-toast__close" data-notification-dismiss="' + this.escape( item.id ) + '" aria-label="Dismiss notification">&times;</button>';
+		}
+
+		renderNotificationCard( item ) {
+			const classes = [
+				'handik-toast',
+				'handik-toast--' + this.escape( item.type ),
+				item.visible ? 'is-visible' : '',
+				item.closing ? 'is-closing' : '',
+				item.paused ? 'is-paused' : ''
+			].filter( Boolean ).join( ' ' );
+
+			return '<div class="' + classes + '" style="--handik-toast-duration:' + Math.max( 400, item.remaining || item.duration || 3200 ) + 'ms;" data-notification-id="' + this.escape( item.id ) + '">' +
+					'<div class="handik-toast__icon" aria-hidden="true">' + this.notificationIcon( item.type ) + '</div>' +
+					'<div class="handik-toast__content">' +
+						this.renderNotificationMeta( item ) +
+						'<div class="handik-toast__body">' +
+							'<strong>' + this.escape( item.title ) + '</strong>' +
+							'<span>' + this.escape( item.message ) + '</span>' +
+						'</div>' +
+					'</div>' +
+					this.renderNotificationClose( item ) +
+				'</div>';
 		}
 
 		renderNotifications() {
@@ -137,42 +277,51 @@
 				return;
 			}
 
-			root.innerHTML = this.state.notifications.map( ( item ) => (
-				'<div class="handik-toast handik-toast--' + this.escape( item.type ) + '" style="--handik-toast-duration:' + Math.max( 1200, parseInt( item.duration, 10 ) || 3200 ) + 'ms;">' +
-					'<div class="handik-toast__body">' +
-						'<strong>' + this.escape( item.title ) + '</strong>' +
-						'<span>' + this.escape( item.message ) + '</span>' +
-					'</div>' +
-					'<button type="button" class="handik-toast__close" data-notification-dismiss="' + this.escape( item.id ) + '">&times;</button>' +
-				'</div>'
-			) ).join( '' );
+			root.innerHTML = this.state.notifications.map( ( item ) => this.renderNotificationCard( item ) ).join( '' );
+
+			root.querySelectorAll( '.handik-toast' ).forEach( ( node ) => {
+				const id = node.getAttribute( 'data-notification-id' );
+				node.addEventListener( 'mouseenter', () => this.pauseNotification( id ) );
+				node.addEventListener( 'mouseleave', () => this.resumeNotification( id ) );
+				node.addEventListener( 'touchstart', () => this.pauseNotification( id ), { passive: true } );
+				node.addEventListener( 'touchend', () => this.resumeNotification( id ), { passive: true } );
+				node.addEventListener( 'touchcancel', () => this.resumeNotification( id ), { passive: true } );
+			} );
 
 			root.querySelectorAll( '[data-notification-dismiss]' ).forEach( ( button ) => {
 				button.addEventListener( 'click', () => this.dismissNotification( button.getAttribute( 'data-notification-dismiss' ) ) );
 			} );
 		}
 
+		showStepWarning( step, fallbackMessage ) {
+			this.notify(
+				'warning',
+				config.strings.warningTitle || 'Check this step',
+				this.stepBlockMessage( step ) || fallbackMessage || '',
+				4200
+			);
+		}
+
 		setFooterHint( message, isError ) {
-			this.state.footerHint = message || '';
-			this.state.footerHintError = !! isError;
-			const hint = this.root.querySelector( '.handik-footer-hint' );
-			if ( hint ) {
-				hint.textContent = this.state.footerHint;
-				hint.classList.toggle( 'is-visible', !! this.state.footerHint );
-				hint.classList.toggle( 'is-error', !! isError );
+			if ( message ) {
+				this.notify( isError ? 'warning' : 'info', isError ? ( config.strings.warningTitle || 'Check this step' ) : ( config.strings.infoTitle || 'Notice' ), message, 4200 );
 			}
+			this.state.footerHint = '';
+			this.state.footerHintError = false;
 		}
 
 		clearFooterHint() {
-			this.setFooterHint( '', false );
+			this.state.footerHint = '';
+			this.state.footerHintError = false;
 		}
 
 		setAssistantNotice( message, isError ) {
-			const note = this.root.querySelector( '.handik-booking-app__assistant-note' );
-			if ( note ) {
-				note.textContent = message || '';
-				note.classList.toggle( 'is-error', !! isError );
+			const next = String( message || '' ) + '|' + ( isError ? '1' : '0' );
+			if ( ! message || this.state.lastAssistantNotice === next ) {
+				return;
 			}
+			this.state.lastAssistantNotice = next;
+			this.notify( isError ? 'warning' : 'info', config.strings.assistantTitle || 'Virtual assistant', message, isError ? 5200 : 4200 );
 		}
 
 		setAssistantContinueBusy( isBusy ) {
@@ -283,7 +432,7 @@
 				this.state.selectedTasks = this.state.selectedTasks.concat( id );
 				const task = this.findTask( id );
 				if ( task ) {
-					this.notify( 'info', task.label, [ task.description || '', task.rate_label || '' ].filter( Boolean ).join( '  ' ) );
+					this.notifyTask( task );
 				}
 			}
 			this.state.jobShape = this.state.isProject ? 'project' : ( this.state.selectedTasks.length > 1 ? 'multiple_tasks' : 'single_task' );
@@ -458,13 +607,9 @@
 					phone: this.state.contact.phone,
 					redirect: window.location.href
 				} );
-				this.state.message = '';
 				this.setFooterHint( response.message, false );
-				this.notify( 'success', 'Code sent', response.message );
 			} catch ( error ) {
-				this.state.message = '';
 				this.setFooterHint( error.message, true );
-				this.notify( 'error', 'Could not send code', error.message );
 			}
 			this.state.loading = false;
 			this.render();
@@ -485,17 +630,13 @@
 				} );
 				this.state.verifiedProfile = response.profile;
 				this.prefillFromProfile();
-				this.state.message = '';
 				this.setFooterHint( 'Verification successful.', false );
-				this.notify( 'success', 'Welcome back', 'Verification successful.' );
 				this.state.loading = false;
 				this.goTo( 'task_selection' );
 			} catch ( error ) {
 				this.state.loading = false;
-				this.state.message = '';
 				this.render();
 				this.setFooterHint( error.message, true );
-				this.notify( 'error', 'Verification failed', error.message );
 			}
 		}
 
@@ -563,15 +704,12 @@
 				const response = await this.api( 'app/draft', this.buildDraftPayload( 'assistant' ) );
 				this.state.requestId = response.request_id;
 				this.state.draftToken = response.draft_token;
-				this.state.message = '';
 				this.state.loading = false;
 				this.goTo( 'assistant' );
 			} catch ( error ) {
 				this.state.loading = false;
-				this.state.message = '';
 				this.render();
 				this.setFooterHint( error.message, true );
-				this.notify( 'error', 'Could not save draft', error.message );
 			}
 		}
 
@@ -598,10 +736,8 @@
 				this.goTo( 'booking' );
 			} catch ( error ) {
 				this.state.loading = false;
-				this.state.message = '';
 				this.render();
 				this.setFooterHint( error.message, true );
-				this.notify( 'error', 'Booking step failed', error.message );
 			}
 		}
 
@@ -1091,8 +1227,7 @@
 		}
 
 		render() {
-			const message = this.state.message ? '<div class="handik-booking-app__alert">' + this.escape( this.state.message ) + '</div>' : '';
-			this.root.innerHTML = '<div class="handik-booking-app__shell">' + this.progressMarkup() + message + this.stepMarkup() + '<div class="handik-booking-app__notifications"></div></div>';
+			this.root.innerHTML = '<div class="handik-booking-app__shell">' + this.progressMarkup() + this.stepMarkup() + '<div class="handik-booking-app__notifications"></div></div>';
 			this.bind();
 			this.renderNotifications();
 			if ( 'assistant' === this.state.step ) {
@@ -1196,7 +1331,7 @@
 		}
 
 		assistantMarkup() {
-			return '<div class="handik-assistant-layout"><div class="handik-assistant-panel"><p class="handik-booking-app__assistant-note">' + this.escape( config.strings.assistantHelper || 'Describe the job in chat, ask questions if needed, then tap Continue when you are ready.' ) + '</p><div class="handik-booking-app__assistant-host"></div>' + this.footerActions( 'back-photos', 'assistant-next', this.state.loading ? 'Saving...' : this.escape( config.strings.continue ), '', { continueMuted: false } ) + '</div></div>';
+			return '<div class="handik-assistant-layout"><div class="handik-assistant-panel"><div class="handik-booking-app__assistant-host"></div>' + this.footerActions( 'back-photos', 'assistant-next', this.state.loading ? 'Saving...' : this.escape( config.strings.continue ), '', { continueMuted: false } ) + '</div></div>';
 		}
 
 		contactMarkup() {
@@ -1223,9 +1358,8 @@
 			const backInner = settings.backIsUtility ? '<span class="handik-btn__label">' + backText + '</span>' : '<span class="handik-btn__icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false" aria-hidden="true"><path d="M19 11H7.83l4.88-4.88L11.29 4.7 4 12l7.29 7.3 1.42-1.42L7.83 13H19v-2z"></path></svg></span><span class="handik-btn__label">' + backText + '</span>';
 			const continueClass = 'handik-btn ' + ( settings.continueMuted ? 'is-pending' : 'is-primary' ) + ' is-continue';
 			const backButton = settings.hideBack ? '' : '<button data-action="' + this.escape( backAction ) + '" class="' + backClass + '"' + ( settings.backMuted ? ' aria-disabled="true"' : '' ) + '>' + backInner + '</button>';
-			const hintClass = 'handik-footer-hint' + ( this.state.footerHint ? ' is-visible' : '' ) + ( this.state.footerHintError ? ' is-error' : '' );
 			const utilityButton = settings.utilityAction ? '<button data-action="' + this.escape( settings.utilityAction ) + '" class="handik-btn is-text">' + this.escape( settings.utilityLabel || '' ) + '</button>' : '';
-			return '<div class="handik-footer-wrap"><div class="handik-footer-actions is-sticky-mobile' + ( settings.hideBack ? ' is-single' : '' ) + '">' + backButton + '<div class="handik-footer-actions__continue"><div class="' + hintClass + '" role="status">' + this.escape( this.state.footerHint || '' ) + '</div>' + utilityButton + '<button data-action="' + this.escape( continueAction ) + '" class="' + continueClass + '" aria-disabled="' + ( settings.continueMuted ? 'true' : 'false' ) + '">' + continueLabel + '</button></div></div></div>';
+			return '<div class="handik-footer-wrap"><div class="handik-footer-actions is-sticky-mobile' + ( settings.hideBack ? ' is-single' : '' ) + '">' + backButton + '<div class="handik-footer-actions__continue">' + utilityButton + '<button data-action="' + this.escape( continueAction ) + '" class="' + continueClass + '" aria-disabled="' + ( settings.continueMuted ? 'true' : 'false' ) + '">' + continueLabel + '</button></div></div></div>';
 		}
 
 		normalizePhone( value ) {
@@ -1400,18 +1534,14 @@
 					if ( ! photoInput.files.length ) {
 						return;
 					}
-					this.state.message = '';
 					this.state.photoUploading = true;
 					this.clearFooterHint();
 					this.render();
 					try {
 						await this.uploadFiles( photoInput.files );
-						this.state.message = '';
 						this.notify( 'success', 'Photos added', 'Your photos were uploaded and attached to this request.' );
 					} catch ( error ) {
-						this.state.message = '';
 						this.setFooterHint( error.message, true );
-						this.notify( 'error', 'Photo upload failed', error.message );
 					}
 					this.state.photoUploading = false;
 					this.render();

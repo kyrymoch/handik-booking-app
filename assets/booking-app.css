@@ -233,8 +233,7 @@
 	color: #155e75;
 }
 
-.handik-booking-app__alert.is-error,
-.handik-booking-app__assistant-note.is-error {
+.handik-booking-app__alert.is-error {
 	background: #fef2f2;
 	color: #b91c1c;
 }
@@ -307,48 +306,6 @@
 	font-size: 0.8rem;
 	font-weight: 500;
 	color: var(--handik-muted-text, #64748b);
-}
-
-.handik-choice-tooltip {
-	display: grid;
-	gap: 6px;
-	max-width: 520px;
-	margin: 6px auto 0;
-	padding: 14px 16px;
-	border-radius: 16px;
-	border: 1px solid color-mix(in srgb, var(--handik-accent, #0f766e) 18%, var(--handik-border, #dbe3ea));
-	background: color-mix(in srgb, var(--handik-accent, #0f766e) 7%, #ffffff);
-	text-align: center;
-}
-
-.handik-choice-tooltip strong {
-	font-size: 0.95rem;
-}
-
-.handik-choice-tooltip span {
-	font-size: 0.88rem;
-	line-height: 1.45;
-	color: var(--handik-muted-text, #64748b);
-}
-
-.handik-choice-tooltip.is-attached {
-	position: relative;
-	margin: 0;
-	max-width: 260px;
-}
-
-.handik-choice-tooltip::after,
-.handik-footer-hint::after {
-	content: '';
-	position: absolute;
-	left: 50%;
-	transform: translateX(-50%) rotate(45deg);
-	width: 12px;
-	height: 12px;
-	background: inherit;
-	border-right: 1px solid color-mix(in srgb, var(--handik-accent, #0f766e) 18%, var(--handik-border, #dbe3ea));
-	border-bottom: 1px solid color-mix(in srgb, var(--handik-accent, #0f766e) 18%, var(--handik-border, #dbe3ea));
-	bottom: -7px;
 }
 
 .handik-task.is-selected,
@@ -622,49 +579,9 @@ openai-chatkit::part(history-button) {
 	display: none !important;
 }
 
-.handik-booking-app__assistant-note {
-	margin: -2px 0 2px;
-	color: var(--handik-muted-text, #64748b);
-	font-size: 0.92rem;
-	line-height: 1.45;
-	text-align: center;
-}
-
 .handik-footer-wrap {
 	display: grid;
 	gap: 10px;
-}
-
-.handik-footer-hint {
-	display: none;
-	position: absolute;
-	right: 0;
-	bottom: calc(100% + 10px);
-	max-width: min(320px, 100vw - 48px);
-	padding: 12px 14px;
-	border-radius: 14px;
-	background: #eff6ff;
-	color: #1d4ed8;
-	font-size: 0.92rem;
-	text-align: center;
-	box-shadow: 0 16px 32px rgba(15, 23, 42, 0.14);
-	border: 1px solid rgba(29, 78, 216, 0.12);
-	z-index: 20;
-}
-
-.handik-footer-hint.is-visible {
-	display: block;
-}
-
-.handik-footer-hint.is-error {
-	background: #fef2f2;
-	color: #b91c1c;
-	border-color: rgba(185, 28, 28, 0.12);
-}
-
-.handik-footer-hint.is-error::after {
-	border-right-color: rgba(185, 28, 28, 0.12);
-	border-bottom-color: rgba(185, 28, 28, 0.12);
 }
 
 .handik-sidebar ul {
@@ -732,29 +649,42 @@ openai-chatkit::part(history-button) {
 .handik-booking-app__notifications {
 	position: fixed;
 	right: 18px;
-	bottom: 18px;
-	z-index: 80;
+	top: 18px;
+	z-index: 120;
 	display: grid;
-	gap: 10px;
+	gap: 12px;
 	pointer-events: none;
+	width: min(420px, calc(100vw - 24px));
 }
 
 .handik-toast {
-	min-width: 260px;
-	max-width: min(360px, calc(100vw - 28px));
+	min-width: 0;
+	max-width: 100%;
 	display: flex;
 	align-items: flex-start;
-	gap: 12px;
-	padding: 14px 16px;
-	border-radius: 16px;
-	border: 1px solid rgba(15, 23, 42, 0.08);
-	background: rgba(255, 255, 255, 0.96);
-	box-shadow: 0 20px 40px rgba(15, 23, 42, 0.18);
-	backdrop-filter: blur(12px);
+	gap: 14px;
+	padding: 16px 18px 18px;
+	border-radius: 20px;
+	border: 1px solid rgba(255, 255, 255, 0.08);
+	background: rgba(13, 18, 24, 0.96);
+	box-shadow: 0 24px 40px rgba(0, 0, 0, 0.34);
+	backdrop-filter: blur(10px);
 	pointer-events: auto;
 	position: relative;
 	overflow: hidden;
-	animation: handik-toast-in 0.28s cubic-bezier(0.34, 1.4, 0.64, 1);
+	opacity: 0;
+	transform: translateY(-10px) scale(0.98);
+	transition: opacity 0.24s ease, transform 0.24s ease;
+}
+
+.handik-toast.is-visible {
+	opacity: 1;
+	transform: translateY(0) scale(1);
+}
+
+.handik-toast.is-closing {
+	opacity: 0;
+	transform: translateY(-12px) scale(0.97);
 }
 
 .handik-toast::after {
@@ -763,45 +693,113 @@ openai-chatkit::part(history-button) {
 	left: 0;
 	right: 0;
 	bottom: 0;
-	height: 3px;
-	background: rgba(255, 255, 255, 0.45);
+	height: 4px;
+	background: currentColor;
 	transform-origin: left center;
 	animation: handik-toast-progress var(--handik-toast-duration, 3200ms) linear forwards;
+	opacity: 0.72;
+}
+
+.handik-toast.is-paused::after {
+	animation-play-state: paused;
 }
 
 .handik-toast--success {
-	border-color: rgba(22, 163, 74, 0.22);
-	background: color-mix(in srgb, #16a34a 10%, #ffffff);
+	background: linear-gradient(180deg, rgba(38, 58, 11, 0.98), rgba(34, 51, 12, 0.96));
+	border-color: rgba(132, 204, 22, 0.36);
+	color: #a3e635;
 }
 
 .handik-toast--warning {
-	border-color: rgba(217, 119, 6, 0.22);
-	background: color-mix(in srgb, #f59e0b 10%, #ffffff);
+	background: linear-gradient(180deg, rgba(67, 56, 15, 0.98), rgba(56, 48, 13, 0.96));
+	border-color: rgba(234, 179, 8, 0.34);
+	color: #fde047;
 }
 
 .handik-toast--error {
-	border-color: rgba(220, 38, 38, 0.22);
-	background: color-mix(in srgb, #ef4444 10%, #ffffff);
+	background: linear-gradient(180deg, rgba(69, 26, 28, 0.98), rgba(56, 24, 26, 0.96));
+	border-color: rgba(248, 113, 113, 0.32);
+	color: #f87171;
 }
 
 .handik-toast--info {
-	border-color: rgba(15, 118, 110, 0.22);
-	background: color-mix(in srgb, var(--handik-accent, #0f766e) 10%, #ffffff);
+	background: linear-gradient(180deg, rgba(17, 37, 52, 0.98), rgba(16, 32, 45, 0.96));
+	border-color: rgba(56, 189, 248, 0.3);
+	color: #38bdf8;
+}
+
+.handik-toast--task {
+	background: linear-gradient(180deg, rgba(24, 24, 27, 0.98), rgba(18, 18, 20, 0.96));
+	border-color: rgba(148, 163, 184, 0.24);
+	color: #f8fafc;
+}
+
+.handik-toast__icon {
+	width: 42px;
+	height: 42px;
+	flex: 0 0 42px;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	border-radius: 12px;
+	background: rgba(255, 255, 255, 0.12);
+	font-size: 1.5rem;
+	line-height: 1;
 }
 
 .handik-toast__body {
 	display: grid;
-	gap: 4px;
+	gap: 6px;
 }
 
 .handik-toast__body strong {
-	font-size: 0.9rem;
+	font-size: 1.2rem;
+	line-height: 1.15;
 }
 
 .handik-toast__body span {
-	font-size: 0.82rem;
+	font-size: 1rem;
 	line-height: 1.45;
-	color: var(--handik-muted-text, #64748b);
+	color: rgba(255, 255, 255, 0.82);
+}
+
+.handik-toast__content {
+	display: grid;
+	gap: 12px;
+	flex: 1 1 auto;
+	min-width: 0;
+}
+
+.handik-toast__meta {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+}
+
+.handik-toast__pill {
+	display: inline-flex;
+	align-items: center;
+	min-height: 30px;
+	padding: 0 12px;
+	border-radius: 999px;
+	border: 1px solid rgba(255, 255, 255, 0.16);
+	background: rgba(255, 255, 255, 0.04);
+	color: rgba(255, 255, 255, 0.92);
+	font-size: 0.76rem;
+	font-weight: 700;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+}
+
+.handik-toast__pill--task {
+	border-color: rgba(59, 130, 246, 0.55);
+	color: #60a5fa;
+}
+
+.handik-toast__pill--rate {
+	border-color: rgba(132, 204, 22, 0.55);
+	color: #bef264;
+	background: rgba(132, 204, 22, 0.08);
 }
 
 .handik-toast__close {
@@ -809,10 +807,12 @@ openai-chatkit::part(history-button) {
 	border: 0;
 	background: transparent;
 	color: inherit;
-	font-size: 18px;
+	font-size: 24px;
 	line-height: 1;
 	cursor: pointer;
-	opacity: 0.65;
+	opacity: 0.68;
+	padding: 2px;
+	margin-top: 2px;
 }
 
 .handik-footer-actions__continue {
@@ -861,14 +861,6 @@ openai-chatkit::part(history-button) {
 		grid-template-columns: 1fr;
 	}
 
-	.handik-choice-tooltip {
-		padding: 12px 14px;
-	}
-
-	.handik-choice-tooltip.is-attached {
-		max-width: 100%;
-	}
-
 	.handik-booking-app__screen-body {
 		padding-bottom: calc(88px + env(safe-area-inset-bottom, 0px));
 	}
@@ -890,13 +882,6 @@ openai-chatkit::part(history-button) {
 		border-top: 1px solid var(--handik-border, #dbe3ea);
 		box-shadow: 0 10px 28px rgba(15, 23, 42, 0.16);
 		backdrop-filter: blur(10px);
-	}
-
-	.handik-footer-hint {
-		right: 0;
-		left: auto;
-		max-width: min(300px, calc(100vw - 36px));
-		bottom: calc(100% + 8px);
 	}
 
 	.handik-btn.is-back {
@@ -930,12 +915,30 @@ openai-chatkit::part(history-button) {
 	.handik-booking-app__notifications {
 		left: 12px;
 		right: 12px;
-		bottom: calc(84px + env(safe-area-inset-bottom, 0px));
+		top: 12px;
+		width: auto;
 	}
 
 	.handik-toast {
 		min-width: 0;
 		max-width: none;
+		padding: 14px 14px 16px;
+		border-radius: 18px;
+	}
+
+	.handik-toast__icon {
+		width: 38px;
+		height: 38px;
+		flex-basis: 38px;
+		font-size: 1.35rem;
+	}
+
+	.handik-toast__body strong {
+		font-size: 1.02rem;
+	}
+
+	.handik-toast__body span {
+		font-size: 0.9rem;
 	}
 }
 
