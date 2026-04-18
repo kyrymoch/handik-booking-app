@@ -173,12 +173,7 @@ class Handik_Booking_App_Auth_Service {
 							'created_at'        => $request['created_at'],
 						);
 					},
-					array_filter(
-						$this->job_requests->list_recent( 20 ),
-						function ( $request ) use ( $contact_id ) {
-							return (int) $request['contact_id'] === (int) $contact_id;
-						}
-					)
+					$this->job_requests->list_recent_for_contact( $contact_id, 20 )
 				)
 			),
 		);

@@ -88,6 +88,7 @@ class Handik_Booking_App_REST_API {
 				$files['file'],
 				array(
 					'request_id'      => absint( $request->get_param( 'request_id' ) ),
+					'draft_token'     => sanitize_text_field( (string) $request->get_param( 'draft_token' ) ),
 					'contact_id'      => absint( $request->get_param( 'contact_id' ) ),
 					'app_session_key' => sanitize_text_field( (string) $request->get_param( 'app_session_key' ) ),
 				)

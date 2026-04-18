@@ -208,12 +208,7 @@ class Handik_Booking_App_Job_Requests_Service {
 		if ( ! $row ) {
 			return null;
 		}
-		$row['selected_tasks']  = $this->decode_json( $row['selected_tasks_json'] );
-		$row['photos']          = $this->decode_json( $row['photos_json'] );
-		$row['intake_payload']  = $this->decode_json( $row['intake_payload_json'] );
-		$row['assistant_result']= $this->decode_json( $row['assistant_result_json'] );
-		$row['app_state']       = $this->decode_json( $row['app_state_json'] );
-		return $row;
+		return $this->hydrate_row( $row );
 	}
 
 	/**
@@ -224,6 +219,30 @@ class Handik_Booking_App_Job_Requests_Service {
 		global $wpdb;
 		$table = Handik_Booking_App_DB::table( 'job_requests' );
 		return $wpdb->get_results( $wpdb->prepare( "SELECT * FROM {$table} ORDER BY updated_at DESC LIMIT %d", $limit ), ARRAY_A );
+	}
+
+	/**
+	 * @param int $contact_id Contact ID.
+	 * @param int $limit Limit.
+	 * @return array<int, array<string, mixed>>
+	 */
+	public function list_recent_for_contact( $contact_id, $limit = 20 ) {
+		global $wpdb;
+		$table = Handik_Booking_App_DB::table( 'job_requests' );
+		$rows  = $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT * FROM {$table} WHERE contact_id = %d ORDER BY updated_at DESC, id DESC LIMIT %d",
+				$contact_id,
+				$limit
+			),
+			ARRAY_A
+		);
+
+		if ( ! is_array( $rows ) ) {
+			return array();
+		}
+
+		return array_map( array( $this, 'hydrate_row' ), $rows );
 	}
 
 	/**
@@ -321,5 +340,18 @@ class Handik_Booking_App_Job_Requests_Service {
 	protected function decode_json( $json ) {
 		$data = json_decode( (string) $json, true );
 		return is_array( $data ) ? $data : array();
+	}
+
+	/**
+	 * @param array<string, mixed> $row DB row.
+	 * @return array<string, mixed>
+	 */
+	protected function hydrate_row( array $row ) {
+		$row['selected_tasks']   = $this->decode_json( $row['selected_tasks_json'] ?? '' );
+		$row['photos']           = $this->decode_json( $row['photos_json'] ?? '' );
+		$row['intake_payload']   = $this->decode_json( $row['intake_payload_json'] ?? '' );
+		$row['assistant_result'] = $this->decode_json( $row['assistant_result_json'] ?? '' );
+		$row['app_state']        = $this->decode_json( $row['app_state_json'] ?? '' );
+		return $row;
 	}
 }

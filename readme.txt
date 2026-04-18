@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.0.16
+Stable tag: 2.0.17
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, returning-client auth, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,11 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.0.17 =
+* Photo uploads now require a valid draft request and draft token before the backend accepts files.
+* Removed absolute server file paths from upload responses.
+* Fixed returning-client history loading to pull the contact's recent requests directly from the database.
 
 = 2.0.16 =
 * Added an admin-managed service and category editor so the task-selection screen can be configured without code edits.

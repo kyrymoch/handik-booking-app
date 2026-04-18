@@ -11,6 +11,16 @@ class Handik_Booking_App_Changelog_Service {
 	public function get_entries() {
 		return array(
 			array(
+				'version'      => '2.0.17',
+				'date'         => '2026-04-17',
+				'title'        => 'Draft-Bound Upload Security And Returning Client History Fixes',
+				'notes'        => array(
+					'Changed photo uploads to require a valid draft request and draft token before files are accepted by the backend.',
+					'Removed absolute server file paths from photo-upload responses so the frontend only receives safe public metadata.',
+					'Fixed returning-client history loading to query recent requests for the matched contact directly instead of filtering a small global sample in memory.',
+				),
+			),
+			array(
 				'version'      => '2.0.16',
 				'date'         => '2026-04-17',
 				'title'        => 'Service Catalog, Photo Step, And Cleaner UI Controls',

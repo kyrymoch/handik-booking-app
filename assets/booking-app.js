@@ -500,15 +500,31 @@
 			if ( ! files || ! files.length ) {
 				return;
 			}
+			await this.ensureDraftRequest( 'photos' );
 			for ( const file of files ) {
 				const formData = new window.FormData();
 				formData.append( 'file', file );
 				formData.append( 'request_id', String( this.state.requestId || 0 ) );
+				formData.append( 'draft_token', this.state.draftToken || '' );
 				formData.append( 'contact_id', String( ( this.state.verifiedProfile && this.state.verifiedProfile.contact && this.state.verifiedProfile.contact.id ) || 0 ) );
 				formData.append( 'app_session_key', this.state.appSessionKey );
 				const uploaded = await this.api( 'app/upload', {}, 'POST', formData );
 				this.state.photos.push( uploaded );
 			}
+		}
+
+		async ensureDraftRequest( appStep ) {
+			if ( this.state.requestId && this.state.draftToken ) {
+				return {
+					request_id: this.state.requestId,
+					draft_token: this.state.draftToken
+				};
+			}
+
+			const response = await this.api( 'app/draft', this.buildDraftPayload( appStep || 'photos' ) );
+			this.state.requestId = response.request_id;
+			this.state.draftToken = response.draft_token;
+			return response;
 		}
 
 		async saveAddressAndDraft() {

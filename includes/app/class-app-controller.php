@@ -206,9 +206,18 @@ class Handik_Booking_App_Controller {
 
 	/**
 	 * @param array<string, mixed> $file File.
+	 * @param array<string, mixed> $context Context.
 	 * @return array<string, mixed>
 	 */
 	public function upload_photo( array $file, array $context = array() ) {
+		$request_id  = ! empty( $context['request_id'] ) ? absint( $context['request_id'] ) : 0;
+		$draft_token = ! empty( $context['draft_token'] ) ? sanitize_text_field( (string) $context['draft_token'] ) : '';
+
+		if ( ! $request_id || ! $draft_token || ! $this->job_requests->verify_draft_token( $request_id, $draft_token ) ) {
+			return array( 'error' => __( 'Valid draft request is required before uploading photos.', 'handik-booking-app' ), 'status' => 403 );
+		}
+
+		$context['request_id'] = $request_id;
 		return $this->upload_service->upload_image( $file, $context );
 	}
 

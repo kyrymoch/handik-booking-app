@@ -67,7 +67,6 @@ class Handik_Booking_App_Upload_Service {
 		return array(
 			'success'       => true,
 			'url'           => esc_url_raw( $handled['url'] ),
-			'path'          => $handled['file'],
 			'attachment_id' => ! is_wp_error( $attachment_id ) ? (int) $attachment_id : 0,
 			'name'          => sanitize_file_name( wp_basename( $handled['file'] ) ),
 		);

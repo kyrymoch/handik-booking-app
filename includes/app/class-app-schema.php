@@ -18,18 +18,19 @@ class Handik_Booking_App_Schema {
 			'selectedTasks'      => array(),
 			'isProject'          => false,
 			'jobShape'           => '',
-			'preferredTimeframe' => '',
 			'address'            => array(
 				'address_id'     => 0,
 				'address_full'   => '',
 				'address_line_1' => '',
+				'address_unit'   => '',
 				'city'           => '',
 				'state'          => '',
 				'zip_code'       => '',
 			),
 			'photos'             => array(),
-			'shortDescription'   => '',
 			'assistantResult'    => null,
+			'assistantUserMessageSent' => false,
+			'assistantThreadId'  => '',
 			'contact'            => array(
 				'first_name' => '',
 				'last_name'  => '',
@@ -38,7 +39,10 @@ class Handik_Booking_App_Schema {
 				'phone'      => '',
 			),
 			'bookingUrl'         => '',
+			'bookingStatus'      => '',
+			'bookingStatusMessage' => '',
 			'unsafeReason'       => '',
+			'appSessionKey'      => '',
 		);
 	}
 }
