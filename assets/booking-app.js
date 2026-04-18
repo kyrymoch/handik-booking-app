@@ -90,6 +90,22 @@
 			return payload;
 		}
 
+		async logClient( level, message, context ) {
+			if ( ! config.restBase ) {
+				return;
+			}
+
+			try {
+				await this.api( 'client-log', {
+					level: level || 'info',
+					message: message || '',
+					context: context || {}
+				} );
+			} catch ( error ) {
+				// Intentionally silent; client logging must never break the booking flow.
+			}
+		}
+
 		setMessage( message ) {
 			this.state.message = message || '';
 			this.render();
@@ -685,7 +701,7 @@
 				const script = document.createElement( 'script' );
 				script.id = CAL_EMBED_SCRIPT_ID;
 				script.async = true;
-				script.src = ( origin || 'https://app.cal.com' ) + '/embed/embed.js';
+				script.src = 'https://app.cal.com/embed/embed.js';
 				script.addEventListener( 'load', () => resolve( window.Cal ) );
 				script.addEventListener( 'error', () => reject( new Error( 'Cal.com embed failed to load.' ) ) );
 				document.head.appendChild( script );
@@ -731,10 +747,16 @@
 			const namespace = 'handik_booking_' + String( this.state.requestId || 'draft' );
 			this.calEmbedNamespace = namespace;
 			window.__handikCalNamespaces = window.__handikCalNamespaces || {};
+			window.__handikCalGlobalInit = window.__handikCalGlobalInit || {};
 
 			if ( ! window.__handikCalNamespaces[ namespace ] ) {
 				window.Cal( 'init', namespace, { origin: parsedConfig.origin } );
 				window.__handikCalNamespaces[ namespace ] = true;
+			}
+
+			if ( ! window.__handikCalGlobalInit[ parsedConfig.origin ] ) {
+				window.Cal( 'init', { origin: parsedConfig.origin } );
+				window.__handikCalGlobalInit[ parsedConfig.origin ] = true;
 			}
 
 			return window.Cal.ns && window.Cal.ns[ namespace ] ? window.Cal.ns[ namespace ] : null;
@@ -746,6 +768,11 @@
 			}
 
 			try {
+				await this.logClient( 'info', 'Cal embed booking success event fired.', {
+					request_id: this.state.requestId,
+					booking_id: detail && ( detail.uid || detail.bookingUid || detail.bookingId || detail.id ) ? String( detail.uid || detail.bookingUid || detail.bookingId || detail.id ) : '',
+					status: detail && detail.status ? String( detail.status ) : '',
+				} );
 				const payload = await this.api( 'booking-capture', {
 					request_id: this.state.requestId,
 					draft_token: this.state.draftToken,
@@ -776,29 +803,74 @@
 			}
 
 			const mountKey = String( this.state.requestId ) + '|' + this.state.bookingUrl;
-			this.loadCalEmbedScript( 'https://app.cal.com' ).then( () => {
+			this.logClient( 'info', 'Mounting Cal embed.', {
+				request_id: this.state.requestId,
+				booking_url: this.state.bookingUrl,
+				mount_key: mountKey,
+			} );
+			this.loadCalEmbedScript( parsedConfig.origin ).then( () => {
 				const calApi = this.getCalNamespaceApi( parsedConfig );
 				if ( ! calApi ) {
 					throw new Error( 'Cal.com embed API is not available.' );
 				}
 
 				if ( this.calEmbedListenerKey !== mountKey ) {
-					calApi( 'on', {
-						action: 'bookingSuccessfulV2',
-						callback: ( event ) => {
-							const detail = event && event.detail && event.detail.data ? event.detail.data : {};
-							this.captureBookingSuccess( detail );
+					const registerListener = ( api ) => {
+						if ( ! api || 'function' !== typeof api ) {
+							return;
 						}
-					} );
-					calApi( 'on', {
-						action: 'linkFailed',
-						callback: ( event ) => {
-							const detail = event && event.detail && event.detail.data ? event.detail.data : {};
-							const message = detail.msg || 'Cal.com could not load the booking calendar.';
-							this.setBookingStatusMessage( message, true );
-							this.notify( 'error', config.strings.bookingTitle || 'Book your time slot', message );
-						}
-					} );
+
+						api( 'on', {
+							action: 'bookingSuccessfulV2',
+							callback: ( event ) => {
+								const detail = event && event.detail && event.detail.data ? event.detail.data : {};
+								this.captureBookingSuccess( detail );
+							}
+						} );
+						api( 'on', {
+							action: 'bookingSuccessful',
+							callback: ( event ) => {
+								const detail = event && event.detail && event.detail.data ? event.detail.data : {};
+								this.captureBookingSuccess( detail );
+							}
+						} );
+						api( 'on', {
+							action: 'linkReady',
+							callback: () => {
+								this.logClient( 'info', 'Cal embed link ready.', {
+									request_id: this.state.requestId,
+									namespace: this.calEmbedNamespace,
+								} );
+							}
+						} );
+						api( 'on', {
+							action: 'bookerReady',
+							callback: ( event ) => {
+								const detail = event && event.detail && event.detail.data ? event.detail.data : {};
+								this.logClient( 'info', 'Cal embed booker ready.', {
+									request_id: this.state.requestId,
+									event_slug: detail && detail.eventSlug ? String( detail.eventSlug ) : '',
+								} );
+							}
+						} );
+						api( 'on', {
+							action: 'linkFailed',
+							callback: ( event ) => {
+								const detail = event && event.detail && event.detail.data ? event.detail.data : {};
+								const message = detail.msg || 'Cal.com could not load the booking calendar.';
+								this.setBookingStatusMessage( message, true );
+								this.notify( 'error', config.strings.bookingTitle || 'Book your time slot', message );
+								this.logClient( 'error', 'Cal embed link failed.', {
+									request_id: this.state.requestId,
+									code: detail.code || '',
+									message: message,
+								} );
+							}
+						} );
+					};
+
+					registerListener( window.Cal );
+					registerListener( calApi );
 					this.calEmbedListenerKey = mountKey;
 				}
 
@@ -808,10 +880,18 @@
 					calLink: parsedConfig.calLink,
 					config: parsedConfig.config
 				} );
+				this.logClient( 'info', 'Cal embed mounted.', {
+					request_id: this.state.requestId,
+					cal_link: parsedConfig.calLink,
+					namespace: this.calEmbedNamespace,
+				} );
 				this.calEmbedMountKey = mountKey;
 			} ).catch( ( error ) => {
 				container.innerHTML = '<div class="handik-booking-app__booking-frame-wrap"><iframe class="handik-booking-app__booking-frame" src="' + this.escape( this.state.bookingUrl ) + '" title="Cal.com booking calendar" loading="lazy" referrerpolicy="strict-origin-when-cross-origin" allow="fullscreen"></iframe></div>';
-				this.setBookingStatusMessage( error.message || 'Cal.com embed could not load, so we opened the standard booking view instead.', false );
+				this.logClient( 'error', 'Cal embed mount failed, using iframe fallback.', {
+					request_id: this.state.requestId,
+					error: error && error.message ? error.message : 'unknown',
+				} );
 			} );
 		}
 
@@ -1079,12 +1159,7 @@
 		}
 
 		bookingMarkup() {
-			const note = this.state.bookingStatusMessage || config.strings.bookingWaiting || 'Finish the booking in the calendar below. We will update this page as soon as Cal.com confirms the slot.';
-			return '<div class="handik-booking-app__booking-status' + ( this.state.bookingStatus && [ 'booked', 'rescheduled' ].includes( this.state.bookingStatus ) ? ' is-success' : '' ) + '">' +
-					'<strong>' + this.escape( config.strings.bookingTitle || 'Book your time slot' ) + '</strong>' +
-					'<span class="handik-booking-app__booking-status-text">' + this.escape( note ) + '</span>' +
-				'</div>' +
-				'<div class="handik-booking-app__booking-embed"></div>' +
+			return '<div class="handik-booking-app__booking-embed"></div>' +
 				this.footerActions( 'open-booking', 'refresh-booking-status', this.escape( config.strings.completeBooking ), this.escape( config.strings.openBooking ), { backIsUtility: true } );
 		}
 

@@ -11,6 +11,16 @@ class Handik_Booking_App_Changelog_Service {
 	public function get_entries() {
 		return array(
 			array(
+				'version'      => '2.0.20',
+				'date'         => '2026-04-17',
+				'title'        => 'Cal Embed Diagnostics And Cleaner Booking Screen',
+				'notes'        => array(
+					'Removed the old booking status banner from the booking step so the calendar can sit cleanly inside the app without the extra framed note.',
+					'Added explicit Cal embed client logs for mount, ready, failure, and booking-success events so booking sync problems can be diagnosed from the WordPress log screen.',
+					'Registered both global and namespaced Cal embed success listeners to improve compatibility with Cal.com embed event delivery.',
+				),
+			),
+			array(
 				'version'      => '2.0.19',
 				'date'         => '2026-04-17',
 				'title'        => 'Cal Booking Capture And Booking Screen Refresh',
