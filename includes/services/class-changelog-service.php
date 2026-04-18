@@ -11,6 +11,16 @@ class Handik_Booking_App_Changelog_Service {
 	public function get_entries() {
 		return array(
 			array(
+				'version'      => '2.0.24',
+				'date'         => '2026-04-18',
+				'title'        => 'Notification Placement And Timer Polish',
+				'notes'        => array(
+					'Shrank desktop interactive notifications and moved them to the bottom-right corner to match the intended compact reference layout more closely.',
+					'Kept mobile notifications at the top with a much higher stacking layer so they always sit above the booking UI.',
+					'Fixed notification pause and resume behavior so the progress bar and timeout continue from the remaining time instead of visually restarting from the beginning.',
+				),
+			),
+			array(
 				'version'      => '2.0.23',
 				'date'         => '2026-04-18',
 				'title'        => 'Interactive Notification System Refresh',

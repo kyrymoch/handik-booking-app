@@ -194,6 +194,12 @@
 				return;
 			}
 
+			const existingTimer = this.notificationTimers.get( id );
+			if ( existingTimer ) {
+				window.clearTimeout( existingTimer );
+				this.notificationTimers.delete( id );
+			}
+
 			const remaining = Math.max( 250, item.remaining || item.duration || 3200 );
 			const timeout = window.setTimeout( () => {
 				this.dismissNotification( id );
@@ -258,7 +264,10 @@
 				item.paused ? 'is-paused' : ''
 			].filter( Boolean ).join( ' ' );
 
-			return '<div class="' + classes + '" style="--handik-toast-duration:' + Math.max( 400, item.remaining || item.duration || 3200 ) + 'ms;" data-notification-id="' + this.escape( item.id ) + '">' +
+			const duration = Math.max( 400, item.remaining || item.duration || 3200 );
+			const progressStart = Math.max( 0, Math.min( 1, duration / Math.max( duration, item.duration || 3200 ) ) );
+
+			return '<div class="' + classes + '" style="--handik-toast-duration:' + duration + 'ms;--handik-toast-progress-start:' + progressStart + ';" data-notification-id="' + this.escape( item.id ) + '">' +
 					'<div class="handik-toast__icon" aria-hidden="true">' + this.notificationIcon( item.type ) + '</div>' +
 					'<div class="handik-toast__content">' +
 						this.renderNotificationMeta( item ) +
