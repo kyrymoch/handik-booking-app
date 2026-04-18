@@ -164,44 +164,6 @@
 		] );
 	}
 
-	function buildContextMessage( session, prefillText ) {
-		const draftContext = session && session.draft_context ? session.draft_context : {};
-		const pieces = [];
-		const tasks = Array.isArray( draftContext.selected_tasks ) ? draftContext.selected_tasks : [];
-		const photos = Array.isArray( draftContext.photos ) ? draftContext.photos : [];
-		const preparedPrefill = sanitizeText( prefillText );
-
-		if ( preparedPrefill ) {
-			pieces.push( preparedPrefill );
-		}
-		if ( draftContext.client_type ) {
-			pieces.push( 'Client type: ' + sanitizeText( draftContext.client_type ) );
-		}
-		if ( tasks.length ) {
-			pieces.push( 'Selected tasks: ' + tasks.join( ', ' ) );
-		}
-		if ( draftContext.is_project ) {
-			pieces.push( 'Project / large job: yes' );
-		}
-		if ( draftContext.address_full ) {
-			pieces.push( 'Address: ' + sanitizeText( draftContext.address_full ) );
-		}
-		if ( draftContext.address_unit ) {
-			pieces.push( 'Unit or apartment: ' + sanitizeText( draftContext.address_unit ) );
-		}
-		if ( photos.length ) {
-			pieces.push( 'Reference photos uploaded in the booking form:' );
-			photos.forEach( function( photo, index ) {
-				const url = photo && ( photo.url || photo.source_url || photo.guid );
-				if ( url ) {
-					pieces.push( 'Photo ' + String( index + 1 ) + ': ' + url );
-				}
-			} );
-		}
-
-		return pieces.filter( Boolean ).join( '\n' ).trim();
-	}
-
 	function mount( options ) {
 		if ( ! options || ! options.container || ! options.requestId || ! options.draftToken ) {
 			throw new Error( 'ChatKit bridge requires container, requestId, and draftToken.' );
@@ -239,7 +201,6 @@
 			readyTimer: null,
 			ready: false,
 			interactive: false,
-			contextPrimed: false,
 			element: null,
 			session: null
 		};
@@ -380,27 +341,6 @@
 			};
 		};
 
-		const primeConversation = function( session ) {
-			if ( record.contextPrimed || record.latestThreadId || ! record.element || typeof record.element.sendUserMessage !== 'function' ) {
-				return Promise.resolve();
-			}
-
-			const text = buildContextMessage( session, record.options.prefillText );
-			if ( ! text ) {
-				return Promise.resolve();
-			}
-
-			record.contextPrimed = true;
-			return record.element.sendUserMessage( {
-				text: text
-			} ).then( function() {
-				log( 'info', 'Assistant conversation primed from draft context.', { has_text: true } );
-			} ).catch( function( error ) {
-				record.contextPrimed = false;
-				log( 'error', 'Assistant draft context prime failed.', { error: summarizeError( error ) } );
-			} );
-		};
-
 		options.container.innerHTML = '<div class="handik-chatkit-bridge__loading"><div class="handik-loading-visual handik-loading-visual--assistant" aria-hidden="true"><span class="handik-bot-antenna"></span><span class="handik-bot-head"></span><span class="handik-battery"><span class="handik-battery-cell"></span><span class="handik-battery-cell"></span><span class="handik-battery-cell"></span></span></div><strong>' + ( record.options.loadingTitle || 'Loading virtual assistant...' ) + '</strong><span class="handik-booking-app__loading-subtitle">' + ( record.options.loadingSubtitle || 'Charging the tiny robot brain for your next step.' ) + '</span></div>';
 		log( 'info', 'Bridge mount started.', { request_id: record.options.requestId } );
 
@@ -443,9 +383,6 @@
 				if ( typeof record.options.onSessionReady === 'function' ) {
 					record.options.onSessionReady();
 				}
-				window.setTimeout( function() {
-					primeConversation( record.session );
-				}, 180 );
 			} );
 
 			record.element.addEventListener( 'chatkit.error', function( event ) {

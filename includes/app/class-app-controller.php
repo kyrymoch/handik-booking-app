@@ -178,7 +178,7 @@ class Handik_Booking_App_Controller {
 				'short_description'   => sanitize_textarea_field( $payload['short_description'] ?? '' ),
 				'photos'              => is_array( $payload['photos'] ?? null ) ? $payload['photos'] : array(),
 				'preferred_timeframe' => sanitize_text_field( $payload['preferred_timeframe'] ?? '' ),
-				'app_step'            => sanitize_key( $payload['app_step'] ?? 'address_photos' ),
+				'app_step'            => sanitize_key( $payload['app_step'] ?? 'address_details' ),
 				'app_session_key'     => sanitize_text_field( $payload['app_session_key'] ?? '' ),
 				'app_state'           => is_array( $payload['app_state'] ?? null ) ? $payload['app_state'] : array(),
 				'status'              => sanitize_key( $payload['status'] ?? 'draft' ),
@@ -208,8 +208,8 @@ class Handik_Booking_App_Controller {
 	 * @param array<string, mixed> $file File.
 	 * @return array<string, mixed>
 	 */
-	public function upload_photo( array $file ) {
-		return $this->upload_service->upload_image( $file );
+	public function upload_photo( array $file, array $context = array() ) {
+		return $this->upload_service->upload_image( $file, $context );
 	}
 
 	/**

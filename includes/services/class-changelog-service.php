@@ -11,6 +11,16 @@ class Handik_Booking_App_Changelog_Service {
 	public function get_entries() {
 		return array(
 			array(
+				'version'      => '2.0.16',
+				'date'         => '2026-04-17',
+				'title'        => 'Service Catalog, Photo Step, And Cleaner UI Controls',
+				'notes'        => array(
+					'Added an admin-managed service and category editor so the task-selection screen can be configured from the plugin without editing code.',
+					'Split address and photos into separate steps, improved the photo uploader copy, and store uploads in per-contact or per-session request folders inside WordPress uploads.',
+					'Removed client-card subtitles, switched client-type help to cleaner info toasts, and kept continue-blocking warnings anchored to the footer button instead of noisy inline error blocks.',
+				),
+			),
+			array(
 				'version'      => '2.0.15',
 				'date'         => '2026-04-16',
 				'title'        => 'Hosted ChatKit Stabilization And Bubble Hints',

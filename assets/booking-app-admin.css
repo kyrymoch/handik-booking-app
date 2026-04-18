@@ -42,3 +42,40 @@
 .handik-admin-grid select {
 	width: 100%;
 }
+
+.handik-admin-tabs {
+	margin: 14px 0 18px;
+}
+
+.handik-catalog-editor {
+	display: grid;
+	gap: 18px;
+}
+
+.handik-catalog-group,
+.handik-catalog-task {
+	display: grid;
+	gap: 12px;
+	padding: 16px;
+	background: #f8fafc;
+	border: 1px solid #dbe3ea;
+	border-radius: 14px;
+}
+
+.handik-catalog-group__header {
+	display: flex;
+	gap: 16px;
+	align-items: end;
+	justify-content: space-between;
+}
+
+.handik-catalog-group__header label {
+	flex: 1;
+	display: grid;
+	gap: 8px;
+}
+
+.handik-catalog-group__tasks {
+	display: grid;
+	gap: 12px;
+}

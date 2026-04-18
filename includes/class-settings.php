@@ -81,6 +81,7 @@ class Handik_Booking_App_Settings {
 			'app_max_width'          => '980',
 			'app_font_scale'         => '1',
 			'app_button_style'       => 'pill',
+			'service_catalog_json'   => '',
 			'ui_loading_title'       => 'Getting your booking space ready...',
 			'ui_loading_subtitle'    => 'Laying out the tools and making room for the good stuff.',
 			'ui_client_type_title'   => 'Who is booking today?',
@@ -94,10 +95,14 @@ class Handik_Booking_App_Settings {
 			'ui_returning_verify_title' => 'Returning client verification',
 			'ui_returning_verify_intro' => 'Enter your email or phone to receive a one-time code.',
 			'ui_task_selection_title'   => 'What do you need help with?',
+			'ui_task_selection_intro'   => 'Choose one or more services so we can route your booking correctly.',
 			'ui_project_label'          => 'Project / Large Job',
-			'ui_address_title'          => 'Address and photos',
+			'ui_address_title'          => 'Address details',
 			'ui_address_label'          => 'Address of the job',
 			'ui_address_unit_label'     => 'Unit or apartment (optional)',
+			'ui_photos_title'           => 'Photos',
+			'ui_photos_intro'           => 'Photos really help us understand the job faster, but you can skip this step if you do not have any.',
+			'ui_skip_photos_button'     => 'Skip photos',
 			'ui_saved_address_label'    => 'Saved address',
 			'ui_saved_address_placeholder' => 'Choose saved address',
 			'ui_photos_label'           => 'Photos',
@@ -219,6 +224,9 @@ class Handik_Booking_App_Settings {
 				case 'github_release_asset_pattern':
 					$output[ $key ] = sanitize_text_field( (string) $value );
 					break;
+				case 'service_catalog_json':
+					$output[ $key ] = trim( str_replace( "\0", '', (string) $value ) );
+					break;
 				case 'app_font_family':
 				case 'app_shadow':
 					$output[ $key ] = trim( (string) $value );
@@ -234,6 +242,8 @@ class Handik_Booking_App_Settings {
 				case 'ui_new_client_tooltip_text':
 				case 'ui_returning_client_tooltip_text':
 				case 'ui_returning_verify_intro':
+				case 'ui_task_selection_intro':
+				case 'ui_photos_intro':
 				case 'ui_photos_help':
 				case 'ui_assistant_helper':
 				case 'ui_assistant_ready_notice':

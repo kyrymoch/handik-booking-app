@@ -14,6 +14,7 @@
 	border: 1px solid var(--handik-border, #dbe3ea);
 	border-radius: var(--handik-radius, 18px);
 	box-shadow: var(--handik-shadow, 0 24px 60px rgba(15, 23, 42, 0.12));
+	position: relative;
 }
 
 .handik-booking-app__screen {
@@ -473,6 +474,14 @@
 	color: var(--handik-secondary-text, #0f172a);
 }
 
+.handik-btn.is-text {
+	background: transparent;
+	color: var(--handik-muted-text, #64748b);
+	padding: 4px 2px;
+	border-radius: 0;
+	font-weight: 600;
+}
+
 .handik-btn.is-disabled {
 	opacity: 0.6;
 }
@@ -605,6 +614,14 @@
 	font-weight: 600;
 }
 
+openai-chatkit::part(header),
+openai-chatkit::part(thread-header),
+openai-chatkit::part(conversation-header),
+openai-chatkit::part(thread-history-button),
+openai-chatkit::part(history-button) {
+	display: none !important;
+}
+
 .handik-booking-app__assistant-note {
 	margin: -2px 0 2px;
 	color: var(--handik-muted-text, #64748b);
@@ -684,6 +701,92 @@
 	background: #fff;
 }
 
+.handik-booking-app__notifications {
+	position: fixed;
+	right: 18px;
+	bottom: 18px;
+	z-index: 80;
+	display: grid;
+	gap: 10px;
+	pointer-events: none;
+}
+
+.handik-toast {
+	min-width: 260px;
+	max-width: min(360px, calc(100vw - 28px));
+	display: flex;
+	align-items: flex-start;
+	gap: 12px;
+	padding: 14px 16px;
+	border-radius: 16px;
+	border: 1px solid rgba(15, 23, 42, 0.08);
+	background: rgba(255, 255, 255, 0.96);
+	box-shadow: 0 20px 40px rgba(15, 23, 42, 0.18);
+	backdrop-filter: blur(12px);
+	pointer-events: auto;
+	position: relative;
+	overflow: hidden;
+	animation: handik-toast-in 0.28s cubic-bezier(0.34, 1.4, 0.64, 1);
+}
+
+.handik-toast::after {
+	content: '';
+	position: absolute;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	height: 3px;
+	background: rgba(255, 255, 255, 0.45);
+	transform-origin: left center;
+	animation: handik-toast-progress var(--handik-toast-duration, 3200ms) linear forwards;
+}
+
+.handik-toast--success {
+	border-color: rgba(22, 163, 74, 0.22);
+	background: color-mix(in srgb, #16a34a 10%, #ffffff);
+}
+
+.handik-toast--warning {
+	border-color: rgba(217, 119, 6, 0.22);
+	background: color-mix(in srgb, #f59e0b 10%, #ffffff);
+}
+
+.handik-toast--error {
+	border-color: rgba(220, 38, 38, 0.22);
+	background: color-mix(in srgb, #ef4444 10%, #ffffff);
+}
+
+.handik-toast--info {
+	border-color: rgba(15, 118, 110, 0.22);
+	background: color-mix(in srgb, var(--handik-accent, #0f766e) 10%, #ffffff);
+}
+
+.handik-toast__body {
+	display: grid;
+	gap: 4px;
+}
+
+.handik-toast__body strong {
+	font-size: 0.9rem;
+}
+
+.handik-toast__body span {
+	font-size: 0.82rem;
+	line-height: 1.45;
+	color: var(--handik-muted-text, #64748b);
+}
+
+.handik-toast__close {
+	appearance: none;
+	border: 0;
+	background: transparent;
+	color: inherit;
+	font-size: 18px;
+	line-height: 1;
+	cursor: pointer;
+	opacity: 0.65;
+}
+
 .handik-footer-actions__continue {
 	position: relative;
 	display: grid;
@@ -748,15 +851,15 @@
 
 	.handik-footer-actions.is-sticky-mobile {
 		position: fixed;
-		left: 12px;
-		right: 12px;
-		bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+		left: 0;
+		right: 0;
+		bottom: 0;
 		z-index: 30;
 		margin-top: 0;
-		padding: 10px;
-		border-radius: 18px;
+		padding: 12px 12px calc(12px + env(safe-area-inset-bottom, 0px));
+		border-radius: 0;
 		background: rgba(248, 250, 252, 0.96);
-		border: 1px solid var(--handik-border, #dbe3ea);
+		border-top: 1px solid var(--handik-border, #dbe3ea);
 		box-shadow: 0 10px 28px rgba(15, 23, 42, 0.16);
 		backdrop-filter: blur(10px);
 	}
@@ -765,6 +868,7 @@
 		right: 0;
 		left: auto;
 		max-width: min(300px, calc(100vw - 36px));
+		bottom: calc(100% + 8px);
 	}
 
 	.handik-btn.is-back {
@@ -789,6 +893,17 @@
 	.handik-booking-app__booking-frame {
 		min-height: 640px;
 	}
+
+	.handik-booking-app__notifications {
+		left: 12px;
+		right: 12px;
+		bottom: calc(84px + env(safe-area-inset-bottom, 0px));
+	}
+
+	.handik-toast {
+		min-width: 0;
+		max-width: none;
+	}
 }
 
 @media (min-width: 641px) {
@@ -803,6 +918,26 @@
 	}
 	to {
 		transform: rotate(360deg);
+	}
+}
+
+@keyframes handik-toast-in {
+	from {
+		transform: translateY(8px) scale(0.98);
+		opacity: 0;
+	}
+	to {
+		transform: translateY(0) scale(1);
+		opacity: 1;
+	}
+}
+
+@keyframes handik-toast-progress {
+	from {
+		transform: scaleX(1);
+	}
+	to {
+		transform: scaleX(0);
 	}
 }
 

@@ -6,10 +6,23 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 class Handik_Booking_App_Upload_Service {
 	/**
+	 * @var Handik_Booking_App_Contacts_Service
+	 */
+	protected $contacts;
+
+	/**
+	 * @param Handik_Booking_App_Contacts_Service $contacts Contacts.
+	 */
+	public function __construct( $contacts ) {
+		$this->contacts = $contacts;
+	}
+
+	/**
 	 * @param array<string, mixed> $file File.
+	 * @param array<string, mixed> $context Context.
 	 * @return array<string, mixed>
 	 */
-	public function upload_image( array $file ) {
+	public function upload_image( array $file, array $context = array() ) {
 		require_once ABSPATH . 'wp-admin/includes/file.php';
 		require_once ABSPATH . 'wp-admin/includes/image.php';
 		require_once ABSPATH . 'wp-admin/includes/media.php';
@@ -22,7 +35,20 @@ class Handik_Booking_App_Upload_Service {
 			return array( 'error' => __( 'Images must be 10MB or smaller.', 'handik-booking-app' ), 'status' => 400 );
 		}
 
+		$upload_filter = function( $uploads ) use ( $context ) {
+			$user_folder    = ! empty( $context['contact_id'] ) ? 'contact-' . absint( $context['contact_id'] ) : 'session-' . sanitize_key( (string) ( $context['app_session_key'] ?? 'guest' ) );
+			$request_folder = ! empty( $context['request_id'] ) ? 'request-' . absint( $context['request_id'] ) : 'draft';
+			$subdir         = '/handik-booking-app/' . $user_folder . '/' . $request_folder;
+
+			$uploads['subdir'] = $subdir;
+			$uploads['path']   = $uploads['basedir'] . $subdir;
+			$uploads['url']    = $uploads['baseurl'] . $subdir;
+
+			return $uploads;
+		};
+		add_filter( 'upload_dir', $upload_filter );
 		$handled = wp_handle_upload( $file, array( 'test_form' => false ) );
+		remove_filter( 'upload_dir', $upload_filter );
 		if ( ! empty( $handled['error'] ) ) {
 			return array( 'error' => $handled['error'], 'status' => 400 );
 		}

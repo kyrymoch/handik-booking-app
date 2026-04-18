@@ -23,6 +23,7 @@ class Handik_Booking_App_Plugin {
 	public $updater;
 	public $webhook;
 	public $appearance;
+	public $service_catalog;
 	public $changelog;
 	public $app_state;
 	public $app_schema;
@@ -62,16 +63,17 @@ class Handik_Booking_App_Plugin {
 		$this->updater        = new Handik_Booking_App_Updater_Service( $this->settings, $this->logger );
 		$this->webhook        = new Handik_Booking_App_Webhook_Service( $this->settings, $this->logger, $this->job_requests, $this->bookings );
 		$this->appearance     = new Handik_Booking_App_Appearance_Service( $this->settings );
+		$this->service_catalog = new Handik_Booking_App_Service_Catalog_Service( $this->settings );
 		$this->changelog      = new Handik_Booking_App_Changelog_Service();
-		$this->app_state      = new Handik_Booking_App_State();
+		$this->app_state      = new Handik_Booking_App_State( $this->service_catalog );
 		$this->app_schema     = new Handik_Booking_App_Schema();
-		$this->upload_service = new Handik_Booking_App_Upload_Service();
+		$this->upload_service = new Handik_Booking_App_Upload_Service( $this->contacts );
 		$this->app_controller = new Handik_Booking_App_Controller( $this->app_state, $this->app_schema, $this->upload_service, $this->settings, $this->appearance, $this->auth, $this->contacts, $this->addresses, $this->job_requests, $this->bookings, $this->routing, $this->cal, $this->changelog );
 		$this->assets         = new Handik_Booking_App_Assets( $this->appearance, $this->settings );
 		$this->frontend_app   = new Handik_Booking_App_Frontend_App( $this->assets, $this->appearance );
 		$this->shortcode      = new Handik_Booking_App_Shortcode( $this->frontend_app );
 		$this->rest_api       = new Handik_Booking_App_REST_API( $this->app_controller, $this->auth, $this->chatkit, $this->webhook );
-		$this->admin          = new Handik_Booking_App_Admin( $this->settings, $this->assets, $this->contacts, $this->addresses, $this->job_requests, $this->bookings, $this->logger, $this->changelog );
+		$this->admin          = new Handik_Booking_App_Admin( $this->settings, $this->assets, $this->contacts, $this->addresses, $this->job_requests, $this->bookings, $this->logger, $this->changelog, $this->service_catalog );
 		$this->widget_registry = new Handik_Booking_App_Widget_Registry();
 
 		add_action( 'template_redirect', array( $this, 'maybe_process_magic_link' ) );

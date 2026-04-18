@@ -83,7 +83,16 @@ class Handik_Booking_App_REST_API {
 		if ( empty( $files['file'] ) ) {
 			return new WP_Error( 'missing_file', __( 'No file was uploaded.', 'handik-booking-app' ), array( 'status' => 400 ) );
 		}
-		return $this->respond( $this->app->upload_photo( $files['file'] ) );
+		return $this->respond(
+			$this->app->upload_photo(
+				$files['file'],
+				array(
+					'request_id'      => absint( $request->get_param( 'request_id' ) ),
+					'contact_id'      => absint( $request->get_param( 'contact_id' ) ),
+					'app_session_key' => sanitize_text_field( (string) $request->get_param( 'app_session_key' ) ),
+				)
+			)
+		);
 	}
 
 	public function request_code( WP_REST_Request $request ) {

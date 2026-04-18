@@ -46,6 +46,11 @@ class Handik_Booking_App_Admin {
 	protected $changelog;
 
 	/**
+	 * @var Handik_Booking_App_Service_Catalog_Service
+	 */
+	protected $service_catalog;
+
+	/**
 	 * @param Handik_Booking_App_Settings             $settings Settings.
 	 * @param Handik_Booking_App_Assets               $assets Assets.
 	 * @param Handik_Booking_App_Contacts_Service     $contacts Contacts.
@@ -55,7 +60,7 @@ class Handik_Booking_App_Admin {
 	 * @param Handik_Booking_App_Logger               $logger Logger.
 	 * @param Handik_Booking_App_Changelog_Service    $changelog Changelog.
 	 */
-	public function __construct( $settings, $assets, $contacts, $addresses, $job_requests, $bookings, $logger, $changelog ) {
+	public function __construct( $settings, $assets, $contacts, $addresses, $job_requests, $bookings, $logger, $changelog, $service_catalog ) {
 		$this->settings     = $settings;
 		$this->assets       = $assets;
 		$this->contacts     = $contacts;
@@ -64,6 +69,7 @@ class Handik_Booking_App_Admin {
 		$this->bookings     = $bookings;
 		$this->logger       = $logger;
 		$this->changelog    = $changelog;
+		$this->service_catalog = $service_catalog;
 
 		add_action( 'admin_menu', array( $this, 'register_menu' ) );
 		add_action( 'admin_init', array( $this, 'maybe_save_settings' ) );
@@ -73,12 +79,9 @@ class Handik_Booking_App_Admin {
 	public function register_menu() {
 		add_menu_page( __( 'Handik Booking', 'handik-booking-app' ), __( 'Handik Booking', 'handik-booking-app' ), 'manage_options', 'handik-booking-app', array( $this, 'render_dashboard' ), 'dashicons-calendar-alt', 26 );
 		add_submenu_page( 'handik-booking-app', __( 'Dashboard', 'handik-booking-app' ), __( 'Dashboard', 'handik-booking-app' ), 'manage_options', 'handik-booking-app', array( $this, 'render_dashboard' ) );
-		add_submenu_page( 'handik-booking-app', __( 'Requests', 'handik-booking-app' ), __( 'Requests', 'handik-booking-app' ), 'manage_options', 'handik-booking-app-requests', array( $this, 'render_requests' ) );
-		add_submenu_page( 'handik-booking-app', __( 'Contacts', 'handik-booking-app' ), __( 'Contacts', 'handik-booking-app' ), 'manage_options', 'handik-booking-app-contacts', array( $this, 'render_contacts' ) );
-		add_submenu_page( 'handik-booking-app', __( 'Addresses', 'handik-booking-app' ), __( 'Addresses', 'handik-booking-app' ), 'manage_options', 'handik-booking-app-addresses', array( $this, 'render_addresses' ) );
-		add_submenu_page( 'handik-booking-app', __( 'Bookings', 'handik-booking-app' ), __( 'Bookings', 'handik-booking-app' ), 'manage_options', 'handik-booking-app-bookings', array( $this, 'render_bookings' ) );
-		add_submenu_page( 'handik-booking-app', __( 'App Settings', 'handik-booking-app' ), __( 'App Settings', 'handik-booking-app' ), 'manage_options', 'handik-booking-app-settings', array( $this, 'render_settings' ) );
-		add_submenu_page( 'handik-booking-app', __( 'Integrations', 'handik-booking-app' ), __( 'Integrations', 'handik-booking-app' ), 'manage_options', 'handik-booking-app-integrations', array( $this, 'render_integrations' ) );
+		add_submenu_page( 'handik-booking-app', __( 'Operations', 'handik-booking-app' ), __( 'Operations', 'handik-booking-app' ), 'manage_options', 'handik-booking-app-operations', array( $this, 'render_operations' ) );
+		add_submenu_page( 'handik-booking-app', __( 'People', 'handik-booking-app' ), __( 'People', 'handik-booking-app' ), 'manage_options', 'handik-booking-app-people', array( $this, 'render_people' ) );
+		add_submenu_page( 'handik-booking-app', __( 'App Setup', 'handik-booking-app' ), __( 'App Setup', 'handik-booking-app' ), 'manage_options', 'handik-booking-app-settings', array( $this, 'render_settings' ) );
 		add_submenu_page( 'handik-booking-app', __( 'Logs', 'handik-booking-app' ), __( 'Logs', 'handik-booking-app' ), 'manage_options', 'handik-booking-app-logs', array( $this, 'render_logs' ) );
 		add_submenu_page( 'handik-booking-app', __( 'Changelog', 'handik-booking-app' ), __( 'Changelog', 'handik-booking-app' ), 'manage_options', 'handik-booking-app-changelog', array( $this, 'render_changelog' ) );
 	}
@@ -123,60 +126,84 @@ class Handik_Booking_App_Admin {
 		$this->page_end();
 	}
 
-	public function render_requests() {
-		$this->page_start( __( 'Requests', 'handik-booking-app' ) );
-		$this->render_table( $this->job_requests->list_recent( 100 ), array( 'id', 'client_type', 'job_shape', 'booking_type', 'status', 'app_step', 'updated_at' ) );
+	public function render_operations() {
+		$tab = $this->current_tab( array( 'requests', 'bookings' ), 'requests' );
+		$this->page_start( __( 'Operations', 'handik-booking-app' ) );
+		echo $this->tabs_markup(
+			array(
+				'requests' => __( 'Requests', 'handik-booking-app' ),
+				'bookings' => __( 'Bookings', 'handik-booking-app' ),
+			),
+			$tab
+		);
+
+		if ( 'bookings' === $tab ) {
+			$this->render_table( $this->bookings->list_recent( 100 ), array( 'id', 'job_request_id', 'cal_booking_id', 'booking_type', 'status', 'start_time', 'updated_at' ) );
+		} else {
+			$this->render_table( $this->job_requests->list_recent( 100 ), array( 'id', 'client_type', 'job_shape', 'booking_type', 'status', 'app_step', 'updated_at' ) );
+		}
+
 		$this->page_end();
 	}
 
-	public function render_contacts() {
-		$this->page_start( __( 'Contacts', 'handik-booking-app' ) );
-		$this->render_table( $this->contacts->list_recent( 100 ), array( 'id', 'full_name', 'email', 'phone', 'is_returning', 'updated_at' ) );
-		$this->page_end();
-	}
+	public function render_people() {
+		$tab = $this->current_tab( array( 'contacts', 'addresses' ), 'contacts' );
+		$this->page_start( __( 'People', 'handik-booking-app' ) );
+		echo $this->tabs_markup(
+			array(
+				'contacts'  => __( 'Contacts', 'handik-booking-app' ),
+				'addresses' => __( 'Addresses', 'handik-booking-app' ),
+			),
+			$tab
+		);
 
-	public function render_addresses() {
-		$this->page_start( __( 'Addresses', 'handik-booking-app' ) );
-		$this->render_table( $this->addresses->list_recent( 100 ), array( 'id', 'contact_id', 'address_full', 'city', 'state', 'zip_code', 'updated_at' ) );
-		$this->page_end();
-	}
+		if ( 'addresses' === $tab ) {
+			$this->render_table( $this->addresses->list_recent( 100 ), array( 'id', 'contact_id', 'address_full', 'city', 'state', 'zip_code', 'updated_at' ) );
+		} else {
+			$this->render_table( $this->contacts->list_recent( 100 ), array( 'id', 'full_name', 'email', 'phone', 'is_returning', 'updated_at' ) );
+		}
 
-	public function render_bookings() {
-		$this->page_start( __( 'Bookings', 'handik-booking-app' ) );
-		$this->render_table( $this->bookings->list_recent( 100 ), array( 'id', 'job_request_id', 'cal_booking_id', 'booking_type', 'status', 'start_time', 'updated_at' ) );
 		$this->page_end();
 	}
 
 	public function render_settings() {
-		$this->page_start( __( 'App Settings', 'handik-booking-app' ) );
+		$tab = $this->current_tab( array( 'general', 'appearance', 'copy', 'services', 'integrations' ), 'general' );
+		$this->page_start( __( 'App Setup', 'handik-booking-app' ) );
 		settings_errors( 'handik-booking-app' );
 		$s = $this->settings->all();
 		?>
 		<form method="post">
 			<?php wp_nonce_field( 'handik_booking_app_save_settings', 'handik_booking_app_settings_nonce' ); ?>
-			<h2><?php esc_html_e( 'Integrations', 'handik-booking-app' ); ?></h2>
+			<?php echo $this->tabs_markup(
+				array(
+					'general'      => __( 'General', 'handik-booking-app' ),
+					'appearance'   => __( 'Appearance', 'handik-booking-app' ),
+					'copy'         => __( 'Texts & Notifications', 'handik-booking-app' ),
+					'services'     => __( 'Services & Categories', 'handik-booking-app' ),
+					'integrations' => __( 'Integrations', 'handik-booking-app' ),
+				),
+				$tab
+			); ?>
+			<?php if ( 'general' === $tab ) : ?>
 			<div class="handik-admin-grid">
-				<?php $this->field( 'openai_api_key', __( 'OpenAI API Key', 'handik-booking-app' ), $s['openai_api_key'], 'password' ); ?>
-				<?php $this->field( 'openai_workflow_id', __( 'OpenAI Workflow ID', 'handik-booking-app' ), $s['openai_workflow_id'] ); ?>
-				<?php $this->field( 'openai_api_base', __( 'OpenAI API Base', 'handik-booking-app' ), $s['openai_api_base'] ); ?>
-				<?php $this->field( 'openai_project_id', __( 'OpenAI Project ID', 'handik-booking-app' ), $s['openai_project_id'] ); ?>
-				<?php $this->field( 'openai_organization_id', __( 'OpenAI Organization ID', 'handik-booking-app' ), $s['openai_organization_id'] ); ?>
-				<?php $this->field( 'chatkit_script_url', __( 'Custom ChatKit Bridge URL', 'handik-booking-app' ), $s['chatkit_script_url'] ); ?>
-				<?php $this->field( 'google_maps_api_key', __( 'Google Maps API Key', 'handik-booking-app' ), $s['google_maps_api_key'], 'password' ); ?>
-				<?php $this->field( 'google_maps_country', __( 'Google Maps Country', 'handik-booking-app' ), $s['google_maps_country'] ); ?>
-				<?php $this->field( 'github_repo_url', __( 'GitHub Repo URL', 'handik-booking-app' ), $s['github_repo_url'] ); ?>
-				<?php $this->field( 'github_repo_branch', __( 'GitHub Release Branch', 'handik-booking-app' ), $s['github_repo_branch'] ); ?>
-				<?php $this->field( 'github_access_token', __( 'GitHub Access Token', 'handik-booking-app' ), $s['github_access_token'], 'password' ); ?>
-				<?php $this->field( 'github_release_asset_pattern', __( 'GitHub Release Asset Pattern', 'handik-booking-app' ), $s['github_release_asset_pattern'] ); ?>
-				<?php $this->field( 'cal_standard_event_url', __( 'Standard Visit URL', 'handik-booking-app' ), $s['cal_standard_event_url'] ); ?>
-				<?php $this->field( 'cal_extended_event_url', __( 'Extended Visit URL', 'handik-booking-app' ), $s['cal_extended_event_url'] ); ?>
-				<?php $this->field( 'cal_large_event_url', __( 'Large Visit URL', 'handik-booking-app' ), $s['cal_large_event_url'] ); ?>
-				<?php $this->field( 'cal_project_event_url', __( 'Project Consultation URL', 'handik-booking-app' ), $s['cal_project_event_url'] ); ?>
-				<?php $this->field( 'cal_webhook_secret', __( 'Cal Webhook Secret', 'handik-booking-app' ), $s['cal_webhook_secret'], 'password' ); ?>
-				<?php $this->field( 'email_from_name', __( 'Email From Name', 'handik-booking-app' ), $s['email_from_name'] ); ?>
-				<?php $this->field( 'email_from_address', __( 'Email From Address', 'handik-booking-app' ), $s['email_from_address'], 'email' ); ?>
+				<?php $this->field( 'ui_loading_title', __( 'Loading Title', 'handik-booking-app' ), $s['ui_loading_title'] ); ?>
+				<?php $this->textarea_field( 'ui_loading_subtitle', __( 'Loading Subtitle', 'handik-booking-app' ), $s['ui_loading_subtitle'] ); ?>
+				<?php $this->field( 'ui_continue_button', __( 'Continue Button Label', 'handik-booking-app' ), $s['ui_continue_button'] ); ?>
+				<?php $this->field( 'ui_back_button', __( 'Back Button Label', 'handik-booking-app' ), $s['ui_back_button'] ); ?>
+				<?php $this->field( 'ui_send_code_button', __( 'Send Code Button Label', 'handik-booking-app' ), $s['ui_send_code_button'] ); ?>
+				<?php $this->field( 'ui_verify_button', __( 'Verify Button Label', 'handik-booking-app' ), $s['ui_verify_button'] ); ?>
+				<?php $this->field( 'ui_open_booking_button', __( 'Open Booking Button Label', 'handik-booking-app' ), $s['ui_open_booking_button'] ); ?>
+				<?php $this->field( 'ui_complete_booking_button', __( 'Booking Status Button Label', 'handik-booking-app' ), $s['ui_complete_booking_button'] ); ?>
+				<?php $this->field( 'ui_restart_button', __( 'Restart Button Label', 'handik-booking-app' ), $s['ui_restart_button'] ); ?>
 			</div>
-			<h2><?php esc_html_e( 'Appearance', 'handik-booking-app' ); ?></h2>
+			<p><label><input type="checkbox" name="debug_mode" value="1" <?php checked( ! empty( $s['debug_mode'] ) ); ?> /> <?php esc_html_e( 'Enable debug logging', 'handik-booking-app' ); ?></label></p>
+			<p><label><?php esc_html_e( 'Button style', 'handik-booking-app' ); ?>
+				<select name="app_button_style">
+					<option value="pill" <?php selected( $s['app_button_style'], 'pill' ); ?>><?php esc_html_e( 'Pill', 'handik-booking-app' ); ?></option>
+					<option value="rounded" <?php selected( $s['app_button_style'], 'rounded' ); ?>><?php esc_html_e( 'Rounded', 'handik-booking-app' ); ?></option>
+				</select>
+			</label></p>
+			<?php elseif ( 'appearance' === $tab ) : ?>
 			<div class="handik-admin-grid">
 				<?php $this->field( 'app_accent_color', __( 'Accent Color', 'handik-booking-app' ), $s['app_accent_color'], 'color' ); ?>
 				<?php $this->field( 'app_background', __( 'Background', 'handik-booking-app' ), $s['app_background'], 'color' ); ?>
@@ -197,7 +224,7 @@ class Handik_Booking_App_Admin {
 				<?php $this->field( 'app_font_scale', __( 'Font Scale', 'handik-booking-app' ), $s['app_font_scale'], 'number', '0.1' ); ?>
 			</div>
 			<?php $this->textarea_field( 'app_custom_css', __( 'Custom CSS', 'handik-booking-app' ), $s['app_custom_css'], __( 'Use {{WRAPPER}} to scope rules to this app instance.', 'handik-booking-app' ) ); ?>
-			<h2><?php esc_html_e( 'UI Text And Labels', 'handik-booking-app' ); ?></h2>
+			<?php elseif ( 'copy' === $tab ) : ?>
 			<div class="handik-admin-grid">
 				<?php $this->field( 'ui_loading_title', __( 'Loading Title', 'handik-booking-app' ), $s['ui_loading_title'] ); ?>
 				<?php $this->textarea_field( 'ui_loading_subtitle', __( 'Loading Subtitle', 'handik-booking-app' ), $s['ui_loading_subtitle'] ); ?>
@@ -212,10 +239,14 @@ class Handik_Booking_App_Admin {
 				<?php $this->field( 'ui_returning_verify_title', __( 'Verification Title', 'handik-booking-app' ), $s['ui_returning_verify_title'] ); ?>
 				<?php $this->textarea_field( 'ui_returning_verify_intro', __( 'Verification Intro', 'handik-booking-app' ), $s['ui_returning_verify_intro'] ); ?>
 				<?php $this->field( 'ui_task_selection_title', __( 'Task Selection Title', 'handik-booking-app' ), $s['ui_task_selection_title'] ); ?>
+				<?php $this->textarea_field( 'ui_task_selection_intro', __( 'Task Selection Intro', 'handik-booking-app' ), $s['ui_task_selection_intro'] ); ?>
 				<?php $this->field( 'ui_project_label', __( 'Project Label', 'handik-booking-app' ), $s['ui_project_label'] ); ?>
 				<?php $this->field( 'ui_address_title', __( 'Address Screen Title', 'handik-booking-app' ), $s['ui_address_title'] ); ?>
 				<?php $this->field( 'ui_address_label', __( 'Address Label', 'handik-booking-app' ), $s['ui_address_label'] ); ?>
 				<?php $this->field( 'ui_address_unit_label', __( 'Unit Label', 'handik-booking-app' ), $s['ui_address_unit_label'] ); ?>
+				<?php $this->field( 'ui_photos_title', __( 'Photos Screen Title', 'handik-booking-app' ), $s['ui_photos_title'] ); ?>
+				<?php $this->textarea_field( 'ui_photos_intro', __( 'Photos Screen Intro', 'handik-booking-app' ), $s['ui_photos_intro'] ); ?>
+				<?php $this->field( 'ui_skip_photos_button', __( 'Skip Photos Button', 'handik-booking-app' ), $s['ui_skip_photos_button'] ); ?>
 				<?php $this->field( 'ui_saved_address_label', __( 'Saved Address Label', 'handik-booking-app' ), $s['ui_saved_address_label'] ); ?>
 				<?php $this->field( 'ui_saved_address_placeholder', __( 'Saved Address Placeholder', 'handik-booking-app' ), $s['ui_saved_address_placeholder'] ); ?>
 				<?php $this->field( 'ui_photos_label', __( 'Photos Label', 'handik-booking-app' ), $s['ui_photos_label'] ); ?>
@@ -254,33 +285,39 @@ class Handik_Booking_App_Admin {
 				<?php $this->textarea_field( 'ui_booking_cancelled', __( 'Booking Cancelled Message', 'handik-booking-app' ), $s['ui_booking_cancelled'] ); ?>
 				<?php $this->field( 'ui_address_placeholder', __( 'Address Placeholder', 'handik-booking-app' ), $s['ui_address_placeholder'] ); ?>
 			</div>
-			<p><label><input type="checkbox" name="debug_mode" value="1" <?php checked( ! empty( $s['debug_mode'] ) ); ?> /> <?php esc_html_e( 'Enable debug logging', 'handik-booking-app' ); ?></label></p>
-			<p><label><?php esc_html_e( 'Button style', 'handik-booking-app' ); ?>
-				<select name="app_button_style">
-					<option value="pill" <?php selected( $s['app_button_style'], 'pill' ); ?>><?php esc_html_e( 'Pill', 'handik-booking-app' ); ?></option>
-					<option value="rounded" <?php selected( $s['app_button_style'], 'rounded' ); ?>><?php esc_html_e( 'Rounded', 'handik-booking-app' ); ?></option>
-				</select>
-			</label></p>
+			<?php elseif ( 'services' === $tab ) : ?>
+			<?php $this->render_services_editor(); ?>
+			<?php else : ?>
+			<div class="handik-admin-grid">
+				<?php $this->field( 'openai_api_key', __( 'OpenAI API Key', 'handik-booking-app' ), $s['openai_api_key'], 'password' ); ?>
+				<?php $this->field( 'openai_workflow_id', __( 'OpenAI Workflow ID', 'handik-booking-app' ), $s['openai_workflow_id'] ); ?>
+				<?php $this->field( 'openai_api_base', __( 'OpenAI API Base', 'handik-booking-app' ), $s['openai_api_base'] ); ?>
+				<?php $this->field( 'openai_project_id', __( 'OpenAI Project ID', 'handik-booking-app' ), $s['openai_project_id'] ); ?>
+				<?php $this->field( 'openai_organization_id', __( 'OpenAI Organization ID', 'handik-booking-app' ), $s['openai_organization_id'] ); ?>
+				<?php $this->field( 'chatkit_script_url', __( 'Custom ChatKit Bridge URL', 'handik-booking-app' ), $s['chatkit_script_url'] ); ?>
+				<?php $this->field( 'google_maps_api_key', __( 'Google Maps API Key', 'handik-booking-app' ), $s['google_maps_api_key'], 'password' ); ?>
+				<?php $this->field( 'google_maps_country', __( 'Google Maps Country', 'handik-booking-app' ), $s['google_maps_country'] ); ?>
+				<?php $this->field( 'github_repo_url', __( 'GitHub Repo URL', 'handik-booking-app' ), $s['github_repo_url'] ); ?>
+				<?php $this->field( 'github_repo_branch', __( 'GitHub Release Branch', 'handik-booking-app' ), $s['github_repo_branch'] ); ?>
+				<?php $this->field( 'github_access_token', __( 'GitHub Access Token', 'handik-booking-app' ), $s['github_access_token'], 'password' ); ?>
+				<?php $this->field( 'github_release_asset_pattern', __( 'GitHub Release Asset Pattern', 'handik-booking-app' ), $s['github_release_asset_pattern'] ); ?>
+				<?php $this->field( 'cal_standard_event_url', __( 'Standard Visit URL', 'handik-booking-app' ), $s['cal_standard_event_url'] ); ?>
+				<?php $this->field( 'cal_extended_event_url', __( 'Extended Visit URL', 'handik-booking-app' ), $s['cal_extended_event_url'] ); ?>
+				<?php $this->field( 'cal_large_event_url', __( 'Large Visit URL', 'handik-booking-app' ), $s['cal_large_event_url'] ); ?>
+				<?php $this->field( 'cal_project_event_url', __( 'Project Consultation URL', 'handik-booking-app' ), $s['cal_project_event_url'] ); ?>
+				<?php $this->field( 'cal_webhook_secret', __( 'Cal Webhook Secret', 'handik-booking-app' ), $s['cal_webhook_secret'], 'password' ); ?>
+				<?php $this->field( 'email_from_name', __( 'Email From Name', 'handik-booking-app' ), $s['email_from_name'] ); ?>
+				<?php $this->field( 'email_from_address', __( 'Email From Address', 'handik-booking-app' ), $s['email_from_address'], 'email' ); ?>
+			</div>
+			<div class="handik-admin-panel">
+				<p><?php esc_html_e( 'Frontend app embedding options:', 'handik-booking-app' ); ?></p>
+				<code>[handik_booking_app]</code>
+				<p><?php esc_html_e( 'Elementor widget: Handik Booking App', 'handik-booking-app' ); ?></p>
+				<p><?php esc_html_e( 'Cal webhook URL:', 'handik-booking-app' ); ?> <code><?php echo esc_html( rest_url( 'handik-booking-app/v1/cal-webhook' ) ); ?></code></p>
+			</div>
+			<?php endif; ?>
 			<?php submit_button( __( 'Save Settings', 'handik-booking-app' ) ); ?>
 		</form>
-		<?php
-		$this->page_end();
-	}
-
-	public function render_integrations() {
-		$this->page_start( __( 'Integrations', 'handik-booking-app' ) );
-		?>
-		<div class="handik-admin-panel">
-			<p><?php esc_html_e( 'Frontend app embedding options:', 'handik-booking-app' ); ?></p>
-			<code>[handik_booking_app]</code>
-			<p><?php esc_html_e( 'Elementor widget: Handik Booking App', 'handik-booking-app' ); ?></p>
-			<p><?php esc_html_e( 'Cal webhook URL:', 'handik-booking-app' ); ?> <code><?php echo esc_html( rest_url( 'handik-booking-app/v1/cal-webhook' ) ); ?></code></p>
-			<p><?php esc_html_e( 'GitHub updater reads releases from:', 'handik-booking-app' ); ?> <code><?php echo esc_html( $this->settings->get( 'github_repo_url', '' ) ); ?></code></p>
-			<p><?php esc_html_e( 'For private repositories, add a GitHub token in App Settings so WordPress can fetch release metadata and ZIP assets.', 'handik-booking-app' ); ?></p>
-			<p><?php esc_html_e( 'Release flow: bump Version in the main plugin file, publish a GitHub Release, and ensure the release contains the plugin ZIP asset that matches the configured regex.', 'handik-booking-app' ); ?></p>
-			<p><?php esc_html_e( 'Google Maps Places autocomplete uses the browser-side API key, so restrict it by domain/referrer in Google Cloud.', 'handik-booking-app' ); ?></p>
-			<p><?php esc_html_e( 'The booking step now waits for webhook-synced Cal.com status before showing Success.', 'handik-booking-app' ); ?></p>
-		</div>
 		<?php
 		$this->page_end();
 	}
@@ -322,6 +359,85 @@ class Handik_Booking_App_Admin {
 			echo '<small>' . esc_html( $description ) . '</small>';
 		}
 		echo '</label>';
+	}
+
+	protected function render_services_editor() {
+		$catalog = $this->service_catalog->get_catalog();
+		echo '<div class="handik-admin-panel"><p>' . esc_html__( 'Add categories and services that appear on the task-selection screen. Each service can include a short description and a pricing hint for the client-facing notification.', 'handik-booking-app' ) . '</p>';
+		echo '<div class="handik-catalog-editor" data-handik-catalog-editor>';
+		echo '<div class="handik-catalog-editor__groups">';
+		foreach ( $catalog as $group_index => $group ) {
+			echo $this->catalog_group_markup( $group_index, $group );
+		}
+		echo '</div>';
+		echo '<p><button type="button" class="button button-secondary" data-handik-add-group>' . esc_html__( 'Add category', 'handik-booking-app' ) . '</button></p>';
+		echo '<textarea name="service_catalog_json" data-handik-catalog-json rows="12" style="width:100%;display:none;">' . esc_textarea( $this->service_catalog->get_catalog_json() ) . '</textarea>';
+		echo '</div></div>';
+	}
+
+	protected function catalog_group_markup( $group_index, array $group ) {
+		ob_start();
+		?>
+		<div class="handik-catalog-group" data-handik-group>
+			<div class="handik-catalog-group__header">
+				<label>
+					<span><?php esc_html_e( 'Category title', 'handik-booking-app' ); ?></span>
+					<input type="text" data-handik-group-name value="<?php echo esc_attr( $group['group'] ); ?>" />
+				</label>
+				<button type="button" class="button-link-delete" data-handik-remove-group><?php esc_html_e( 'Remove category', 'handik-booking-app' ); ?></button>
+			</div>
+			<div class="handik-catalog-group__tasks">
+				<?php foreach ( $group['tasks'] as $task_index => $task ) : ?>
+					<?php echo $this->catalog_task_markup( $group_index, $task_index, $task ); ?>
+				<?php endforeach; ?>
+			</div>
+			<p><button type="button" class="button button-secondary" data-handik-add-task><?php esc_html_e( 'Add service', 'handik-booking-app' ); ?></button></p>
+		</div>
+		<?php
+		return (string) ob_get_clean();
+	}
+
+	protected function catalog_task_markup( $group_index, $task_index, array $task ) {
+		ob_start();
+		?>
+		<div class="handik-catalog-task" data-handik-task>
+			<div class="handik-admin-grid">
+				<label><span><?php esc_html_e( 'Service ID', 'handik-booking-app' ); ?></span><input type="text" data-handik-task-id value="<?php echo esc_attr( $task['id'] ?? '' ); ?>" /></label>
+				<label><span><?php esc_html_e( 'Label', 'handik-booking-app' ); ?></span><input type="text" data-handik-task-label value="<?php echo esc_attr( $task['label'] ?? '' ); ?>" /></label>
+				<label><span><?php esc_html_e( 'Hourly price hint', 'handik-booking-app' ); ?></span><input type="text" data-handik-task-rate value="<?php echo esc_attr( $task['rate_label'] ?? '' ); ?>" /></label>
+				<label><span><?php esc_html_e( 'Service family', 'handik-booking-app' ); ?></span><input type="text" data-handik-task-service-family value="<?php echo esc_attr( $task['service_family'] ?? '' ); ?>" /></label>
+				<label><span><?php esc_html_e( 'Rate family', 'handik-booking-app' ); ?></span><input type="text" data-handik-task-rate-family value="<?php echo esc_attr( $task['rate_family'] ?? '' ); ?>" /></label>
+			</div>
+			<label style="display:grid;gap:8px;">
+				<span><?php esc_html_e( 'Client-facing description', 'handik-booking-app' ); ?></span>
+				<textarea rows="2" data-handik-task-description><?php echo esc_textarea( $task['description'] ?? '' ); ?></textarea>
+			</label>
+			<p><button type="button" class="button-link-delete" data-handik-remove-task><?php esc_html_e( 'Remove service', 'handik-booking-app' ); ?></button></p>
+		</div>
+		<?php
+		return (string) ob_get_clean();
+	}
+
+	protected function current_tab( array $allowed, $default ) {
+		$tab = isset( $_GET['tab'] ) ? sanitize_key( wp_unslash( $_GET['tab'] ) ) : $default; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		return in_array( $tab, $allowed, true ) ? $tab : $default;
+	}
+
+	protected function tabs_markup( array $tabs, $active ) {
+		$page = isset( $_GET['page'] ) ? sanitize_key( wp_unslash( $_GET['page'] ) ) : 'handik-booking-app-settings'; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		$html = '<nav class="nav-tab-wrapper handik-admin-tabs">';
+		foreach ( $tabs as $key => $label ) {
+			$url  = add_query_arg(
+				array(
+					'page' => $page,
+					'tab'  => $key,
+				),
+				admin_url( 'admin.php' )
+			);
+			$html .= '<a href="' . esc_url( $url ) . '" class="nav-tab ' . ( $active === $key ? 'nav-tab-active' : '' ) . '">' . esc_html( $label ) . '</a>';
+		}
+		$html .= '</nav>';
+		return $html;
 	}
 
 	protected function render_table( array $rows, array $columns ) {
