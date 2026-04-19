@@ -11,6 +11,16 @@ class Handik_Booking_App_Changelog_Service {
 	public function get_entries() {
 		return array(
 			array(
+				'version'      => '2.0.26',
+				'date'         => '2026-04-18',
+				'title'        => 'Info Mode Toggle And Simpler Notification Copy',
+				'notes'        => array(
+					'Added an Info mode toggle button to the booking UI with a short onboarding tooltip and local preference caching so helper tips stay on or off based on the client choice.',
+					'Simplified client-type and task notifications by removing extra titles, removing the task-details pill, and keeping task notices focused on the description plus hourly rate.',
+					'Updated warning copy to read more naturally inline and softened the notification animation so appearance and fade-out feel smoother.',
+				),
+			),
+			array(
 				'version'      => '2.0.25',
 				'date'         => '2026-04-18',
 				'title'        => 'Notification Portal Above Site Header',

@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.0.25
+Stable tag: 2.0.26
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, returning-client auth, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,11 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.0.26 =
+* Added an Info mode toggle with a short onboarding tooltip and cached client preference so helper tips can stay on or off between visits.
+* Simplified client-type and task notifications by removing extra titles, removing the task-details pill, and keeping task notices focused on the description plus hourly rate.
+* Updated warning copy and softened the notification animation so interactive notices feel more natural in the booking flow.
 
 = 2.0.25 =
 * Moved interactive notifications into `document.body` so they are no longer trapped inside the booking app container's stacking context.

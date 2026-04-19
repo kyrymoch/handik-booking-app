@@ -29,6 +29,73 @@
 	padding: calc(var(--handik-spacing, 20px) * 1.1);
 }
 
+.handik-booking-app__screen-header {
+	position: relative;
+}
+
+.handik-booking-app__screen-tools {
+	position: absolute;
+	right: 0;
+	top: 0;
+	z-index: 2;
+}
+
+.handik-booking-app__info-mode-wrap {
+	position: relative;
+}
+
+.handik-booking-app__info-mode {
+	width: 58px;
+	height: 58px;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	border-radius: 999px;
+	border: 2px solid var(--handik-accent, #0f766e);
+	background: rgba(255, 255, 255, 0.96);
+	color: var(--handik-accent, #0f766e);
+	box-shadow: 0 10px 24px rgba(15, 23, 42, 0.12);
+	cursor: pointer;
+}
+
+.handik-booking-app__info-mode.is-active {
+	background: color-mix(in srgb, var(--handik-accent, #0f766e) 10%, #ffffff);
+}
+
+.handik-booking-app__info-mode-icon {
+	font-size: 2rem;
+	line-height: 1;
+	font-weight: 500;
+}
+
+.handik-booking-app__info-mode-tooltip {
+	position: absolute;
+	right: calc(100% + 12px);
+	top: 50%;
+	transform: translateY(-50%);
+	min-width: 240px;
+	max-width: 280px;
+	padding: 10px 12px;
+	border-radius: 14px;
+	background: #0f766e;
+	color: #fff;
+	font-size: 0.85rem;
+	line-height: 1.4;
+	box-shadow: 0 16px 34px rgba(15, 23, 42, 0.18);
+	animation: handik-fade-in 0.32s ease forwards;
+}
+
+.handik-booking-app__info-mode-tooltip::after {
+	content: '';
+	position: absolute;
+	right: -6px;
+	top: 50%;
+	width: 12px;
+	height: 12px;
+	background: #0f766e;
+	transform: translateY(-50%) rotate(45deg);
+}
+
 .handik-booking-app__screen-header h2 {
 	margin: 0 0 18px;
 	font-size: clamp(1.45rem, 4.8vw, 1.95rem);
@@ -675,7 +742,7 @@ openai-chatkit::part(history-button) {
 	overflow: hidden;
 	opacity: 0;
 	transform: translateY(10px) scale(0.98);
-	transition: opacity 0.24s ease, transform 0.24s ease;
+	transition: opacity 0.34s cubic-bezier(0.22, 1, 0.36, 1), transform 0.34s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .handik-toast.is-visible {
@@ -841,6 +908,35 @@ openai-chatkit::part(history-button) {
 		padding: 12px;
 	}
 
+	.handik-booking-app__screen-tools {
+		right: 4px;
+		top: 4px;
+	}
+
+	.handik-booking-app__info-mode {
+		width: 52px;
+		height: 52px;
+	}
+
+	.handik-booking-app__info-mode-icon {
+		font-size: 1.8rem;
+	}
+
+	.handik-booking-app__info-mode-tooltip {
+		right: 0;
+		top: calc(100% + 10px);
+		transform: none;
+		min-width: 0;
+		width: 220px;
+		max-width: min(220px, calc(100vw - 40px));
+	}
+
+	.handik-booking-app__info-mode-tooltip::after {
+		right: 18px;
+		top: -6px;
+		transform: rotate(45deg);
+	}
+
 	.handik-footer-actions {
 		grid-template-columns: 72px minmax(0, 1fr);
 	}
@@ -982,6 +1078,17 @@ openai-chatkit::part(history-button) {
 	}
 	to {
 		transform: scaleX(0);
+	}
+}
+
+@keyframes handik-fade-in {
+	from {
+		opacity: 0;
+		transform: translateY(-4px);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
 	}
 }
 

@@ -10,6 +10,8 @@
 			this.root = root;
 			this.instanceId = 'handik-app-' + Math.random().toString( 36 ).slice( 2 );
 			this.notificationRootId = this.instanceId + '-notifications';
+			this.infoModeStorageKey = 'handik-booking-app-info-mode';
+			this.infoModeTooltipSeenKey = 'handik-booking-app-info-mode-tooltip-seen';
 			this.bootstrap = null;
 			this.addressAutocomplete = null;
 			this.bookingStatusTimer = null;
@@ -20,6 +22,7 @@
 			this.calEmbedListenerKey = '';
 			this.notificationTimers = new Map();
 			this.assistantBridge = null;
+			this.infoModeEnabled = this.readStoredBoolean( this.infoModeStorageKey, true );
 			this.state = {
 				step: 'client_type',
 				clientType: '',
@@ -46,11 +49,32 @@
 				footerHint: '',
 				footerHintError: false,
 				lastAssistantNotice: '',
+				infoModeTooltipVisible: false,
 				loading: false,
 				photoUploading: false,
 				bookingOpened: false,
 				notifications: []
 			};
+		}
+
+		readStoredBoolean( key, fallback ) {
+			try {
+				const value = window.localStorage.getItem( key );
+				if ( null === value ) {
+					return fallback;
+				}
+				return '1' === value;
+			} catch ( error ) {
+				return fallback;
+			}
+		}
+
+		writeStoredBoolean( key, value ) {
+			try {
+				window.localStorage.setItem( key, value ? '1' : '0' );
+			} catch ( error ) {
+				// Ignore storage failures.
+			}
 		}
 
 		async init() {
@@ -61,9 +85,24 @@
 					this.state.verifiedProfile = this.bootstrap.verified_profile;
 				}
 				this.render();
+				this.maybeShowInfoModeTooltip();
 			} catch ( error ) {
 				this.root.innerHTML = '<div class="handik-booking-app__shell"><div class="handik-booking-app__alert is-error">' + this.escape( error.message ) + '</div></div>';
 			}
+		}
+
+		maybeShowInfoModeTooltip() {
+			if ( this.readStoredBoolean( this.infoModeTooltipSeenKey, false ) ) {
+				return;
+			}
+
+			this.state.infoModeTooltipVisible = true;
+			this.render();
+			this.writeStoredBoolean( this.infoModeTooltipSeenKey, true );
+			window.setTimeout( () => {
+				this.state.infoModeTooltipVisible = false;
+				this.render();
+			}, 3800 );
 		}
 
 		renderLoading() {
@@ -112,12 +151,15 @@
 
 		setMessage( message ) {
 			if ( message ) {
-				this.notify( 'info', config.strings.infoTitle || 'Notice', message, 4200 );
+				this.notify( 'info', '', message, 4200 );
 			}
 		}
 
 		notify( type, title, message, duration, options ) {
 			const settings = options || {};
+			if ( ! this.infoModeEnabled && ( 'info' === type || 'task' === type ) ) {
+				return;
+			}
 			const item = {
 				id: 'notice_' + Math.random().toString( 36 ).slice( 2 ),
 				type: type || 'info',
@@ -144,15 +186,13 @@
 				return;
 			}
 
-			const meta = [
-				{ label: config.strings.taskNoticeBadge || 'Task details', tone: 'task' }
-			];
+			const meta = [];
 
 			if ( task.rate_label ) {
 				meta.push( { label: task.rate_label, tone: 'rate' } );
 			}
 
-			this.notify( 'task', task.label || ( config.strings.taskTitle || 'Task' ), task.description || '', 5200, { meta: meta } );
+			this.notify( 'task', '', task.description || task.label || ( config.strings.taskTitle || 'Task' ), 5200, { meta: meta } );
 		}
 
 		updateNotification( id, patch ) {
@@ -268,14 +308,16 @@
 
 			const duration = Math.max( 400, item.remaining || item.duration || 3200 );
 			const progressStart = Math.max( 0, Math.min( 1, duration / Math.max( duration, item.duration || 3200 ) ) );
+			const titleMarkup = item.title ? '<strong>' + this.escape( item.title ) + '</strong>' : '';
+			const messageMarkup = item.message ? '<span>' + this.escape( item.message ) + '</span>' : '';
 
 			return '<div class="' + classes + '" style="--handik-toast-duration:' + duration + 'ms;--handik-toast-progress-start:' + progressStart + ';" data-notification-id="' + this.escape( item.id ) + '">' +
 					'<div class="handik-toast__icon" aria-hidden="true">' + this.notificationIcon( item.type ) + '</div>' +
 					'<div class="handik-toast__content">' +
 						this.renderNotificationMeta( item ) +
 						'<div class="handik-toast__body">' +
-							'<strong>' + this.escape( item.title ) + '</strong>' +
-							'<span>' + this.escape( item.message ) + '</span>' +
+							titleMarkup +
+							messageMarkup +
 						'</div>' +
 					'</div>' +
 					this.renderNotificationClose( item ) +
@@ -321,7 +363,7 @@
 		showStepWarning( step, fallbackMessage ) {
 			this.notify(
 				'warning',
-				config.strings.warningTitle || 'Check this step',
+				'',
 				this.stepBlockMessage( step ) || fallbackMessage || '',
 				4200
 			);
@@ -329,7 +371,7 @@
 
 		setFooterHint( message, isError ) {
 			if ( message ) {
-				this.notify( isError ? 'warning' : 'info', isError ? ( config.strings.warningTitle || 'Check this step' ) : ( config.strings.infoTitle || 'Notice' ), message, 4200 );
+				this.notify( isError ? 'warning' : 'info', '', message, 4200 );
 			}
 			this.state.footerHint = '';
 			this.state.footerHintError = false;
@@ -346,7 +388,7 @@
 				return;
 			}
 			this.state.lastAssistantNotice = next;
-			this.notify( isError ? 'warning' : 'info', config.strings.assistantTitle || 'Virtual assistant', message, isError ? 5200 : 4200 );
+			this.notify( isError ? 'warning' : 'info', '', message, isError ? 5200 : 4200 );
 		}
 
 		setAssistantContinueBusy( isBusy ) {
@@ -393,22 +435,33 @@
 			const errors = config.strings.errors || {};
 			switch ( step ) {
 				case 'client_type':
-					return errors.pickClientType || 'Choose whether you are a new client or a returning client to continue.';
+					return errors.pickClientType || 'Check this step. Choose whether you are a new client or a returning client to continue.';
 				case 'returning_verify':
-					return errors.invalidCode || 'Enter your code and verify to continue.';
+					return errors.invalidCode || 'Check this step. Enter your code and verify to continue.';
 				case 'task_selection':
-					return errors.selectTask || 'Select at least one task or mark this as a project.';
+					return errors.selectTask || 'Check this step. Select at least one task or mark this as a project.';
 				case 'address_details':
-					return errors.addressRequired || 'Add the address of the job before continuing.';
+					return errors.addressRequired || 'Check this step. Add the address of the job before continuing.';
 				case 'photos':
 					return '';
 				case 'assistant':
-					return errors.assistantRequired || 'Please send the virtual assistant a short description of the job before continuing.';
+					return errors.assistantRequired || 'Check this step. Please send the virtual assistant a short description of the job before continuing.';
 				case 'contact_details':
-					return errors.nameEmailRequired || 'Name and email are required before you can continue.';
+					return errors.nameEmailRequired || 'Check this step. Name and email are required before you can continue.';
 				default:
 					return '';
 			}
+		}
+
+		toggleInfoMode() {
+			this.infoModeEnabled = ! this.infoModeEnabled;
+			this.writeStoredBoolean( this.infoModeStorageKey, this.infoModeEnabled );
+			this.state.infoModeTooltipVisible = true;
+			this.render();
+			window.setTimeout( () => {
+				this.state.infoModeTooltipVisible = false;
+				this.render();
+			}, 2200 );
 		}
 
 		clientTypeChoiceMarkup( type, action, label ) {
@@ -485,8 +538,8 @@
 					this.state.clientType = 'new_client';
 					this.notify(
 						'info',
-						config.strings.newClientTooltipTitle || 'New client',
-						config.strings.newClientTooltipText || 'Choose this if this is your first time booking with Handik or you have not used our booking flow before.'
+						'',
+						config.strings.newClientTooltipText || 'New client means someone who has never booked through this form before.'
 					);
 					this.render();
 					break;
@@ -494,10 +547,13 @@
 					this.state.clientType = 'returning_client';
 					this.notify(
 						'info',
-						config.strings.returningClientTooltipTitle || 'Returning client',
-						config.strings.returningClientTooltipText || 'Choose this if you have booked with Handik before and want to reuse your saved details.'
+						'',
+						config.strings.returningClientTooltipText || 'Returning client means someone who has already booked through this form before.'
 					);
 					this.render();
+					break;
+				case 'toggle-info-mode':
+					this.toggleInfoMode();
 					break;
 				case 'client-type-next':
 					if ( ! this.state.clientType ) {
@@ -1312,8 +1368,21 @@
 			}
 		}
 
+		infoModeControlMarkup() {
+			const label = this.infoModeEnabled ? ( config.strings.infoModeOn || 'Info mode on' ) : ( config.strings.infoModeOff || 'Info mode off' );
+			const tooltip = this.state.infoModeTooltipVisible
+				? '<span class="handik-booking-app__info-mode-tooltip" role="status">' + this.escape( config.strings.infoModeTooltip || 'Toggle helper tips and descriptive notifications on or off.' ) + '</span>'
+				: '';
+			return '<div class="handik-booking-app__screen-tools"><div class="handik-booking-app__info-mode-wrap">' +
+				'<button type="button" class="handik-booking-app__info-mode' + ( this.infoModeEnabled ? ' is-active' : '' ) + '" data-action="toggle-info-mode" aria-pressed="' + ( this.infoModeEnabled ? 'true' : 'false' ) + '" aria-label="' + this.escape( label ) + '">' +
+					'<span class="handik-booking-app__info-mode-icon" aria-hidden="true">?</span>' +
+				'</button>' +
+				tooltip +
+			'</div></div>';
+		}
+
 		screen( title, body, modifier ) {
-			return '<section class="handik-booking-app__screen ' + ( modifier || '' ) + '"><div class="handik-booking-app__screen-header"><h2>' + this.escape( title ) + '</h2></div><div class="handik-booking-app__screen-body">' + body + '</div></section>';
+			return '<section class="handik-booking-app__screen ' + ( modifier || '' ) + '"><div class="handik-booking-app__screen-header">' + this.infoModeControlMarkup() + '<h2>' + this.escape( title ) + '</h2></div><div class="handik-booking-app__screen-body">' + body + '</div></section>';
 		}
 
 		input( label, model, type ) {
