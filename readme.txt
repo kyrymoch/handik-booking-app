@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.0.31
+Stable tag: 2.0.33
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, returning-client auth, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,11 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.0.33 =
+* Rolled back the experimental assistant photo-upload diagnostics that interfered with hosted ChatKit connection stability on the Virtual assistant step.
+* Restored the previously working assistant photo flow from 2.0.31 so OpenAI chat sessions can mount and run normally again.
+* Kept the assistant-step `Add photos for AI review` control while returning the bridge behavior to the last stable release path.
 
 = 2.0.31 =
 * Added an assistant-step `Add photos for AI review` control so clients can upload images right where they ask the AI for help.

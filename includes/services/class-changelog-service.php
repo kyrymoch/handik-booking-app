@@ -11,6 +11,16 @@ class Handik_Booking_App_Changelog_Service {
 	public function get_entries() {
 		return array(
 			array(
+				'version'      => '2.0.33',
+				'date'         => '2026-04-18',
+				'title'        => 'Rollback To Stable Assistant Photo Flow',
+				'notes'        => array(
+					'Rolled back the experimental assistant photo-upload diagnostics that interfered with hosted ChatKit connection stability on the Virtual assistant step.',
+					'Restored the previously working assistant photo flow from 2.0.31 so OpenAI chat sessions can mount and run normally again.',
+					'Kept the Add photos for AI review control in place while returning the assistant bridge to the last stable release behavior.',
+				),
+			),
+			array(
 				'version'      => '2.0.31',
 				'date'         => '2026-04-18',
 				'title'        => 'Assistant Step Dual Upload For AI Review Photos',
