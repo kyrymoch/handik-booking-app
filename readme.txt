@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.0.43
+Stable tag: 2.0.44
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, returning-client auth, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,11 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.0.44 =
+* Photo-analysis failure and inconclusive paths now persist a complete `photo_analysis` object with a stable signature instead of leaving the assistant gate with an empty `photos_signature`.
+* The assistant photo-context dispatcher now uses a fallback dispatch signature when needed, so `HANDIK_CONTEXT` can still be sent into the live thread even when uploaded-photo analysis is limited or unavailable.
+* This closes the silent skip where the assistant unlocked normally but never dispatched any uploaded-photo context simply because the stored analysis object did not carry a usable signature.
 
 = 2.0.43 =
 * The ChatKit bridge now fires its assistant session-ready callback from the first real interactive chat signal instead of depending only on the hosted `chatkit.ready` event.

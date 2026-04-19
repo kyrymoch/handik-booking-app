@@ -1048,8 +1048,21 @@
 			return lines.join( '\n' );
 		}
 
+		contextDispatchSignature( analysis ) {
+			if ( analysis && analysis.photos_signature ) {
+				return String( analysis.photos_signature );
+			}
+
+			const message = this.buildPhotoContextMessage( analysis );
+			if ( ! message ) {
+				return '';
+			}
+
+			return 'fallback_' + String( this.state.requestId || 'draft' ) + '_' + String( message.length );
+		}
+
 		async sendPhotoContextToAssistant( analysis ) {
-			const signature = analysis && analysis.photos_signature ? String( analysis.photos_signature ) : '';
+			const signature = this.contextDispatchSignature( analysis );
 			const message = this.buildPhotoContextMessage( analysis );
 			if ( ! signature || ! message ) {
 				return false;
@@ -1093,8 +1106,9 @@
 
 			this.assistantContextDispatchPromise = ( async() => {
 				const analysis = this.pendingAssistantContextAnalysis || ( session && session.draft_context && session.draft_context.photo_analysis ? session.draft_context.photo_analysis : null );
-				const signature = analysis && analysis.photos_signature ? String( analysis.photos_signature ) : '';
-				const needsContextDispatch = !! ( signature && signature !== this.photoContextSignatureSent );
+				const signature = this.contextDispatchSignature( analysis );
+				const message = this.buildPhotoContextMessage( analysis );
+				const needsContextDispatch = !! ( message && signature !== this.photoContextSignatureSent );
 
 				try {
 					await this.logClient( 'info', 'Assistant photo gate started.', {

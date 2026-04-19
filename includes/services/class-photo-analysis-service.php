@@ -130,7 +130,7 @@ class Handik_Booking_App_Photo_Analysis_Service {
 		);
 
 		if ( is_wp_error( $response ) ) {
-			$this->persist_failure_state( (int) $request['id'] );
+			$this->persist_failure_state( (int) $request['id'], $signature );
 			$this->logger->error(
 				'Photo analysis request failed.',
 				array(
@@ -146,7 +146,7 @@ class Handik_Booking_App_Photo_Analysis_Service {
 		$payload = json_decode( $body, true );
 
 		if ( $status < 200 || $status >= 300 ) {
-			$this->persist_failure_state( (int) $request['id'] );
+			$this->persist_failure_state( (int) $request['id'], $signature );
 			$this->logger->error(
 				'Photo analysis returned an unexpected response.',
 				array(
@@ -161,7 +161,7 @@ class Handik_Booking_App_Photo_Analysis_Service {
 		$text   = $this->extract_text_response( $payload );
 		$parsed = $this->decode_analysis_json( $text );
 		if ( empty( $parsed ) ) {
-			$this->persist_failure_state( (int) $request['id'] );
+			$this->persist_failure_state( (int) $request['id'], $signature );
 			$this->logger->error(
 				'Photo analysis JSON could not be parsed.',
 				array(
@@ -359,12 +359,32 @@ class Handik_Booking_App_Photo_Analysis_Service {
 	 * @param int $request_id Request ID.
 	 * @return void
 	 */
-	protected function persist_failure_state( $request_id ) {
+	protected function persist_failure_state( $request_id, $signature = '' ) {
+		$analysis = $this->normalize_analysis(
+			array(
+				'photos_signature'              => sanitize_text_field( (string) $signature ),
+				'generated_at'                  => current_time( 'mysql' ),
+				'visual_summary'                => '',
+				'visual_estimate_notes'         => '',
+				'visible_tasks'                 => array(),
+				'safety_observations'           => array(),
+				'missing_visual_details'        => array( 'Automatic image analysis was unavailable.' ),
+				'has_actionable_visual_context' => false,
+				'source'                        => 'failed',
+			)
+		);
+
 		$this->job_requests->update_app_state(
 			$request_id,
 			array(
+				'photo_analysis'                => $analysis,
 				'photo_analysis_status'         => 'failed',
+				'photo_analysis_summary'        => $analysis['visual_summary'],
+				'photo_analysis_updated_at'     => current_time( 'mysql' ),
 				'photo_context_summary'         => 'Photo analysis unavailable at the moment.',
+				'visible_tasks_summary'         => '',
+				'safety_summary'                => '',
+				'visual_estimate_notes'         => '',
 				'has_actionable_visual_context' => false,
 			)
 		);

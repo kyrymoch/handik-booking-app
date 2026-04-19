@@ -11,6 +11,16 @@ class Handik_Booking_App_Changelog_Service {
 	public function get_entries() {
 		return array(
 			array(
+				'version'      => '2.0.44',
+				'date'         => '2026-04-19',
+				'title'        => 'Send Photo Context Even When Analysis Is Inconclusive Or Failed',
+				'notes'        => array(
+					'Photo-analysis failure and inconclusive paths now persist a complete photo_analysis object with a stable signature instead of leaving the assistant gate with an empty photos_signature.',
+					'The assistant photo-context dispatcher now uses a fallback dispatch signature when needed, so HANDIK_CONTEXT can still be sent into the live thread even when uploaded-photo analysis is limited or unavailable.',
+					'This closes the silent skip where the assistant unlocked normally but never dispatched any uploaded-photo context simply because the stored analysis object did not carry a usable signature.',
+				),
+			),
+			array(
 				'version'      => '2.0.43',
 				'date'         => '2026-04-19',
 				'title'        => 'Fire Assistant Session Readiness From Real Interactive Chat Signals',
