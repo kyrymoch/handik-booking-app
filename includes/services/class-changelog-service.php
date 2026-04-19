@@ -11,16 +11,6 @@ class Handik_Booking_App_Changelog_Service {
 	public function get_entries() {
 		return array(
 			array(
-				'version'      => '2.0.32',
-				'date'         => '2026-04-18',
-				'title'        => 'Assistant Photo Upload Diagnostics And Timeout Guards',
-				'notes'        => array(
-					'Added detailed step-by-step diagnostics around assistant photo upload, ChatKit file handoff, and backend photo-analysis warmup so stuck uploads now leave a clear trace in the WordPress logs.',
-					'Wrapped the assistant photo flow in timeout guards and a final loading-state reset so the UI no longer spins forever if one of the upload or analysis stages hangs.',
-					'Added matching backend logs for photo upload receipt/completion and photo-analysis warmup start/finish to make it obvious whether the request is blocking in WordPress, ChatKit, or OpenAI vision.',
-				),
-			),
-			array(
 				'version'      => '2.0.31',
 				'date'         => '2026-04-18',
 				'title'        => 'Assistant Step Dual Upload For AI Review Photos',

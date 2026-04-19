@@ -558,41 +558,15 @@
 			}
 		}
 
-		withTimeout( promise, timeoutMs, label ) {
-			const duration = Math.max( 1000, Number( timeoutMs || 0 ) || 15000 );
-			return Promise.race( [
-				Promise.resolve( promise ),
-				new Promise( ( _, reject ) => {
-					window.setTimeout( () => {
-						reject( new Error( ( label || 'Request' ) + ' timed out after ' + duration + 'ms.' ) );
-					}, duration );
-				} ),
-			] );
-		}
-
 		async pushPendingFilesIntoAssistant() {
 			if ( ! this.assistantBridge || 'function' !== typeof this.assistantBridge.addFiles ) {
-				await this.logClient( 'debug', 'Assistant composer addFiles skipped.', {
-					request_id: this.state.requestId,
-					reason: 'assistant_bridge_missing',
-				} );
 				return false;
 			}
 
 			try {
-				await this.logClient( 'info', 'Assistant composer addFiles started.', {
-					request_id: this.state.requestId,
-					pending_files: this.pendingPhotoFiles.length,
-				} );
-				const result = await this.withTimeout( this.assistantBridge.addFiles(), 20000, 'Assistant file handoff' );
-				await this.logClient( 'info', 'Assistant composer addFiles completed.', {
-					request_id: this.state.requestId,
-					result: !! result,
-					pending_files: this.pendingPhotoFiles.length,
-				} );
-				return result;
+				return await this.assistantBridge.addFiles();
 			} catch ( error ) {
-				await this.logClient( 'error', 'Assistant composer addFiles failed.', {
+				this.logClient( 'debug', 'Assistant composer addFiles failed.', {
 					request_id: this.state.requestId,
 					error: error && error.message ? error.message : 'unknown'
 				} );
@@ -611,35 +585,18 @@
 			this.render();
 
 			try {
-				await this.logClient( 'info', 'Assistant photo dual-upload started.', {
-					request_id: this.state.requestId,
-					step: this.state.step,
-					file_count: selectedFiles.length,
-					file_names: selectedFiles.map( ( file ) => file.name ),
-				} );
 				await this.uploadFiles( selectedFiles );
 				if ( 'assistant' === this.state.step ) {
 					await this.pushPendingFilesIntoAssistant();
 					await this.warmPhotoAnalysis();
 				}
-				await this.logClient( 'info', 'Assistant photo dual-upload finished.', {
-					request_id: this.state.requestId,
-					step: this.state.step,
-					stored_photos: this.state.photos.length,
-					pending_files: this.pendingPhotoFiles.length,
-				} );
 				this.notify( 'success', successTitle || 'Photos added', successMessage || 'Your photos were uploaded and attached to this request.' );
 			} catch ( error ) {
-				await this.logClient( 'error', 'Assistant photo dual-upload failed.', {
-					request_id: this.state.requestId,
-					step: this.state.step,
-					error: error && error.message ? error.message : 'unknown',
-				} );
 				this.setFooterHint( error.message, true );
-			} finally {
-				this.state.photoUploading = false;
-				this.render();
 			}
+
+			this.state.photoUploading = false;
+			this.render();
 		}
 
 		toggleTask( id ) {
@@ -907,37 +864,18 @@
 			if ( ! files || ! files.length ) {
 				return;
 			}
-			await this.logClient( 'info', 'Upload files started.', {
-				request_id: this.state.requestId,
-				file_count: files.length,
-			} );
-			await this.withTimeout( this.ensureDraftRequest( 'photos' ), 15000, 'Draft creation before photo upload' );
+			await this.ensureDraftRequest( 'photos' );
 			for ( const file of files ) {
-				await this.logClient( 'debug', 'Uploading file to WordPress started.', {
-					request_id: this.state.requestId,
-					file_name: file.name,
-					file_size: file.size,
-					file_type: file.type,
-				} );
 				const formData = new window.FormData();
 				formData.append( 'file', file );
 				formData.append( 'request_id', String( this.state.requestId || 0 ) );
 				formData.append( 'draft_token', this.state.draftToken || '' );
 				formData.append( 'contact_id', String( ( this.state.verifiedProfile && this.state.verifiedProfile.contact && this.state.verifiedProfile.contact.id ) || 0 ) );
 				formData.append( 'app_session_key', this.state.appSessionKey );
-				const uploaded = await this.withTimeout( this.api( 'app/upload', {}, 'POST', formData ), 30000, 'WordPress photo upload' );
+				const uploaded = await this.api( 'app/upload', {}, 'POST', formData );
 				this.state.photos.push( uploaded );
-				await this.logClient( 'info', 'Uploading file to WordPress completed.', {
-					request_id: this.state.requestId,
-					file_name: uploaded && uploaded.name ? uploaded.name : file.name,
-					attachment_id: uploaded && uploaded.attachment_id ? uploaded.attachment_id : 0,
-				} );
 			}
 			this.photoAnalysisWarmRequestId = 0;
-			await this.logClient( 'info', 'Upload files finished.', {
-				request_id: this.state.requestId,
-				stored_photos: this.state.photos.length,
-			} );
 		}
 
 		async warmPhotoAnalysis() {
@@ -952,20 +890,12 @@
 			this.photoAnalysisWarmRequestId = this.state.requestId;
 
 			try {
-				await this.logClient( 'info', 'Photo analysis warmup started.', {
-					request_id: this.state.requestId,
-					photo_count: this.state.photos.length,
-				} );
-				await this.withTimeout( this.api( 'photo-analysis', {
+				await this.api( 'photo-analysis', {
 					request_id: this.state.requestId,
 					draft_token: this.state.draftToken
-				} ), 45000, 'Photo analysis warmup' );
-				await this.logClient( 'info', 'Photo analysis warmup completed.', {
-					request_id: this.state.requestId,
-					photo_count: this.state.photos.length,
 				} );
 			} catch ( error ) {
-				await this.logClient( 'error', 'Photo analysis warmup failed.', {
+				this.logClient( 'debug', 'Photo analysis warmup failed.', {
 					request_id: this.state.requestId,
 					error: error && error.message ? error.message : 'unknown'
 				} );
