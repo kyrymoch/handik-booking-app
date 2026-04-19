@@ -82,16 +82,16 @@ class Handik_Booking_App_Settings {
 			'app_font_scale'         => '1',
 			'app_button_style'       => 'pill',
 			'service_catalog_json'   => '',
-			'ui_loading_title'       => 'Getting your booking space ready...',
-			'ui_loading_subtitle'    => 'Laying out the tools and making room for the good stuff.',
+			'ui_loading_title'       => 'Загрузка...',
+			'ui_loading_subtitle'    => '',
 			'ui_client_type_title'   => 'Who is booking today?',
 			'ui_client_type_intro'   => 'Choose the option that best matches your situation.',
 			'ui_new_client_label'    => 'New client',
 			'ui_returning_client_label' => 'Returning client',
 			'ui_new_client_tooltip_title' => 'New client',
-			'ui_new_client_tooltip_text'  => 'Choose this if this is your first time booking with Handik or you have not used our booking flow before.',
+			'ui_new_client_tooltip_text'  => 'New client means someone who has never booked through this form before.',
 			'ui_returning_client_tooltip_title' => 'Returning client',
-			'ui_returning_client_tooltip_text'  => 'Choose this if you have booked with Handik before and want to reuse your saved details.',
+			'ui_returning_client_tooltip_text'  => 'Returning client means someone who has already booked through this form before.',
 			'ui_returning_verify_title' => 'Returning client verification',
 			'ui_returning_verify_intro' => 'Enter your email or phone to receive a one-time code.',
 			'ui_task_selection_title'   => 'What do you need help with?',
@@ -101,8 +101,8 @@ class Handik_Booking_App_Settings {
 			'ui_address_label'          => 'Address of the job',
 			'ui_address_unit_label'     => 'Unit or apartment (optional)',
 			'ui_photos_title'           => 'Photos',
-			'ui_photos_intro'           => 'Photos really help us understand the job faster, but you can skip this step if you do not have any.',
-			'ui_skip_photos_button'     => 'Skip photos',
+			'ui_photos_intro'           => 'Photos really help us understand the job faster, but you can continue without them if needed.',
+			'ui_skip_photos_button'     => '',
 			'ui_saved_address_label'    => 'Saved address',
 			'ui_saved_address_placeholder' => 'Choose saved address',
 			'ui_photos_label'           => 'Photos',
@@ -114,6 +114,10 @@ class Handik_Booking_App_Settings {
 			'ui_assistant_helper'       => 'This is Handik\'s virtual assistant. Describe the job, mention anything important, and ask questions about time, materials, or the next step. If you want to move faster, give a short description and then tap Continue.',
 			'ui_assistant_greeting'     => 'Describe the task and I will help estimate time, materials, and the next step.',
 			'ui_assistant_ready_notice' => 'The virtual assistant has enough information. Continue when you are ready.',
+			'ui_assistant_continue_button' => 'Go to time and date selection',
+			'ui_contact_continue_button' => 'Go to AI estimate',
+			'ui_contact_intro'         => 'This is the last step where you can change the booking details before the AI review starts.',
+			'ui_project_notice'        => 'Project / Large Job means a bigger scope that usually needs a consultation-style visit before the work is scheduled.',
 			'ui_contact_title'          => 'Contact details',
 			'ui_booking_title'          => 'Book your time slot',
 			'ui_success_title'          => 'Success',
@@ -127,8 +131,8 @@ class Handik_Booking_App_Settings {
 			'ui_open_booking_button'    => 'Open calendar in new tab',
 			'ui_complete_booking_button'=> 'Check booking status',
 			'ui_restart_button'         => 'Start another booking',
-			'ui_loading_assistant_title'=> 'Loading virtual assistant...',
-			'ui_loading_assistant_subtitle' => 'Charging the tiny robot brain for your next step.',
+			'ui_loading_assistant_title'=> 'Загрузка...',
+			'ui_loading_assistant_subtitle' => '',
 			'ui_error_pick_client_type' => 'Choose whether you are a new client or a returning client to continue.',
 			'ui_error_select_task'      => 'Select at least one task or mark this as a project.',
 			'ui_error_address_required' => 'Add the address of the job before continuing.',
@@ -136,10 +140,13 @@ class Handik_Booking_App_Settings {
 			'ui_error_assistant_required' => 'Please send the virtual assistant a short description of the job before continuing.',
 			'ui_error_name_email_required' => 'Name and email are required before you can continue.',
 			'ui_error_phone_or_email_required' => 'Enter your email or phone, then request a code.',
-			'ui_booking_waiting'        => 'Choose a time in the calendar below. We will update this page automatically as soon as the booking is confirmed.',
+			'ui_booking_waiting'        => '',
 			'ui_booking_confirmed'      => 'Your time slot is booked. Finishing your request now...',
 			'ui_booking_cancelled'      => 'This booking was cancelled. You can choose another slot below.',
 			'ui_address_placeholder'    => 'Start typing the address of the job',
+			'ui_info_mode_tooltip'      => 'Toggle helper tips and descriptive notifications on or off.',
+			'ui_info_mode_enabled_message' => 'Hints are enabled.',
+			'ui_info_mode_disabled_message' => 'Hints are disabled.',
 		);
 	}
 
@@ -247,6 +254,8 @@ class Handik_Booking_App_Settings {
 				case 'ui_photos_help':
 				case 'ui_assistant_helper':
 				case 'ui_assistant_ready_notice':
+				case 'ui_contact_intro':
+				case 'ui_project_notice':
 				case 'ui_success_body':
 				case 'ui_unsafe_body':
 				case 'ui_error_pick_client_type':
@@ -259,6 +268,9 @@ class Handik_Booking_App_Settings {
 				case 'ui_booking_waiting':
 				case 'ui_booking_confirmed':
 				case 'ui_booking_cancelled':
+				case 'ui_info_mode_tooltip':
+				case 'ui_info_mode_enabled_message':
+				case 'ui_info_mode_disabled_message':
 					$output[ $key ] = sanitize_textarea_field( (string) $value );
 					break;
 				default:

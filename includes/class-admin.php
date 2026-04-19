@@ -80,7 +80,7 @@ class Handik_Booking_App_Admin {
 		add_menu_page( __( 'Handik Booking', 'handik-booking-app' ), __( 'Handik Booking', 'handik-booking-app' ), 'manage_options', 'handik-booking-app', array( $this, 'render_dashboard' ), 'dashicons-calendar-alt', 26 );
 		add_submenu_page( 'handik-booking-app', __( 'Dashboard', 'handik-booking-app' ), __( 'Dashboard', 'handik-booking-app' ), 'manage_options', 'handik-booking-app', array( $this, 'render_dashboard' ) );
 		add_submenu_page( 'handik-booking-app', __( 'Bookings', 'handik-booking-app' ), __( 'Bookings', 'handik-booking-app' ), 'manage_options', 'handik-booking-app-bookings', array( $this, 'render_bookings' ) );
-		add_submenu_page( 'handik-booking-app', __( 'Clients & Requests', 'handik-booking-app' ), __( 'Clients & Requests', 'handik-booking-app' ), 'manage_options', 'handik-booking-app-crm', array( $this, 'render_crm' ) );
+		add_submenu_page( 'handik-booking-app', __( 'People & Requests', 'handik-booking-app' ), __( 'People & Requests', 'handik-booking-app' ), 'manage_options', 'handik-booking-app-crm', array( $this, 'render_crm' ) );
 		add_submenu_page( 'handik-booking-app', __( 'App Setup', 'handik-booking-app' ), __( 'App Setup', 'handik-booking-app' ), 'manage_options', 'handik-booking-app-settings', array( $this, 'render_settings' ) );
 		add_submenu_page( 'handik-booking-app', __( 'Logs', 'handik-booking-app' ), __( 'Logs', 'handik-booking-app' ), 'manage_options', 'handik-booking-app-logs', array( $this, 'render_logs' ) );
 		add_submenu_page( 'handik-booking-app', __( 'Changelog', 'handik-booking-app' ), __( 'Changelog', 'handik-booking-app' ), 'manage_options', 'handik-booking-app-changelog', array( $this, 'render_changelog' ) );
@@ -146,7 +146,7 @@ class Handik_Booking_App_Admin {
 
 		$rows = $this->bookings->list_recent( 100 );
 		echo '<div class="handik-admin-panel"><table class="widefat striped"><thead><tr>';
-		foreach ( array( 'ID', 'Status', 'Booking Type', 'Client', 'When', 'Request', 'Cal Booking', 'Updated', 'Details' ) as $label ) {
+		foreach ( array( 'ID', 'Client', 'Phone', 'Email', 'Tasks', 'Rate', 'Address', 'Assistant Summary', 'When', 'Duration', 'Status', 'Details' ) as $label ) {
 			echo '<th>' . esc_html( $label ) . '</th>';
 		}
 		echo '</tr></thead><tbody>';
@@ -154,6 +154,7 @@ class Handik_Booking_App_Admin {
 		foreach ( $rows as $row ) {
 			$request = ! empty( $row['job_request_id'] ) ? $this->job_requests->get( (int) $row['job_request_id'] ) : null;
 			$contact = ( $request && ! empty( $request['contact_id'] ) ) ? $this->contacts->get( (int) $request['contact_id'] ) : null;
+			$task_ids = is_array( $request['selected_tasks'] ?? null ) ? $request['selected_tasks'] : array();
 			$detail_url = add_query_arg(
 				array(
 					'page'       => 'handik-booking-app-bookings',
@@ -164,19 +165,22 @@ class Handik_Booking_App_Admin {
 
 			echo '<tr>';
 			echo '<td>#' . esc_html( (string) $row['id'] ) . '</td>';
-			echo '<td>' . esc_html( (string) $row['status'] ) . '</td>';
-			echo '<td>' . esc_html( (string) $row['booking_type'] ) . '</td>';
 			echo '<td>' . esc_html( (string) ( $contact['full_name'] ?? 'Unknown client' ) ) . '</td>';
+			echo '<td>' . esc_html( (string) ( $contact['phone'] ?? '' ) ) . '</td>';
+			echo '<td>' . esc_html( (string) ( $contact['email'] ?? '' ) ) . '</td>';
+			echo '<td>' . $this->task_summary_markup( $task_ids ) . '</td>';
+			echo '<td>' . esc_html( $this->request_rate_label( $request ) ) . '</td>';
+			echo '<td>' . esc_html( (string) ( $request['address_full'] ?? '' ) ) . '</td>';
+			echo '<td>' . esc_html( wp_trim_words( (string) ( $request['assistant_summary'] ?? '' ), 18, '…' ) ) . '</td>';
 			echo '<td>' . esc_html( $this->format_booking_window( $row ) ) . '</td>';
-			echo '<td>#' . esc_html( (string) ( $row['job_request_id'] ?? '' ) ) . '</td>';
-			echo '<td>' . esc_html( (string) ( $row['cal_booking_id'] ?? '' ) ) . '</td>';
-			echo '<td>' . esc_html( (string) ( $row['updated_at'] ?? '' ) ) . '</td>';
+			echo '<td>' . esc_html( (string) ( $request['duration_bucket'] ?? '' ) ) . '</td>';
+			echo '<td>' . esc_html( (string) $row['status'] ) . '</td>';
 			echo '<td><a class="button button-secondary" href="' . esc_url( $detail_url ) . '">' . esc_html__( 'Open', 'handik-booking-app' ) . '</a></td>';
 			echo '</tr>';
 		}
 
 		if ( empty( $rows ) ) {
-			echo '<tr><td colspan="9">' . esc_html__( 'No bookings found.', 'handik-booking-app' ) . '</td></tr>';
+			echo '<tr><td colspan="12">' . esc_html__( 'No bookings found.', 'handik-booking-app' ) . '</td></tr>';
 		}
 
 		echo '</tbody></table></div>';
@@ -185,7 +189,7 @@ class Handik_Booking_App_Admin {
 
 	public function render_crm() {
 		$tab = $this->current_tab( array( 'requests', 'contacts', 'addresses' ), 'requests' );
-		$this->page_start( __( 'Clients & Requests', 'handik-booking-app' ) );
+		$this->page_start( __( 'People & Requests', 'handik-booking-app' ) );
 		echo $this->tabs_markup(
 			array(
 				'requests'  => __( 'Requests', 'handik-booking-app' ),
@@ -241,6 +245,8 @@ class Handik_Booking_App_Admin {
 				__( 'Start', 'handik-booking-app' )           => (string) ( $booking['start_time'] ?? '' ),
 				__( 'End', 'handik-booking-app' )             => (string) ( $booking['end_time'] ?? '' ),
 				__( 'Updated', 'handik-booking-app' )         => (string) ( $booking['updated_at'] ?? '' ),
+				__( 'Duration bucket', 'handik-booking-app' ) => (string) ( $request['duration_bucket'] ?? '' ),
+				__( 'Hourly rate hint', 'handik-booking-app' ) => $this->request_rate_label( $request ),
 			)
 		);
 		echo '</div>';
@@ -275,12 +281,15 @@ class Handik_Booking_App_Admin {
 				__( 'Thread ID', 'handik-booking-app' )       => (string) ( $request['chat_thread_id'] ?? '' ),
 			)
 		);
+		echo $this->thread_link_markup( $request );
 		echo '<h3>' . esc_html__( 'Selected tasks', 'handik-booking-app' ) . '</h3>';
 		echo $this->task_summary_markup( is_array( $request['selected_tasks'] ?? null ) ? $request['selected_tasks'] : array() );
 		echo '<h3>' . esc_html__( 'Assistant summary', 'handik-booking-app' ) . '</h3>';
 		echo '<div class="handik-admin-note">' . nl2br( esc_html( (string) ( $request['assistant_summary'] ?? '' ) ) ) . '</div>';
 		echo '<h3>' . esc_html__( 'Estimate notes', 'handik-booking-app' ) . '</h3>';
 		echo '<div class="handik-admin-note">' . nl2br( esc_html( (string) ( $request['estimate_notes'] ?? '' ) ) ) . '</div>';
+		echo '<h3>' . esc_html__( 'Latest assistant output', 'handik-booking-app' ) . '</h3>';
+		echo $this->assistant_output_markup( $request );
 		echo '</div>';
 
 		echo '<div class="handik-admin-panel">';
@@ -409,7 +418,10 @@ class Handik_Booking_App_Admin {
 				<?php $this->textarea_field( 'ui_assistant_helper', __( 'Assistant Helper Copy', 'handik-booking-app' ), $s['ui_assistant_helper'] ); ?>
 				<?php $this->textarea_field( 'ui_assistant_greeting', __( 'Assistant Greeting', 'handik-booking-app' ), $s['ui_assistant_greeting'] ); ?>
 				<?php $this->textarea_field( 'ui_assistant_ready_notice', __( 'Assistant Ready Notice', 'handik-booking-app' ), $s['ui_assistant_ready_notice'] ); ?>
+				<?php $this->field( 'ui_assistant_continue_button', __( 'Assistant Continue Button', 'handik-booking-app' ), $s['ui_assistant_continue_button'] ); ?>
 				<?php $this->field( 'ui_contact_title', __( 'Contact Title', 'handik-booking-app' ), $s['ui_contact_title'] ); ?>
+				<?php $this->textarea_field( 'ui_contact_intro', __( 'Contact Intro', 'handik-booking-app' ), $s['ui_contact_intro'] ); ?>
+				<?php $this->field( 'ui_contact_continue_button', __( 'Contact Continue Button', 'handik-booking-app' ), $s['ui_contact_continue_button'] ); ?>
 				<?php $this->field( 'ui_booking_title', __( 'Booking Title', 'handik-booking-app' ), $s['ui_booking_title'] ); ?>
 				<?php $this->field( 'ui_success_title', __( 'Success Title', 'handik-booking-app' ), $s['ui_success_title'] ); ?>
 				<?php $this->textarea_field( 'ui_success_body', __( 'Success Body', 'handik-booking-app' ), $s['ui_success_body'] ); ?>
@@ -435,6 +447,10 @@ class Handik_Booking_App_Admin {
 				<?php $this->textarea_field( 'ui_booking_confirmed', __( 'Booking Confirmed Message', 'handik-booking-app' ), $s['ui_booking_confirmed'] ); ?>
 				<?php $this->textarea_field( 'ui_booking_cancelled', __( 'Booking Cancelled Message', 'handik-booking-app' ), $s['ui_booking_cancelled'] ); ?>
 				<?php $this->field( 'ui_address_placeholder', __( 'Address Placeholder', 'handik-booking-app' ), $s['ui_address_placeholder'] ); ?>
+				<?php $this->textarea_field( 'ui_project_notice', __( 'Project Notice', 'handik-booking-app' ), $s['ui_project_notice'] ); ?>
+				<?php $this->textarea_field( 'ui_info_mode_tooltip', __( 'Info Mode Tooltip', 'handik-booking-app' ), $s['ui_info_mode_tooltip'] ); ?>
+				<?php $this->field( 'ui_info_mode_enabled_message', __( 'Hints Enabled Message', 'handik-booking-app' ), $s['ui_info_mode_enabled_message'] ); ?>
+				<?php $this->field( 'ui_info_mode_disabled_message', __( 'Hints Disabled Message', 'handik-booking-app' ), $s['ui_info_mode_disabled_message'] ); ?>
 			</div>
 			<?php elseif ( 'services' === $tab ) : ?>
 			<?php $this->render_services_editor(); ?>
@@ -655,6 +671,48 @@ class Handik_Booking_App_Admin {
 		}
 		$html .= '</div>';
 		return $html;
+	}
+
+	protected function request_rate_label( $request ) {
+		if ( ! is_array( $request ) ) {
+			return '';
+		}
+
+		$task_ids = is_array( $request['selected_tasks'] ?? null ) ? $request['selected_tasks'] : array();
+		$labels   = array();
+
+		foreach ( $task_ids as $task_id ) {
+			$task = $this->service_catalog->find_task( (string) $task_id );
+			if ( ! empty( $task['rate_label'] ) ) {
+				$labels[] = (string) $task['rate_label'];
+			}
+		}
+
+		$labels = array_values( array_unique( array_filter( $labels ) ) );
+		if ( ! empty( $labels ) ) {
+			return implode( ', ', $labels );
+		}
+
+		return (string) ( $request['rate_family'] ?? '' );
+	}
+
+	protected function thread_link_markup( $request ) {
+		$thread_id = ! empty( $request['chat_thread_id'] ) ? (string) $request['chat_thread_id'] : '';
+		if ( '' === $thread_id ) {
+			return '';
+		}
+
+		$url = 'https://platform.openai.com/logs/' . rawurlencode( $thread_id );
+		return '<p><a class="button button-secondary" target="_blank" rel="noopener noreferrer" href="' . esc_url( $url ) . '">' . esc_html__( 'Open thread in OpenAI logs', 'handik-booking-app' ) . '</a></p>';
+	}
+
+	protected function assistant_output_markup( $request ) {
+		$output = is_array( $request['assistant_result'] ?? null ) ? $request['assistant_result'] : array();
+		if ( empty( $output ) ) {
+			return '<p>' . esc_html__( 'No assistant output saved yet.', 'handik-booking-app' ) . '</p>';
+		}
+
+		return '<pre>' . esc_html( wp_json_encode( $output, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE ) ) . '</pre>';
 	}
 
 	protected function photos_gallery_markup( array $photos ) {

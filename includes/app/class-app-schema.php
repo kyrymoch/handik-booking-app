@@ -43,6 +43,15 @@ class Handik_Booking_App_Schema {
 			'bookingStatusMessage' => '',
 			'unsafeReason'       => '',
 			'appSessionKey'      => '',
+			'message'            => '',
+			'footerHint'         => '',
+			'footerHintError'    => false,
+			'lastAssistantNotice'=> '',
+			'infoModeTooltipVisible' => false,
+			'loading'            => false,
+			'photoUploading'     => false,
+			'bookingOpened'      => false,
+			'notifications'      => array(),
 		);
 	}
 }

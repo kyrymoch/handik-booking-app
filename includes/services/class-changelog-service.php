@@ -11,6 +11,16 @@ class Handik_Booking_App_Changelog_Service {
 	public function get_entries() {
 		return array(
 			array(
+				'version'      => '2.0.28',
+				'date'         => '2026-04-18',
+				'title'        => 'Flow Reorder, Better Booking Admin, And More Stable Assistant Mounting',
+				'notes'        => array(
+					'Reordered the booking flow to move through address, tasks, photos, contact details, virtual assistant, and booking, while moving the action dock and compact progress bar to the bottom on desktop and mobile.',
+					'Expanded the Bookings admin view with assistant output JSON, direct OpenAI thread-log links, and list columns centered on the fields that matter operationally: client info, task summary, rate hint, address, assistant summary, and schedule.',
+					'Removed the app-owned success step and stopped double-mounting hosted ChatKit when entering the assistant screen, which should make the assistant step noticeably more stable.',
+				),
+			),
+			array(
 				'version'      => '2.0.27',
 				'date'         => '2026-04-18',
 				'title'        => 'Quieter Info Mode Toggle',

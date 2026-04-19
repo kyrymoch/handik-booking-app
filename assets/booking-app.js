@@ -106,7 +106,11 @@
 		}
 
 		renderLoading() {
-			this.root.innerHTML = '<div class="handik-booking-app__shell"><div class="handik-booking-app__loading"><div class="handik-loading-visual handik-loading-visual--roller" aria-hidden="true"><span class="handik-roller-track"></span><span class="handik-roller-head"></span><span class="handik-roller-arm"></span><span class="handik-roller-handle"></span></div><strong>' + this.escape( config.strings.loading || 'Loading...' ) + '</strong><span class="handik-booking-app__loading-subtitle">' + this.escape( config.strings.loadingSubtext || 'Our toolbox is waking up and the coffee is still hot.' ) + '</span></div></div>';
+			this.root.innerHTML = '<div class="handik-booking-app__shell"><div class="handik-booking-app__loading">' + this.loaderMarkup() + '</div></div>';
+		}
+
+		loaderMarkup( message ) {
+			return '<div class="handik-loading-visual handik-loading-visual--square" aria-hidden="true"><span class="handik-loading-square"></span></div><strong>' + this.escape( message || config.strings.loading || 'Загрузка...' ) + '</strong>';
 		}
 
 		async api( path, data, method, formData ) {
@@ -171,6 +175,7 @@
 				paused: false,
 				remaining: duration || 3200,
 				startedAt: 0,
+				progress: 1,
 				meta: Array.isArray( settings.meta ) ? settings.meta : []
 			};
 			this.state.notifications = this.state.notifications.concat( item ).slice( -4 );
@@ -210,6 +215,23 @@
 			}
 		}
 
+		syncNotificationTiming() {
+			const now = Date.now();
+			this.state.notifications = this.state.notifications.map( ( item ) => {
+				if ( item.paused || item.closing || ! item.startedAt ) {
+					return item;
+				}
+
+				const elapsed = Math.max( 0, now - item.startedAt );
+				const remaining = Math.max( 0, ( item.remaining || item.duration || 3200 ) - elapsed );
+				const duration = Math.max( 1, item.duration || 3200 );
+				return Object.assign( {}, item, {
+					remaining: remaining,
+					progress: Math.max( 0, Math.min( 1, remaining / duration ) )
+				} );
+			} );
+		}
+
 		pauseNotification( id ) {
 			const timer = this.notificationTimers.get( id );
 			const item = this.state.notifications.find( ( entry ) => entry.id === id );
@@ -226,7 +248,8 @@
 			this.updateNotification( id, {
 				paused: true,
 				remaining: Math.max( 0, ( item.remaining || item.duration || 3200 ) - elapsed ),
-				startedAt: 0
+				startedAt: 0,
+				progress: Math.max( 0, Math.min( 1, Math.max( 0, ( item.remaining || item.duration || 3200 ) - elapsed ) / Math.max( 1, item.duration || 3200 ) ) )
 			} );
 		}
 
@@ -251,7 +274,8 @@
 			this.updateNotification( id, {
 				paused: false,
 				startedAt: Date.now(),
-				remaining: remaining
+				remaining: remaining,
+				progress: Math.max( 0, Math.min( 1, remaining / Math.max( 1, item.duration || 3200 ) ) )
 			} );
 		}
 
@@ -307,7 +331,7 @@
 			].filter( Boolean ).join( ' ' );
 
 			const duration = Math.max( 400, item.remaining || item.duration || 3200 );
-			const progressStart = Math.max( 0, Math.min( 1, duration / Math.max( duration, item.duration || 3200 ) ) );
+			const progressStart = Math.max( 0, Math.min( 1, item.progress || duration / Math.max( duration, item.duration || 3200 ) ) );
 			const titleMarkup = item.title ? '<strong>' + this.escape( item.title ) + '</strong>' : '';
 			const messageMarkup = item.message ? '<span>' + this.escape( item.message ) + '</span>' : '';
 
@@ -344,6 +368,7 @@
 				return;
 			}
 
+			this.syncNotificationTiming();
 			root.innerHTML = this.state.notifications.map( ( item ) => this.renderNotificationCard( item ) ).join( '' );
 
 			root.querySelectorAll( '.handik-toast' ).forEach( ( node ) => {
@@ -395,7 +420,7 @@
 			const button = this.root.querySelector( '[data-action="assistant-next"]' );
 			if ( button ) {
 				button.disabled = !! isBusy;
-				button.textContent = isBusy ? 'Saving...' : ( config.strings.continue || 'Continue' );
+				button.textContent = isBusy ? ( config.strings.loading || 'Загрузка...' ) : ( config.strings.assistantContinue || 'Go to time and date selection' );
 				button.classList.remove( 'is-pending' );
 				button.classList.add( 'is-primary' );
 				button.setAttribute( 'aria-disabled', isBusy ? 'true' : 'false' );
@@ -456,7 +481,6 @@
 		toggleInfoMode() {
 			this.infoModeEnabled = ! this.infoModeEnabled;
 			this.writeStoredBoolean( this.infoModeStorageKey, this.infoModeEnabled );
-			this.state.infoModeTooltipVisible = true;
 			this.notify(
 				'info',
 				'',
@@ -467,10 +491,6 @@
 				{ force: true }
 			);
 			this.render();
-			window.setTimeout( () => {
-				this.state.infoModeTooltipVisible = false;
-				this.render();
-			}, 2200 );
 		}
 
 		clientTypeChoiceMarkup( type, action, label ) {
@@ -487,15 +507,6 @@
 			this.state.footerHint = '';
 			this.state.footerHintError = false;
 			this.render();
-			if ( 'assistant' === step ) {
-				window.setTimeout( () => this.mountAssistant(), 0 );
-			}
-			if ( 'address_details' === step ) {
-				window.setTimeout( () => this.mountAddressAutocomplete(), 0 );
-			}
-			if ( 'booking' === step ) {
-				window.setTimeout( () => this.startBookingStatusPolling(), 0 );
-			}
 		}
 
 		setByPath( path, value ) {
@@ -569,7 +580,7 @@
 						this.setFooterHint( this.stepBlockMessage( 'client_type' ), true );
 						return;
 					}
-					this.goTo( 'returning_client' === this.state.clientType ? 'returning_verify' : 'task_selection' );
+					this.goTo( 'returning_client' === this.state.clientType ? 'returning_verify' : 'address_details' );
 					break;
 				case 'send-code':
 					await this.sendCode();
@@ -583,17 +594,16 @@
 						return;
 					}
 					this.state.jobShape = this.state.isProject ? 'project' : ( this.state.selectedTasks.length > 1 ? 'multiple_tasks' : 'single_task' );
-					this.goTo( 'address_details' );
+					this.goTo( 'photos' );
 					break;
 				case 'address-next':
 					if ( ! this.stepCanContinue( 'address_details' ) ) {
 						this.setFooterHint( this.stepBlockMessage( 'address_details' ), true );
 						return;
 					}
-					this.goTo( 'photos' );
+					this.goTo( 'task_selection' );
 					break;
 				case 'photos-next':
-				case 'skip-photos':
 					await this.saveAddressAndDraft();
 					break;
 				case 'contact-next':
@@ -664,16 +674,28 @@
 					this.goTo( 'returning_verify' );
 					break;
 				case 'back-tasks':
-					this.goTo( 'task_selection' );
-					break;
-				case 'back-address':
 					this.goTo( 'address_details' );
 					break;
+				case 'back-address':
+					this.goTo( this.state.clientType === 'returning_client' ? 'returning_verify' : 'client_type' );
+					break;
 				case 'back-photos':
-					this.goTo( 'photos' );
+					this.goTo( 'task_selection' );
 					break;
 				case 'back-contact':
-					this.goTo( 'assistant' );
+					this.goTo( 'photos' );
+					break;
+				case 'toggle-project':
+					this.state.isProject = ! this.state.isProject;
+					this.state.jobShape = this.state.isProject ? 'project' : ( this.state.selectedTasks.length > 1 ? 'multiple_tasks' : 'single_task' );
+					if ( this.state.isProject ) {
+						this.notify(
+							'info',
+							'',
+							config.strings.projectNotice || 'Project / Large Job means a bigger scope that usually needs a consultation-style visit before the work is scheduled.'
+						);
+					}
+					this.render();
 					break;
 				case 'retry-assistant':
 					if ( window.HandikChatKitBridge && typeof window.HandikChatKitBridge.reset === 'function' && this.state.requestId ) {
@@ -722,7 +744,7 @@
 				this.prefillFromProfile();
 				this.setFooterHint( 'Verification successful.', false );
 				this.state.loading = false;
-				this.goTo( 'task_selection' );
+				this.goTo( 'address_details' );
 			} catch ( error ) {
 				this.state.loading = false;
 				this.render();
@@ -791,11 +813,11 @@
 			try {
 				this.state.loading = true;
 				this.render();
-				const response = await this.api( 'app/draft', this.buildDraftPayload( 'assistant' ) );
+				const response = await this.api( 'app/draft', this.buildDraftPayload( 'contact_details' ) );
 				this.state.requestId = response.request_id;
 				this.state.draftToken = response.draft_token;
 				this.state.loading = false;
-				this.goTo( 'assistant' );
+				this.goTo( 'contact_details' );
 			} catch ( error ) {
 				this.state.loading = false;
 				this.render();
@@ -812,18 +834,11 @@
 			try {
 				this.state.loading = true;
 				this.render();
-				const draft = await this.api( 'app/draft', this.buildDraftPayload( 'booking' ) );
+				const draft = await this.api( 'app/draft', this.buildDraftPayload( 'assistant' ) );
 				this.state.requestId = draft.request_id;
 				this.state.draftToken = draft.draft_token;
-				const booking = await this.api( 'booking-url', {
-					request_id: this.state.requestId,
-					draft_token: this.state.draftToken
-				} );
-				this.state.bookingUrl = booking.booking_url;
-				this.state.bookingStatus = 'booking_pending';
-				this.state.bookingStatusMessage = config.strings.bookingWaiting || 'Stay on this screen while we wait for Cal.com to confirm the booking.';
 				this.state.loading = false;
-				this.goTo( 'booking' );
+				this.goTo( 'assistant' );
 			} catch ( error ) {
 				this.state.loading = false;
 				this.render();
@@ -849,21 +864,15 @@
 				this.state.bookingStatus = payload.status || '';
 
 				if ( payload.is_confirmed ) {
-					this.state.bookingStatusMessage = config.strings.bookingConfirmed || 'Booking confirmed. Finishing your request...';
+					this.state.bookingStatusMessage = '';
 					this.stopBookingStatusPolling();
-					this.notify( 'success', config.strings.bookingTitle || 'Book your time slot', this.state.bookingStatusMessage, 3600 );
-					this.goTo( 'success' );
 					return true;
 				}
 
 				if ( 'cancelled' === this.state.bookingStatus ) {
-					this.setBookingStatusMessage( config.strings.bookingCancelled || 'This booking was cancelled. You can book another slot below.', true );
-				} else if ( payload.cal_booking_id ) {
-					this.setBookingStatusMessage( config.strings.bookingWaiting || 'Stay on this screen while we wait for Cal.com to confirm the booking.', false );
-				} else if ( showMessage ) {
-					const message = config.strings.bookingWaiting || 'Finish the booking in the calendar above. This page will update automatically once Cal.com confirms the slot.';
-					this.setBookingStatusMessage( message, false );
-					this.notify( 'info', config.strings.bookingTitle || 'Book your time slot', message, 3600 );
+					this.setBookingStatusMessage( config.strings.bookingCancelled || 'This booking was cancelled. You can choose another slot below.', true );
+				} else if ( showMessage && ! payload.cal_booking_id ) {
+					this.setBookingStatusMessage( config.strings.bookingWaiting || 'Finish the booking in the calendar above.', false );
 				}
 
 				return false;
@@ -1059,13 +1068,10 @@
 				} );
 
 				this.state.bookingStatus = payload.status || 'booked';
-				this.state.bookingStatusMessage = config.strings.bookingConfirmed || 'Booking confirmed. Finishing your request...';
+				this.state.bookingStatusMessage = '';
 				this.stopBookingStatusPolling();
-				this.notify( 'success', config.strings.bookingTitle || 'Book your time slot', this.state.bookingStatusMessage, 3600 );
-				this.goTo( 'success' );
 			} catch ( error ) {
 				this.setBookingStatusMessage( error.message || 'We could not save the booking yet.', true );
-				this.notify( 'error', config.strings.bookingTitle || 'Book your time slot', error.message || 'We could not save the booking yet.' );
 			}
 		}
 
@@ -1208,7 +1214,14 @@
 					return;
 				}
 
-				this.goTo( 'contact_details' );
+				const booking = await this.api( 'booking-url', {
+					request_id: this.state.requestId,
+					draft_token: this.state.draftToken
+				} );
+				this.state.bookingUrl = booking.booking_url;
+				this.state.bookingStatus = 'booking_pending';
+				this.state.bookingStatusMessage = '';
+				this.goTo( 'booking' );
 			} catch ( error ) {
 				this.state.loading = false;
 				this.setAssistantContinueBusy( false );
@@ -1311,13 +1324,13 @@
 			if ( ! this.bootstrap || ! Array.isArray( this.bootstrap.steps ) ) {
 				return '';
 			}
-			const visible = this.bootstrap.steps.filter( ( step ) => ! [ 'welcome', 'returning_verify', 'unsafe' ].includes( step ) );
+			const visible = this.bootstrap.steps.filter( ( step ) => ! [ 'returning_verify', 'unsafe' ].includes( step ) );
 			const activeIndex = Math.max( 0, visible.indexOf( this.state.step ) );
 			return '<div class="handik-booking-app__progress" style="grid-template-columns: repeat(' + visible.length + ', minmax(0, 1fr));">' + visible.map( ( step, index ) => '<span class="' + ( index <= activeIndex ? 'is-active' : '' ) + '"></span>' ).join( '' ) + '</div>';
 		}
 
 		render() {
-			this.root.innerHTML = '<div class="handik-booking-app__shell">' + this.progressMarkup() + this.stepMarkup() + '</div>';
+			this.root.innerHTML = '<div class="handik-booking-app__shell">' + this.stepMarkup() + '</div>';
 			this.bind();
 			this.renderNotifications();
 			if ( 'assistant' === this.state.step ) {
@@ -1368,8 +1381,6 @@
 					return this.screen( config.strings.contactTitle || 'Contact details', this.contactMarkup() );
 				case 'booking':
 					return this.screen( config.strings.bookingTitle || 'Book your time slot', this.bookingMarkup() );
-				case 'success':
-					return this.screen( config.strings.successTitle || 'Success', '<p class="handik-booking-app__intro">' + this.escape( config.strings.successBody || 'Your booking has been confirmed and saved.' ) + '</p><button data-action="restart" class="handik-btn is-secondary">' + this.escape( config.strings.restart || 'Start another booking' ) + '</button>' );
 				case 'unsafe':
 					return this.screen( config.strings.unsafeTitle || 'Unsafe request', '<p class="handik-booking-app__intro">' + this.escape( this.state.unsafeReason || config.strings.unsafeBody || 'This request needs manual review before booking.' ) + '</p><button data-action="restart" class="handik-btn is-secondary">' + this.escape( config.strings.restart || 'Start another booking' ) + '</button>' );
 				default:
@@ -1383,7 +1394,7 @@
 				? '<span class="handik-booking-app__info-mode-tooltip" role="status">' + this.escape( config.strings.infoModeTooltip || 'Toggle helper tips and descriptive notifications on or off.' ) + '</span>'
 				: '';
 			return '<div class="handik-booking-app__screen-tools"><div class="handik-booking-app__info-mode-wrap">' +
-				'<button type="button" class="handik-booking-app__info-mode' + ( this.infoModeEnabled ? ' is-active' : '' ) + '" data-action="toggle-info-mode" aria-pressed="' + ( this.infoModeEnabled ? 'true' : 'false' ) + '" aria-label="' + this.escape( label ) + '">' +
+				'<button type="button" class="handik-booking-app__info-mode' + ( this.infoModeEnabled ? ' is-active' : '' ) + '" data-action="toggle-info-mode" aria-pressed="' + ( this.infoModeEnabled ? 'true' : 'false' ) + '" aria-label="' + this.escape( label ) + '" title="' + this.escape( config.strings.infoModeTooltip || 'Toggle helper tips and descriptive notifications on or off.' ) + '">' +
 					'<span class="handik-booking-app__info-mode-icon" aria-hidden="true">?</span>' +
 				'</button>' +
 				tooltip +
@@ -1391,7 +1402,8 @@
 		}
 
 		screen( title, body, modifier ) {
-			return '<section class="handik-booking-app__screen ' + ( modifier || '' ) + '"><div class="handik-booking-app__screen-header">' + this.infoModeControlMarkup() + '<h2>' + this.escape( title ) + '</h2></div><div class="handik-booking-app__screen-body">' + body + '</div></section>';
+			const overlay = ( this.state.loading || this.state.photoUploading ) ? '<div class="handik-booking-app__loading-overlay" aria-live="polite">' + this.loaderMarkup() + '</div>' : '';
+			return '<section class="handik-booking-app__screen ' + ( modifier || '' ) + '"><div class="handik-booking-app__screen-header">' + this.infoModeControlMarkup() + '<h2>' + this.escape( title ) + '</h2></div><div class="handik-booking-app__screen-body">' + body + overlay + '</div></section>';
 		}
 
 		input( label, model, type ) {
@@ -1409,8 +1421,8 @@
 				groups.map( ( group ) => '<div class="handik-task-group"><h3>' + this.escape( group.group ) + '</h3><div class="handik-task-grid">' +
 					group.tasks.map( ( task ) => '<button type="button" class="handik-task ' + ( this.taskSelected( task.id ) ? 'is-selected' : '' ) + '" data-task-id="' + this.escape( task.id ) + '">' + this.escape( task.label ) + '</button>' ).join( '' ) +
 				'</div></div>' ).join( '' ) +
-				'<label class="handik-check"><input type="checkbox" data-model="isProject" ' + ( this.state.isProject ? 'checked' : '' ) + ' /> ' + this.escape( config.strings.projectLabel || 'Project / Large Job' ) + '</label>' +
-				this.footerActions( this.state.clientType === 'returning_client' ? 'back-returning' : 'back-client', 'tasks-next', this.escape( config.strings.continue ), '', { continueMuted: ! this.stepCanContinue( 'task_selection' ) } ) +
+				'<button type="button" class="handik-project-toggle ' + ( this.state.isProject ? 'is-selected' : '' ) + '" data-action="toggle-project"><span aria-hidden="true">&#9733;</span><span>' + this.escape( config.strings.projectLabel || 'Project / Large Job' ) + '</span></button>' +
+				this.footerActions( 'back-tasks', 'tasks-next', this.escape( config.strings.continue ), '', { continueMuted: ! this.stepCanContinue( 'task_selection' ) } ) +
 			'</div>';
 		}
 
@@ -1420,7 +1432,7 @@
 				( addressOptions.length ? '<label class="handik-field"><span>' + this.escape( config.strings.savedAddressLabel || 'Saved address' ) + '</span><select id="handik-saved-address"><option value="">' + this.escape( config.strings.savedAddressPlaceholder || 'Choose saved address' ) + '</option>' + addressOptions.map( ( item ) => '<option value="' + item.id + '">' + this.escape( item.address_full ) + '</option>' ).join( '' ) + '</select></label>' : '' ) +
 				'<label class="handik-field handik-field--address"><span>' + this.escape( config.strings.addressLabel || 'Address of the job' ) + '</span><input id="handik-job-address" type="text" data-model="address.address_full" placeholder="' + this.escape( config.strings.addressPlaceholder || 'Start typing the address of the job' ) + '" value="' + this.escape( this.state.address.address_full || '' ) + '" /></label>' +
 				'<label class="handik-field"><span>' + this.escape( config.strings.unitLabel || 'Unit or apartment (optional)' ) + '</span><input type="text" data-model="address.address_unit" value="' + this.escape( this.state.address.address_unit || '' ) + '" /></label>' +
-				this.footerActions( 'back-tasks', 'address-next', this.escape( config.strings.continue ), '', { continueMuted: ! this.stepCanContinue( 'address_details' ) } )
+				this.footerActions( 'back-address', 'address-next', this.escape( config.strings.continue ), '', { continueMuted: ! this.stepCanContinue( 'address_details' ) } )
 			);
 		}
 
@@ -1428,30 +1440,30 @@
 			const photosMarkup = this.state.photos.length
 				? '<div class="handik-photo-list">' + this.state.photos.map( ( photo ) => '<span>' + this.escape( photo.name || photo.url || 'photo' ) + '</span>' ).join( '' ) + '</div>'
 				: '<div class="handik-photo-list is-empty"><span>' + this.escape( config.strings.photosEmpty || 'No photos added yet' ) + '</span></div>';
-			return '<p class="handik-booking-app__intro">' + this.escape( config.strings.photosIntro || 'Photos really help us understand the job faster, but you can skip this step if you do not have any.' ) + '</p>' +
+			return '<p class="handik-booking-app__intro">' + this.escape( config.strings.photosIntro || 'Photos really help us understand the job faster, but you can continue without them if needed.' ) + '</p>' +
 				'<label class="handik-field"><span>' + this.escape( config.strings.photosLabel || 'Photos' ) + '</span><span class="handik-field__help">' + this.escape( config.strings.photosHelp || 'Add a few clear photos so we can understand the job faster.' ) + '</span><input type="file" id="handik-photo-input" class="handik-photo-input" multiple accept="image/*" /><button type="button" class="handik-photo-dropzone" data-action="choose-photos"><span class="handik-photo-dropzone__icon" aria-hidden="true"></span><strong>' + this.escape( config.strings.photosCta || 'Tap to add photos' ) + '</strong><span>' + this.escape( this.state.photoUploading ? ( config.strings.uploading || 'Uploading your photos...' ) : ( config.strings.photosHelp || 'Add a few clear photos so we can understand the job faster.' ) ) + '</span>' + ( this.state.photoUploading ? '<span class="handik-inline-spinner" aria-hidden="true"></span>' : '' ) + '</button>' + photosMarkup + '</label>' +
-				this.footerActions( 'back-address', 'photos-next', this.state.loading ? 'Saving...' : this.escape( config.strings.continue ), this.escape( config.strings.back ), { continueMuted: ! this.stepCanContinue( 'photos' ), utilityLabel: this.escape( config.strings.skipPhotos || 'Skip photos' ), utilityAction: 'skip-photos' } );
+				this.footerActions( 'back-photos', 'photos-next', this.escape( config.strings.continue ), this.escape( config.strings.back ), { continueMuted: ! this.stepCanContinue( 'photos' ) } );
 		}
 
 		assistantMarkup() {
-			return '<div class="handik-assistant-layout"><div class="handik-assistant-panel"><div class="handik-booking-app__assistant-host"></div>' + this.footerActions( 'back-photos', 'assistant-next', this.state.loading ? 'Saving...' : this.escape( config.strings.continue ), '', { continueMuted: false } ) + '</div></div>';
+			return '<p class="handik-booking-app__intro">' + this.escape( config.strings.assistantHelper || 'Describe the task, ask any questions you have, and continue when you are ready to choose a time.' ) + '</p><div class="handik-assistant-layout"><div class="handik-assistant-panel"><div class="handik-booking-app__assistant-host"></div>' + this.footerActions( '', 'assistant-next', this.escape( config.strings.assistantContinue || 'Go to time and date selection' ), '', { continueMuted: false, hideBack: true } ) + '</div></div>';
 		}
 
 		contactMarkup() {
 			if ( this.state.verifiedProfile && this.state.verifiedProfile.contact && ! this.state.contact.full_name ) {
 				this.prefillFromProfile();
 			}
-			return this.input( 'Full name', 'contact.full_name', 'text' ) +
+			return '<p class="handik-booking-app__intro">' + this.escape( config.strings.contactIntro || 'This is the last step where you can change the booking details before the AI review starts.' ) + '</p>' +
+				this.input( 'Full name', 'contact.full_name', 'text' ) +
 				'<div class="handik-grid-2">' +
 				this.input( 'Email', 'contact.email', 'email' ) +
 				this.input( 'Phone', 'contact.phone', 'tel' ) +
 				'</div>' +
-				this.footerActions( 'back-contact', 'contact-next', this.state.loading ? 'Preparing...' : this.escape( config.strings.continue ), '', { continueMuted: ! this.stepCanContinue( 'contact_details' ) } );
+				this.footerActions( 'back-contact', 'contact-next', this.escape( config.strings.contactContinue || 'Go to AI estimate' ), '', { continueMuted: ! this.stepCanContinue( 'contact_details' ) } );
 		}
 
 		bookingMarkup() {
-			return '<div class="handik-booking-app__booking-embed"></div>' +
-				this.footerActions( 'open-booking', 'refresh-booking-status', this.escape( config.strings.completeBooking ), this.escape( config.strings.openBooking ), { backIsUtility: true } );
+			return '<div class="handik-booking-app__booking-embed"></div>';
 		}
 
 		footerActions( backAction, continueAction, continueLabel, backLabel, options ) {
@@ -1462,7 +1474,7 @@
 			const continueClass = 'handik-btn ' + ( settings.continueMuted ? 'is-pending' : 'is-primary' ) + ' is-continue';
 			const backButton = settings.hideBack ? '' : '<button data-action="' + this.escape( backAction ) + '" class="' + backClass + '"' + ( settings.backMuted ? ' aria-disabled="true"' : '' ) + '>' + backInner + '</button>';
 			const utilityButton = settings.utilityAction ? '<button data-action="' + this.escape( settings.utilityAction ) + '" class="handik-btn is-text">' + this.escape( settings.utilityLabel || '' ) + '</button>' : '';
-			return '<div class="handik-footer-wrap"><div class="handik-footer-actions is-sticky-mobile' + ( settings.hideBack ? ' is-single' : '' ) + '">' + backButton + '<div class="handik-footer-actions__continue">' + utilityButton + '<button data-action="' + this.escape( continueAction ) + '" class="' + continueClass + '" aria-disabled="' + ( settings.continueMuted ? 'true' : 'false' ) + '">' + continueLabel + '</button></div></div></div>';
+			return '<div class="handik-footer-wrap"><div class="handik-footer-actions is-docked' + ( settings.hideBack ? ' is-single' : '' ) + '">' + backButton + '<div class="handik-footer-actions__continue">' + utilityButton + '<button data-action="' + this.escape( continueAction ) + '" class="' + continueClass + '" aria-disabled="' + ( settings.continueMuted ? 'true' : 'false' ) + '">' + continueLabel + '</button></div></div><div class="handik-footer-progress">' + this.progressMarkup() + '</div></div>';
 		}
 
 		normalizePhone( value ) {

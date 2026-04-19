@@ -46,8 +46,8 @@ class Handik_Booking_App_Job_Requests_Service {
 			'preferred_timeframe' => ! empty( $payload['preferred_timeframe'] ) ? sanitize_text_field( $payload['preferred_timeframe'] ) : '',
 			'assistant_summary'   => ! empty( $payload['assistant_summary'] ) ? sanitize_textarea_field( $payload['assistant_summary'] ) : '',
 			'estimate_notes'      => ! empty( $payload['estimate_notes'] ) ? sanitize_textarea_field( $payload['estimate_notes'] ) : '',
-			'status'              => ! empty( $payload['status'] ) ? sanitize_key( $payload['status'] ) : 'draft',
-			'app_step'            => ! empty( $payload['app_step'] ) ? sanitize_key( $payload['app_step'] ) : 'task_selection',
+				'status'              => ! empty( $payload['status'] ) ? sanitize_key( $payload['status'] ) : 'draft',
+				'app_step'            => ! empty( $payload['app_step'] ) ? sanitize_key( $payload['app_step'] ) : 'address_details',
 			'app_session_key'     => ! empty( $payload['app_session_key'] ) ? sanitize_text_field( $payload['app_session_key'] ) : null,
 			'app_state_json'      => wp_json_encode( $app_state ),
 			'intake_payload_json' => wp_json_encode( $payload ),
@@ -156,7 +156,7 @@ class Handik_Booking_App_Job_Requests_Service {
 			$table,
 			array(
 				'status'       => sanitize_key( $status ),
-				'app_step'     => 'success',
+				'app_step'     => 'booking',
 				'completed_at' => current_time( 'mysql' ),
 			),
 			array( 'id' => $request_id )

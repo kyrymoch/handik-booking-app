@@ -341,7 +341,7 @@
 			};
 		};
 
-		options.container.innerHTML = '<div class="handik-chatkit-bridge__loading"><div class="handik-loading-visual handik-loading-visual--assistant" aria-hidden="true"><span class="handik-bot-antenna"></span><span class="handik-bot-head"></span><span class="handik-battery"><span class="handik-battery-cell"></span><span class="handik-battery-cell"></span><span class="handik-battery-cell"></span></span></div><strong>' + ( record.options.loadingTitle || 'Loading virtual assistant...' ) + '</strong><span class="handik-booking-app__loading-subtitle">' + ( record.options.loadingSubtitle || 'Charging the tiny robot brain for your next step.' ) + '</span></div>';
+		options.container.innerHTML = '<div class="handik-chatkit-bridge__loading"><div class="handik-loading-visual handik-loading-visual--square" aria-hidden="true"><span class="handik-loading-square"></span></div><strong>' + ( record.options.loadingTitle || 'Загрузка...' ) + '</strong></div>';
 		log( 'info', 'Bridge mount started.', { request_id: record.options.requestId } );
 
 		const ready = waitForChatKitElement().then( function() {
