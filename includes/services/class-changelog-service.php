@@ -11,6 +11,16 @@ class Handik_Booking_App_Changelog_Service {
 	public function get_entries() {
 		return array(
 			array(
+				'version'      => '2.0.42',
+				'date'         => '2026-04-19',
+				'title'        => 'Gate The Virtual Assistant Until Photo Context Reaches The Thread',
+				'notes'        => array(
+					'The Virtual assistant step now stays blocked behind its loading overlay until uploaded-photo analysis has been prepared and the HANDIK_CONTEXT message has been dispatched into the live ChatKit thread.',
+					'Added assistant photo-gate logs for gate start, analysis readiness, context dispatch start/completion/failure, and composer unlock so it is clear whether the thread received visual context before the customer can type.',
+					'Removed the old timing gap where ChatKit could become interactive before photo context was injected, which let the first user question reach OpenAI without the uploaded-photo summary.',
+				),
+			),
+			array(
 				'version'      => '2.0.41',
 				'date'         => '2026-04-19',
 				'title'        => 'Fix Services & Categories Saving And Replace The Catalog With The New Service Map',

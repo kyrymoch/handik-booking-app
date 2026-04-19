@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.0.41
+Stable tag: 2.0.42
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, returning-client auth, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,11 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.0.42 =
+* The Virtual assistant step now keeps its loading overlay in place until uploaded-photo analysis is ready and the `HANDIK_CONTEXT` message has been dispatched into the live ChatKit thread.
+* Added explicit assistant photo-gate logs for gate start, analysis readiness, context dispatch, and composer unlock to show whether photo context reached the thread before the customer could type.
+* Closed the old timing gap where ChatKit could become interactive before the uploaded-photo summary was injected, allowing the first user message to hit OpenAI without visual context.
 
 = 2.0.41 =
 * The Services & Categories editor now saves reliably because dynamic category and service field names are renumbered in the admin UI and the backend can rebuild the catalog directly from submitted form fields instead of depending only on the hidden JSON payload.

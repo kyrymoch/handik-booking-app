@@ -26,6 +26,7 @@
 			this.photoAnalysisWarmPromise = null;
 			this.photoAnalysisWarmPromiseRequestId = 0;
 			this.photoContextSignatureSent = '';
+			this.assistantContextDispatchPromise = null;
 			this.state = {
 				step: 'client_type',
 				clientType: '',
@@ -76,6 +77,33 @@
 
 		renderLoading() {
 			this.root.innerHTML = '<div class="handik-booking-app__shell"><div class="handik-booking-app__loading">' + this.loaderMarkup() + '</div></div>';
+		}
+
+		setAssistantPreparingState( isPreparing ) {
+			this.state.assistantPreparing = !! isPreparing;
+			if ( 'assistant' !== this.state.step ) {
+				return;
+			}
+
+			const body = this.root.querySelector( '.handik-booking-app__screen-body' );
+			if ( ! body ) {
+				return;
+			}
+
+			let overlay = body.querySelector( '[data-assistant-preparing-overlay]' );
+			if ( isPreparing ) {
+				if ( ! overlay ) {
+					const wrapper = document.createElement( 'div' );
+					wrapper.innerHTML = '<div class="handik-booking-app__loading-overlay" data-assistant-preparing-overlay="1" aria-live="polite">' + this.loaderMarkup( config.strings.loadingAssistant || 'Loading virtual assistant...' ) + '</div>';
+					overlay = wrapper.firstChild;
+					body.appendChild( overlay );
+				}
+				return;
+			}
+
+			if ( overlay ) {
+				overlay.remove();
+			}
 		}
 
 		loaderMarkup( message ) {
@@ -770,6 +798,7 @@
 					this.photoAnalysisWarmPromise = null;
 					this.photoAnalysisWarmPromiseRequestId = 0;
 					this.photoContextSignatureSent = '';
+					this.assistantContextDispatchPromise = null;
 					this.pendingAssistantContextAnalysis = null;
 					this.state = Object.assign( this.state, {
 						step: 'client_type',
@@ -937,6 +966,7 @@
 			this.photoAnalysisWarmPromise = null;
 			this.photoAnalysisWarmPromiseRequestId = 0;
 			this.photoContextSignatureSent = '';
+			this.assistantContextDispatchPromise = null;
 			this.pendingAssistantContextAnalysis = null;
 		}
 
@@ -1056,6 +1086,68 @@
 			return false;
 		}
 
+		async unlockAssistantAfterPhotoContext( session ) {
+			if ( this.assistantContextDispatchPromise ) {
+				return this.assistantContextDispatchPromise;
+			}
+
+			this.assistantContextDispatchPromise = ( async() => {
+				const analysis = this.pendingAssistantContextAnalysis || ( session && session.draft_context && session.draft_context.photo_analysis ? session.draft_context.photo_analysis : null );
+				const signature = analysis && analysis.photos_signature ? String( analysis.photos_signature ) : '';
+				const needsContextDispatch = !! ( signature && signature !== this.photoContextSignatureSent );
+
+				try {
+					await this.logClient( 'info', 'Assistant photo gate started.', {
+						request_id: this.state.requestId,
+						has_analysis: !! analysis,
+						needs_context_dispatch: needsContextDispatch
+					} );
+
+					if ( analysis ) {
+						await this.logClient( 'info', 'Assistant photo analysis ready.', {
+							request_id: this.state.requestId,
+							photos_signature: signature,
+							actionable: !! analysis.has_actionable_visual_context
+						} );
+					}
+
+					if ( needsContextDispatch ) {
+						await this.logClient( 'info', 'Assistant context dispatch started.', {
+							request_id: this.state.requestId,
+							photos_signature: signature
+						} );
+
+						let sent = await this.sendPhotoContextToAssistant( analysis );
+						if ( ! sent ) {
+							sent = await this.sendPhotoContextToAssistant( analysis );
+						}
+
+						if ( sent ) {
+							await this.logClient( 'info', 'Assistant context dispatch completed.', {
+								request_id: this.state.requestId,
+								photos_signature: signature
+							} );
+						} else {
+							await this.logClient( 'debug', 'Assistant context dispatch failed.', {
+								request_id: this.state.requestId,
+								photos_signature: signature
+							} );
+						}
+					}
+				} finally {
+					this.setAssistantPreparingState( false );
+					await this.logClient( 'info', 'Assistant composer unlocked after photo context.', {
+						request_id: this.state.requestId,
+						photos_signature: signature || ''
+					} );
+				}
+			} )().finally( () => {
+				this.assistantContextDispatchPromise = null;
+			} );
+
+			return this.assistantContextDispatchPromise;
+		}
+
 		async prepareAssistantStep() {
 			if ( 'assistant' !== this.state.step || ! this.state.requestId || ! this.state.draftToken ) {
 				return;
@@ -1068,11 +1160,12 @@
 			const shouldWarmBeforeMount = ! this.assistantBridge && Array.isArray( this.state.photos ) && this.state.photos.length;
 
 			if ( ! shouldWarmBeforeMount ) {
+				this.setAssistantPreparingState( false );
 				this.mountAssistant();
 				return;
 			}
 
-			this.state.assistantPreparing = true;
+			this.setAssistantPreparingState( true );
 			this.render();
 			this.assistantPreparationPromise = ( async() => {
 				try {
@@ -1089,10 +1182,6 @@
 				}
 			} )().finally( () => {
 				this.assistantPreparationPromise = null;
-				this.state.assistantPreparing = false;
-				if ( 'assistant' === this.state.step ) {
-					this.render();
-				}
 			} );
 
 			return this.assistantPreparationPromise;
@@ -1592,10 +1681,7 @@
 					clientLog: config.restBase + 'client-log'
 				},
 				onSessionReady: ( session ) => {
-					const analysis = this.pendingAssistantContextAnalysis || ( session && session.draft_context && session.draft_context.photo_analysis ? session.draft_context.photo_analysis : null );
-					if ( analysis ) {
-						window.setTimeout( () => this.sendPhotoContextToAssistant( analysis ), 0 );
-					}
+					window.setTimeout( () => this.unlockAssistantAfterPhotoContext( session ), 0 );
 				},
 				onThreadChange: ( threadId ) => {
 					this.state.assistantThreadId = threadId || this.state.assistantThreadId;
@@ -1630,6 +1716,7 @@
 					this.setAssistantNotice( config.strings.assistantReadyNotice || 'The virtual assistant has enough information. Continue when you are ready.', false );
 				},
 				onError: ( error ) => {
+					this.setAssistantPreparingState( false );
 					this.setAssistantNotice( error.message || 'The virtual assistant had trouble loading. Give it another moment, then send a short message about the job.', true );
 				}
 			} );
