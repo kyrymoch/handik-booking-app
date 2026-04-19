@@ -11,6 +11,16 @@ class Handik_Booking_App_Changelog_Service {
 	public function get_entries() {
 		return array(
 			array(
+				'version'      => '2.0.35',
+				'date'         => '2026-04-18',
+				'title'        => 'Stop Infinite Loading On Assistant Photo Uploads',
+				'notes'        => array(
+					'Added timeout protection around the assistant addFiles handoff so the Virtual assistant photo loader can no longer spin forever when hosted ChatKit does not resolve the file-preparation call.',
+					'Moved backend photo-analysis warmup out of the blocking upload chain so saved request photos can continue processing in the background without holding the screen loader open.',
+					'Added focused assistant photo-flow logs for addFiles start, completion, timeout/failure, and photo-analysis warmup start/completion to isolate exactly where the assistant photo branch stops.',
+				),
+			),
+			array(
 				'version'      => '2.0.34',
 				'date'         => '2026-04-18',
 				'title'        => 'Enable Native Chat Attachment Path For AI Review Photos',

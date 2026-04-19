@@ -139,6 +139,35 @@
 			return payload;
 		}
 
+		withTimeout( promise, timeoutMs, label ) {
+			return new Promise( ( resolve, reject ) => {
+				let settled = false;
+				const timer = window.setTimeout( () => {
+					if ( settled ) {
+						return;
+					}
+					settled = true;
+					reject( new Error( ( label || 'Operation' ) + ' timed out.' ) );
+				}, timeoutMs );
+
+				Promise.resolve( promise ).then( ( value ) => {
+					if ( settled ) {
+						return;
+					}
+					settled = true;
+					window.clearTimeout( timer );
+					resolve( value );
+				} ).catch( ( error ) => {
+					if ( settled ) {
+						return;
+					}
+					settled = true;
+					window.clearTimeout( timer );
+					reject( error );
+				} );
+			} );
+		}
+
 		async logClient( level, message, context ) {
 			if ( ! config.restBase ) {
 				return;
@@ -564,7 +593,17 @@
 			}
 
 			try {
-				return await this.assistantBridge.addFiles();
+				await this.logClient( 'info', 'Assistant composer addFiles started.', {
+					request_id: this.state.requestId,
+					file_count: this.pendingPhotoFiles.length
+				} );
+				const result = await this.withTimeout( this.assistantBridge.addFiles(), 12000, 'Assistant composer addFiles' );
+				await this.logClient( 'info', 'Assistant composer addFiles completed.', {
+					request_id: this.state.requestId,
+					file_count: this.pendingPhotoFiles.length,
+					prepared: !! result
+				} );
+				return !! result;
 			} catch ( error ) {
 				this.logClient( 'debug', 'Assistant composer addFiles failed.', {
 					request_id: this.state.requestId,
@@ -587,16 +626,22 @@
 			try {
 				await this.uploadFiles( selectedFiles );
 				if ( 'assistant' === this.state.step ) {
-					await this.pushPendingFilesIntoAssistant();
-					await this.warmPhotoAnalysis();
+					const preparedForChat = await this.pushPendingFilesIntoAssistant();
+					this.warmPhotoAnalysis();
+					if ( preparedForChat ) {
+						this.notify( 'success', successTitle || 'Photos added', successMessage || 'Your photos were saved to this request and prepared for the virtual assistant.' );
+					} else {
+						this.notify( 'success', successTitle || 'Photos added', 'Your photos were saved to this request. AI review will use the saved photos even if chat attachments take longer to appear.' );
+					}
+				} else {
+					this.notify( 'success', successTitle || 'Photos added', successMessage || 'Your photos were uploaded and attached to this request.' );
 				}
-				this.notify( 'success', successTitle || 'Photos added', successMessage || 'Your photos were uploaded and attached to this request.' );
 			} catch ( error ) {
 				this.setFooterHint( error.message, true );
+			} finally {
+				this.state.photoUploading = false;
+				this.render();
 			}
-
-			this.state.photoUploading = false;
-			this.render();
 		}
 
 		toggleTask( id ) {
@@ -890,9 +935,17 @@
 			this.photoAnalysisWarmRequestId = this.state.requestId;
 
 			try {
-				await this.api( 'photo-analysis', {
+				await this.logClient( 'info', 'Photo analysis warmup started.', {
+					request_id: this.state.requestId,
+					photo_count: this.state.photos.length
+				} );
+				await this.withTimeout( this.api( 'photo-analysis', {
 					request_id: this.state.requestId,
 					draft_token: this.state.draftToken
+				} ), 30000, 'Photo analysis warmup' );
+				await this.logClient( 'info', 'Photo analysis warmup completed.', {
+					request_id: this.state.requestId,
+					photo_count: this.state.photos.length
 				} );
 			} catch ( error ) {
 				this.logClient( 'debug', 'Photo analysis warmup failed.', {
