@@ -212,13 +212,54 @@ class Handik_Booking_App_Controller {
 	public function upload_photo( array $file, array $context = array() ) {
 		$request_id  = ! empty( $context['request_id'] ) ? absint( $context['request_id'] ) : 0;
 		$draft_token = ! empty( $context['draft_token'] ) ? sanitize_text_field( (string) $context['draft_token'] ) : '';
+		$logger      = handik_booking_app()->logger;
 
 		if ( ! $request_id || ! $draft_token || ! $this->job_requests->verify_draft_token( $request_id, $draft_token ) ) {
+			$logger->error(
+				'Upload photo rejected before processing.',
+				array(
+					'request_id'      => $request_id,
+					'file_name'       => ! empty( $file['name'] ) ? (string) $file['name'] : '',
+					'has_draft_token' => ! empty( $draft_token ),
+				)
+			);
 			return array( 'error' => __( 'Valid draft request is required before uploading photos.', 'handik-booking-app' ), 'status' => 403 );
 		}
 
+		$logger->info(
+			'Upload photo request received.',
+			array(
+				'request_id' => $request_id,
+				'file_name'  => ! empty( $file['name'] ) ? (string) $file['name'] : '',
+				'file_size'  => ! empty( $file['size'] ) ? (int) $file['size'] : 0,
+				'file_type'  => ! empty( $file['type'] ) ? (string) $file['type'] : '',
+			)
+		);
+
 		$context['request_id'] = $request_id;
-		return $this->upload_service->upload_image( $file, $context );
+		$result = $this->upload_service->upload_image( $file, $context );
+
+		if ( ! empty( $result['error'] ) ) {
+			$logger->error(
+				'Upload photo failed.',
+				array(
+					'request_id' => $request_id,
+					'file_name'  => ! empty( $file['name'] ) ? (string) $file['name'] : '',
+					'error'      => (string) $result['error'],
+				)
+			);
+		} else {
+			$logger->info(
+				'Upload photo completed.',
+				array(
+					'request_id'    => $request_id,
+					'file_name'     => ! empty( $result['name'] ) ? (string) $result['name'] : '',
+					'attachment_id' => ! empty( $result['attachment_id'] ) ? (int) $result['attachment_id'] : 0,
+				)
+			);
+		}
+
+		return $result;
 	}
 
 	/**

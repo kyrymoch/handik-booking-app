@@ -201,7 +201,23 @@ class Handik_Booking_App_ChatKit_Service {
 			return array( 'error' => __( 'Draft request not found.', 'handik-booking-app' ), 'status' => 404 );
 		}
 
+		$this->logger->info(
+			'Photo analysis warmup requested.',
+			array(
+				'request_id'  => $request_id,
+				'photo_count' => ! empty( $request['photos'] ) && is_array( $request['photos'] ) ? count( $request['photos'] ) : 0,
+			)
+		);
+
 		$analysis = $this->photo_analysis->analyze_request( $request, false );
+		$this->logger->info(
+			'Photo analysis warmup finished.',
+			array(
+				'request_id' => $request_id,
+				'cached'     => ! empty( $analysis['source'] ) && 'cache' === $analysis['source'],
+				'actionable' => ! empty( $analysis['has_actionable_visual_context'] ),
+			)
+		);
 		return array(
 			'success'        => true,
 			'photo_analysis' => $analysis,

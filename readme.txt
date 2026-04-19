@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.0.31
+Stable tag: 2.0.32
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, returning-client auth, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,11 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.0.32 =
+* Added detailed diagnostics around assistant-step photo upload, ChatKit file handoff, and backend photo-analysis warmup so stalled uploads leave a clear trail in plugin logs.
+* Wrapped assistant photo processing in timeout guards and a final loading-state reset to prevent the UI from spinning forever when an upload stage hangs.
+* Added backend logs for WordPress photo upload receipt/completion and photo-analysis warmup start/finish to show exactly where the flow stops.
 
 = 2.0.31 =
 * Added an assistant-step `Add photos for AI review` control so clients can upload images right where they ask the AI for help.
