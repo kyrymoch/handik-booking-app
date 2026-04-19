@@ -11,6 +11,16 @@ class Handik_Booking_App_Changelog_Service {
 	public function get_entries() {
 		return array(
 			array(
+				'version'      => '2.0.38',
+				'date'         => '2026-04-19',
+				'title'        => 'Inject Uploaded Photo Summary Into The Live Assistant Thread',
+				'notes'        => array(
+					'When backend photo-analysis finishes, the booking app now sends a compact HANDIK_CONTEXT message into the live hosted ChatKit thread so the assistant can use the uploaded-photo summary during the current conversation.',
+					'The context injection includes photo summary, estimate notes, visible tasks, and visible cautions, and it is de-duplicated by photo signature so the same photo batch is not repeatedly announced.',
+					'Added explicit logs for assistant photo-context message start, completion, and failure so it is clear whether the uploaded-photo summary actually reached the live chat thread.',
+				),
+			),
+			array(
 				'version'      => '2.0.37',
 				'date'         => '2026-04-19',
 				'title'        => 'Keep Assistant Chat Mounted During AI Review Photo Uploads',

@@ -24,6 +24,7 @@
 			this.assistantBridge = null;
 			this.pendingPhotoFiles = [];
 			this.photoAnalysisWarmRequestId = 0;
+			this.photoContextSignatureSent = '';
 			this.infoModeEnabled = this.readStoredBoolean( this.infoModeStorageKey, true );
 			this.state = {
 				step: 'client_type',
@@ -767,6 +768,7 @@
 					}
 					this.pendingPhotoFiles = [];
 					this.photoAnalysisWarmRequestId = 0;
+					this.photoContextSignatureSent = '';
 					this.state = Object.assign( this.state, {
 						step: 'client_type',
 						clientType: '',
@@ -939,7 +941,7 @@
 					request_id: this.state.requestId,
 					photo_count: this.state.photos.length
 				} );
-				await this.withTimeout( this.api( 'photo-analysis', {
+				const response = await this.withTimeout( this.api( 'photo-analysis', {
 					request_id: this.state.requestId,
 					draft_token: this.state.draftToken
 				} ), 30000, 'Photo analysis warmup' );
@@ -947,12 +949,81 @@
 					request_id: this.state.requestId,
 					photo_count: this.state.photos.length
 				} );
+				if ( response && response.photo_analysis ) {
+					this.sendPhotoContextToAssistant( response.photo_analysis );
+				}
+				return response ? response.photo_analysis || null : null;
 			} catch ( error ) {
 				this.logClient( 'debug', 'Photo analysis warmup failed.', {
 					request_id: this.state.requestId,
 					error: error && error.message ? error.message : 'unknown'
 				} );
 			}
+			return null;
+		}
+
+		buildPhotoContextMessage( analysis ) {
+			if ( ! analysis || ! analysis.has_actionable_visual_context ) {
+				return '';
+			}
+
+			const lines = [
+				'[HANDIK_CONTEXT]',
+				'The booking app already has uploaded photos for this request. Use this photo summary as additional context and do not ask the customer to re-upload the same photos unless you still genuinely cannot assess the job.'
+			];
+
+			if ( analysis.visual_summary ) {
+				lines.push( 'Photo summary: ' + analysis.visual_summary );
+			}
+			if ( analysis.visual_estimate_notes ) {
+				lines.push( 'Photo estimate notes: ' + analysis.visual_estimate_notes );
+			}
+			if ( Array.isArray( analysis.visible_tasks ) && analysis.visible_tasks.length ) {
+				lines.push( 'Visible tasks: ' + analysis.visible_tasks.join( ', ' ) );
+			}
+			if ( Array.isArray( analysis.safety_observations ) && analysis.safety_observations.length ) {
+				lines.push( 'Visible cautions: ' + analysis.safety_observations.join( '; ' ) );
+			}
+
+			return lines.join( '\n' );
+		}
+
+		async sendPhotoContextToAssistant( analysis ) {
+			const signature = analysis && analysis.photos_signature ? String( analysis.photos_signature ) : '';
+			const message = this.buildPhotoContextMessage( analysis );
+			if ( ! signature || ! message ) {
+				return false;
+			}
+			if ( signature === this.photoContextSignatureSent ) {
+				return false;
+			}
+			if ( ! this.assistantBridge || 'function' !== typeof this.assistantBridge.sendContextMessage ) {
+				return false;
+			}
+
+			try {
+				await this.logClient( 'info', 'Assistant photo context message started.', {
+					request_id: this.state.requestId,
+					photos_signature: signature
+				} );
+				const sent = await this.withTimeout( this.assistantBridge.sendContextMessage( message ), 12000, 'Assistant photo context message' );
+				if ( sent ) {
+					this.photoContextSignatureSent = signature;
+					await this.logClient( 'info', 'Assistant photo context message completed.', {
+						request_id: this.state.requestId,
+						photos_signature: signature
+					} );
+					return true;
+				}
+			} catch ( error ) {
+				await this.logClient( 'debug', 'Assistant photo context message failed.', {
+					request_id: this.state.requestId,
+					photos_signature: signature,
+					error: error && error.message ? error.message : 'unknown'
+				} );
+			}
+
+			return false;
 		}
 
 		async ensureDraftRequest( appStep ) {

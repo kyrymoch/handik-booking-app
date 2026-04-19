@@ -194,6 +194,14 @@
 					return cachedRecord.element;
 				},
 				ready: Promise.resolve( cachedRecord.session || null ),
+				sendContextMessage: function( text ) {
+					if ( ! cachedRecord.element || 'function' !== typeof cachedRecord.element.sendUserMessage || ! text ) {
+						return Promise.resolve( false );
+					}
+					return Promise.resolve( cachedRecord.element.sendUserMessage( { text: text } ) ).then( function() {
+						return true;
+					} );
+				},
 				addFiles: function() {
 					if ( 'function' === typeof cachedRecord.prepareComposerFiles ) {
 						return cachedRecord.prepareComposerFiles( true );
@@ -563,6 +571,16 @@
 				return record.element;
 			},
 			ready: ready,
+			sendContextMessage: function( text ) {
+				return ready.then( function() {
+					if ( ! record.element || 'function' !== typeof record.element.sendUserMessage || ! text ) {
+						return false;
+					}
+					return Promise.resolve( record.element.sendUserMessage( { text: text } ) ).then( function() {
+						return true;
+					} );
+				} );
+			},
 			addFiles: function() {
 				return prepareComposerFiles( true );
 			},
