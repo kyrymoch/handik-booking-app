@@ -618,14 +618,17 @@
 				return;
 			}
 
+			const isAssistantStep = 'assistant' === this.state.step;
 			this.state.photoUploading = true;
 			this.clearFooterHint();
-			this.render();
+			if ( ! isAssistantStep ) {
+				this.render();
+			}
 
 			try {
 				await this.uploadFiles( selectedFiles );
 				this.pendingPhotoFiles = [];
-				if ( 'assistant' === this.state.step ) {
+				if ( isAssistantStep ) {
 					this.warmPhotoAnalysis();
 					this.notify( 'success', successTitle || 'Photos added', 'Your photos were saved to this request. The AI will review the uploaded photos from the saved request images.' );
 				} else {
@@ -635,7 +638,9 @@
 				this.setFooterHint( error.message, true );
 			} finally {
 				this.state.photoUploading = false;
-				this.render();
+				if ( ! isAssistantStep ) {
+					this.render();
+				}
 			}
 		}
 

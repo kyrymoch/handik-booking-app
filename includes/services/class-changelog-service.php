@@ -11,6 +11,16 @@ class Handik_Booking_App_Changelog_Service {
 	public function get_entries() {
 		return array(
 			array(
+				'version'      => '2.0.37',
+				'date'         => '2026-04-19',
+				'title'        => 'Keep Assistant Chat Mounted During AI Review Photo Uploads',
+				'notes'        => array(
+					'Stopped forcing a full assistant-step rerender while Add photos for AI review is uploading files, because that rerender was remounting the hosted ChatKit widget and breaking the live thread before the next user message.',
+					'The assistant photo button now uploads and warms photo-analysis in the background without rebuilding the chat host, so the same chat instance stays mounted and ready to accept the next message.',
+					'Non-assistant photo uploads keep their normal loading overlay behavior, but the Virtual assistant step now preserves the active chat surface during AI-review photo saves.',
+				),
+			),
+			array(
 				'version'      => '2.0.36',
 				'date'         => '2026-04-19',
 				'title'        => 'Stabilize AI Review Photos By Using Saved Request Images',
