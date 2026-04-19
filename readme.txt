@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.0.42
+Stable tag: 2.0.43
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, returning-client auth, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,11 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.0.43 =
+* The ChatKit bridge now fires its assistant session-ready callback from the first real interactive chat signal instead of depending only on the hosted `chatkit.ready` event.
+* Added bridge diagnostics for the session-ready callback source and a timeout-based forced callback after an interactive mount when the hosted ready event never arrives.
+* This prevents the Virtual assistant loading overlay from hanging forever just because ChatKit became usable without emitting the exact ready event the booking app was waiting for.
 
 = 2.0.42 =
 * The Virtual assistant step now keeps its loading overlay in place until uploaded-photo analysis is ready and the `HANDIK_CONTEXT` message has been dispatched into the live ChatKit thread.

@@ -209,6 +209,7 @@
 			readyTimer: null,
 			ready: false,
 			interactive: false,
+			sessionReadyFired: false,
 			element: null,
 			session: null
 		};
@@ -303,6 +304,17 @@
 			throw error;
 		};
 
+		const emitSessionReady = function( source ) {
+			if ( record.sessionReadyFired ) {
+				return;
+			}
+			record.sessionReadyFired = true;
+			log( 'info', 'ChatKit session-ready callback fired.', { source: source || 'unknown' } );
+			if ( typeof record.options.onSessionReady === 'function' ) {
+				record.options.onSessionReady( record.session || null );
+			}
+		};
+
 		const markChatActive = function( source ) {
 			if ( record.interactive ) {
 				return;
@@ -312,6 +324,9 @@
 				window.clearTimeout( record.readyTimer );
 			}
 			log( 'info', 'ChatKit became interactive.', { source: source } );
+			if ( record.session ) {
+				emitSessionReady( source || 'interactive' );
+			}
 		};
 
 		const buildOptions = function() {
@@ -402,9 +417,7 @@
 					window.clearTimeout( record.readyTimer );
 				}
 				log( 'info', 'ChatKit ready event fired.' );
-				if ( typeof record.options.onSessionReady === 'function' ) {
-					record.options.onSessionReady( record.session || null );
-				}
+				emitSessionReady( 'chatkit.ready' );
 			} );
 
 			record.element.addEventListener( 'chatkit.error', function( event ) {
@@ -486,6 +499,9 @@
 			record.readyTimer = window.setTimeout( function() {
 				if ( ! record.ready && ! record.interactive ) {
 					log( 'debug', 'ChatKit ready timeout reached without a visible UI error.', { timeout_ms: CHATKIT_TIMEOUT } );
+				} else if ( record.session && ! record.sessionReadyFired ) {
+					log( 'debug', 'ChatKit ready timeout reached after interactive mount; forcing session-ready callback.', { timeout_ms: CHATKIT_TIMEOUT } );
+					emitSessionReady( 'timeout' );
 				}
 			}, CHATKIT_TIMEOUT );
 

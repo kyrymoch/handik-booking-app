@@ -11,6 +11,16 @@ class Handik_Booking_App_Changelog_Service {
 	public function get_entries() {
 		return array(
 			array(
+				'version'      => '2.0.43',
+				'date'         => '2026-04-19',
+				'title'        => 'Fire Assistant Session Readiness From Real Interactive Chat Signals',
+				'notes'        => array(
+					'The ChatKit bridge now triggers its session-ready callback from the first real interactive chat signal, not only from the flaky chatkit.ready event, so the assistant photo gate can continue even when the hosted widget loads silently in the background.',
+					'Added a dedicated bridge log for the session-ready callback source and a timeout fallback that forces session readiness after an interactive mount if the hosted ready event still never arrives.',
+					'This prevents the Virtual assistant overlay from hanging forever simply because ChatKit became usable without emitting the exact ready event the booking app was waiting on.',
+				),
+			),
+			array(
 				'version'      => '2.0.42',
 				'date'         => '2026-04-19',
 				'title'        => 'Gate The Virtual Assistant Until Photo Context Reaches The Thread',
