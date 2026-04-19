@@ -331,6 +331,11 @@ class Handik_Booking_App_Job_Requests_Service {
 			'short_description'   => $row['short_description'],
 			'photos'              => $row['photos'],
 			'photo_analysis'      => ! empty( $row['app_state']['photo_analysis'] ) && is_array( $row['app_state']['photo_analysis'] ) ? $row['app_state']['photo_analysis'] : array(),
+			'photo_analysis_status' => ! empty( $row['app_state']['photo_analysis_status'] ) ? (string) $row['app_state']['photo_analysis_status'] : '',
+			'photo_context_summary' => ! empty( $row['app_state']['photo_context_summary'] ) ? (string) $row['app_state']['photo_context_summary'] : '',
+			'visible_tasks_summary' => ! empty( $row['app_state']['visible_tasks_summary'] ) ? (string) $row['app_state']['visible_tasks_summary'] : '',
+			'safety_summary'      => ! empty( $row['app_state']['safety_summary'] ) ? (string) $row['app_state']['safety_summary'] : '',
+			'visual_estimate_notes' => ! empty( $row['app_state']['visual_estimate_notes'] ) ? (string) $row['app_state']['visual_estimate_notes'] : '',
 			'assistant_summary'   => $row['assistant_summary'],
 			'chat_thread_id'      => $row['chat_thread_id'],
 		);

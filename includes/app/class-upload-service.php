@@ -59,6 +59,7 @@ class Handik_Booking_App_Upload_Service {
 			'post_status'    => 'inherit',
 		);
 		$attachment_id = wp_insert_attachment( $attachment, $handled['file'] );
+		$meta          = array();
 		if ( ! is_wp_error( $attachment_id ) ) {
 			$meta = wp_generate_attachment_metadata( $attachment_id, $handled['file'] );
 			wp_update_attachment_metadata( $attachment_id, $meta );
@@ -69,6 +70,10 @@ class Handik_Booking_App_Upload_Service {
 			'url'           => esc_url_raw( $handled['url'] ),
 			'attachment_id' => ! is_wp_error( $attachment_id ) ? (int) $attachment_id : 0,
 			'name'          => sanitize_file_name( wp_basename( $handled['file'] ) ),
+			'mime_type'     => sanitize_text_field( (string) $handled['type'] ),
+			'filesize'      => ! empty( $file['size'] ) ? (int) $file['size'] : 0,
+			'width'         => ! empty( $meta['width'] ) ? (int) $meta['width'] : 0,
+			'height'        => ! empty( $meta['height'] ) ? (int) $meta['height'] : 0,
 		);
 	}
 }

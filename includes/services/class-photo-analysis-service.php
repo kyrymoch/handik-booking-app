@@ -61,6 +61,13 @@ class Handik_Booking_App_Photo_Analysis_Service {
 			return array();
 		}
 
+		$this->job_requests->update_app_state(
+			(int) $request['id'],
+			array(
+				'photo_analysis_status' => 'processing',
+			)
+		);
+
 		$content = array(
 			array(
 				'type' => 'text',
@@ -110,7 +117,7 @@ class Handik_Booking_App_Photo_Analysis_Service {
 						'messages'    => array(
 							array(
 								'role'    => 'system',
-								'content' => 'You analyze uploaded handyman booking photos for internal intake. Return only valid JSON with keys visual_summary, visual_estimate_notes, visible_tasks, safety_observations, has_actionable_visual_context.',
+								'content' => 'You analyze uploaded handyman booking photos for internal intake. Return only valid JSON with keys visual_summary, visual_estimate_notes, visible_tasks, safety_observations, missing_visual_details, has_actionable_visual_context.',
 							),
 							array(
 								'role'    => 'user',
@@ -123,6 +130,7 @@ class Handik_Booking_App_Photo_Analysis_Service {
 		);
 
 		if ( is_wp_error( $response ) ) {
+			$this->persist_failure_state( (int) $request['id'] );
 			$this->logger->error(
 				'Photo analysis request failed.',
 				array(
@@ -138,6 +146,7 @@ class Handik_Booking_App_Photo_Analysis_Service {
 		$payload = json_decode( $body, true );
 
 		if ( $status < 200 || $status >= 300 ) {
+			$this->persist_failure_state( (int) $request['id'] );
 			$this->logger->error(
 				'Photo analysis returned an unexpected response.',
 				array(
@@ -152,6 +161,7 @@ class Handik_Booking_App_Photo_Analysis_Service {
 		$text   = $this->extract_text_response( $payload );
 		$parsed = $this->decode_analysis_json( $text );
 		if ( empty( $parsed ) ) {
+			$this->persist_failure_state( (int) $request['id'] );
 			$this->logger->error(
 				'Photo analysis JSON could not be parsed.',
 				array(
@@ -162,21 +172,32 @@ class Handik_Booking_App_Photo_Analysis_Service {
 			return array();
 		}
 
-		$analysis = array(
-			'photos_signature'            => $signature,
-			'generated_at'                => current_time( 'mysql' ),
-			'visual_summary'              => sanitize_textarea_field( $parsed['visual_summary'] ?? '' ),
-			'visual_estimate_notes'       => sanitize_textarea_field( $parsed['visual_estimate_notes'] ?? '' ),
-			'visible_tasks'               => array_values( array_map( 'sanitize_text_field', is_array( $parsed['visible_tasks'] ?? null ) ? $parsed['visible_tasks'] : array() ) ),
-			'safety_observations'         => array_values( array_map( 'sanitize_text_field', is_array( $parsed['safety_observations'] ?? null ) ? $parsed['safety_observations'] : array() ) ),
-			'has_actionable_visual_context' => ! empty( $parsed['has_actionable_visual_context'] ),
-			'source'                      => 'generated',
+		$analysis = $this->normalize_analysis(
+			array(
+				'photos_signature'              => $signature,
+				'generated_at'                  => current_time( 'mysql' ),
+				'visual_summary'                => sanitize_textarea_field( $parsed['visual_summary'] ?? '' ),
+				'visual_estimate_notes'         => sanitize_textarea_field( $parsed['visual_estimate_notes'] ?? '' ),
+				'visible_tasks'                 => array_values( array_map( 'sanitize_text_field', is_array( $parsed['visible_tasks'] ?? null ) ? $parsed['visible_tasks'] : array() ) ),
+				'safety_observations'           => array_values( array_map( 'sanitize_text_field', is_array( $parsed['safety_observations'] ?? null ) ? $parsed['safety_observations'] : array() ) ),
+				'missing_visual_details'        => array_values( array_map( 'sanitize_text_field', is_array( $parsed['missing_visual_details'] ?? null ) ? $parsed['missing_visual_details'] : array() ) ),
+				'has_actionable_visual_context' => ! empty( $parsed['has_actionable_visual_context'] ),
+				'source'                        => 'generated',
+			)
 		);
 
 		$this->job_requests->update_app_state(
 			(int) $request['id'],
 			array(
-				'photo_analysis' => $analysis,
+				'photo_analysis'                => $analysis,
+				'photo_analysis_status'         => 'ready',
+				'photo_analysis_summary'        => $analysis['visual_summary'],
+				'has_actionable_visual_context' => ! empty( $analysis['has_actionable_visual_context'] ),
+				'photo_analysis_updated_at'     => current_time( 'mysql' ),
+				'photo_context_summary'         => $analysis['photo_context_summary'],
+				'visible_tasks_summary'         => $analysis['visible_tasks_summary'],
+				'safety_summary'                => $analysis['safety_summary'],
+				'visual_estimate_notes'         => $analysis['visual_estimate_notes'],
 			)
 		);
 
@@ -198,7 +219,11 @@ class Handik_Booking_App_Photo_Analysis_Service {
 	 * @return array<string, mixed>
 	 */
 	public function cached_analysis( array $request ) {
-		return ! empty( $request['app_state']['photo_analysis'] ) && is_array( $request['app_state']['photo_analysis'] ) ? $request['app_state']['photo_analysis'] : array();
+		if ( empty( $request['app_state']['photo_analysis'] ) || ! is_array( $request['app_state']['photo_analysis'] ) ) {
+			return array();
+		}
+
+		return $this->normalize_analysis( $request['app_state']['photo_analysis'] );
 	}
 
 	/**
@@ -293,11 +318,54 @@ class Handik_Booking_App_Photo_Analysis_Service {
 				'- visual_estimate_notes: useful estimate/setup notes based only on visible evidence',
 				'- visible_tasks: array of short task labels suggested by the images',
 				'- safety_observations: array of visible concerns or cautions, or an empty array',
+				'- missing_visual_details: array of details that still cannot be confirmed visually',
 				'- has_actionable_visual_context: boolean',
 				'Important:',
 				'- mention only what is actually visible or reasonably inferable',
 				'- if uncertain, say so briefly in the summary or notes',
 				'- do not mention JSON formatting or markdown fences',
+			)
+		);
+	}
+
+	/**
+	 * @param array<string, mixed> $analysis Raw analysis.
+	 * @return array<string, mixed>
+	 */
+	protected function normalize_analysis( array $analysis ) {
+		$visible_tasks = array_values( array_map( 'sanitize_text_field', is_array( $analysis['visible_tasks'] ?? null ) ? $analysis['visible_tasks'] : array() ) );
+		$safety = array_values( array_map( 'sanitize_text_field', is_array( $analysis['safety_observations'] ?? null ) ? $analysis['safety_observations'] : array() ) );
+		$missing = array_values( array_map( 'sanitize_text_field', is_array( $analysis['missing_visual_details'] ?? null ) ? $analysis['missing_visual_details'] : array() ) );
+		$summary = sanitize_textarea_field( (string) ( $analysis['visual_summary'] ?? '' ) );
+		$estimate_notes = sanitize_textarea_field( (string) ( $analysis['visual_estimate_notes'] ?? '' ) );
+
+		return array(
+			'photos_signature'              => sanitize_text_field( (string) ( $analysis['photos_signature'] ?? '' ) ),
+			'generated_at'                  => sanitize_text_field( (string) ( $analysis['generated_at'] ?? '' ) ),
+			'visual_summary'                => $summary,
+			'visual_estimate_notes'         => $estimate_notes,
+			'visible_tasks'                 => $visible_tasks,
+			'safety_observations'           => $safety,
+			'missing_visual_details'        => $missing,
+			'has_actionable_visual_context' => ! empty( $analysis['has_actionable_visual_context'] ),
+			'photo_context_summary'         => $summary,
+			'visible_tasks_summary'         => implode( ', ', $visible_tasks ),
+			'safety_summary'                => implode( '; ', $safety ),
+			'source'                        => sanitize_text_field( (string) ( $analysis['source'] ?? '' ) ),
+		);
+	}
+
+	/**
+	 * @param int $request_id Request ID.
+	 * @return void
+	 */
+	protected function persist_failure_state( $request_id ) {
+		$this->job_requests->update_app_state(
+			$request_id,
+			array(
+				'photo_analysis_status'         => 'failed',
+				'photo_context_summary'         => 'Photo analysis unavailable at the moment.',
+				'has_actionable_visual_context' => false,
 			)
 		);
 	}

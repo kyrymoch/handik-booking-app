@@ -203,9 +203,10 @@ class Handik_Booking_App_ChatKit_Service {
 
 		$analysis = $this->photo_analysis->analyze_request( $request, false );
 		return array(
-			'success'        => true,
-			'photo_analysis' => $analysis,
-			'cached'         => ! empty( $analysis['source'] ) && 'cache' === $analysis['source'],
+			'success'          => true,
+			'photo_analysis'   => $analysis,
+			'analysis_status'  => ! empty( $analysis ) ? 'ready' : 'failed',
+			'cached'           => ! empty( $analysis['source'] ) && 'cache' === $analysis['source'],
 		);
 	}
 
@@ -354,12 +355,18 @@ class Handik_Booking_App_ChatKit_Service {
 	}
 
 	protected function state_variables( array $request ) {
+		$analysis = $this->photo_analysis->cached_analysis( $request );
 		return array(
-			'draft_request_id' => (int) $request['id'],
-			'client_type'      => (string) $request['client_type'],
-			'job_shape'        => (string) $request['job_shape'],
-			'is_project'       => ! empty( $request['is_project'] ),
-			'has_photos'       => ! empty( $request['photos'] ),
+			'draft_request_id'             => (int) $request['id'],
+			'client_type'                  => (string) $request['client_type'],
+			'job_shape'                    => (string) $request['job_shape'],
+			'is_project'                   => ! empty( $request['is_project'] ),
+			'has_photos'                   => ! empty( $request['photos'] ),
+			'has_actionable_visual_context'=> ! empty( $analysis['has_actionable_visual_context'] ),
+			'photo_context_summary'        => (string) ( $analysis['photo_context_summary'] ?? '' ),
+			'visible_tasks_summary'        => (string) ( $analysis['visible_tasks_summary'] ?? '' ),
+			'safety_summary'               => (string) ( $analysis['safety_summary'] ?? '' ),
+			'visual_estimate_notes'        => (string) ( $analysis['visual_estimate_notes'] ?? '' ),
 		);
 	}
 

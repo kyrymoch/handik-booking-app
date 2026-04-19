@@ -178,11 +178,6 @@
 			cachedRecord.options = options;
 			options.container.innerHTML = '';
 			options.container.appendChild( cachedRecord.element );
-			window.requestAnimationFrame( function() {
-				if ( 'function' === typeof cachedRecord.prepareComposerFiles ) {
-					cachedRecord.prepareComposerFiles();
-				}
-			} );
 			if ( cachedRecord.ready && typeof options.onSessionReady === 'function' ) {
 				options.onSessionReady( cachedRecord.session || null );
 			}
@@ -202,12 +197,6 @@
 						return true;
 					} );
 				},
-				addFiles: function() {
-					if ( 'function' === typeof cachedRecord.prepareComposerFiles ) {
-						return cachedRecord.prepareComposerFiles( true );
-					}
-					return Promise.resolve( false );
-				},
 				unmount: function() {}
 			};
 		}
@@ -221,10 +210,7 @@
 			ready: false,
 			interactive: false,
 			element: null,
-			session: null,
-			preparedFilesSignature: '',
-			preparedFilesCount: 0,
-			prepareComposerFiles: null
+			session: null
 		};
 
 		BRIDGE_CACHE.set( cacheKey, record );
@@ -233,29 +219,6 @@
 			if ( typeof record.options.onStatus === 'function' ) {
 				record.options.onStatus( text, context || {} );
 			}
-		};
-
-		const getPendingFiles = function() {
-			if ( 'function' === typeof record.options.pendingFiles ) {
-				try {
-					const files = record.options.pendingFiles();
-					return Array.isArray( files ) ? files.filter( function( file ) {
-						return file instanceof window.File;
-					} ) : [];
-				} catch ( error ) {
-					return [];
-				}
-			}
-
-			return Array.isArray( record.options.pendingFiles ) ? record.options.pendingFiles.filter( function( file ) {
-				return file instanceof window.File;
-			} ) : [];
-		};
-
-		const pendingFilesSignature = function( files ) {
-			return ( files || [] ).map( function( file ) {
-				return [ file.name || '', file.size || 0, file.lastModified || 0, file.type || '' ].join( ':' );
-			} ).join( '|' );
 		};
 
 		const log = function( level, message, context ) {
@@ -351,38 +314,6 @@
 			log( 'info', 'ChatKit became interactive.', { source: source } );
 		};
 
-		const prepareComposerFiles = function( force ) {
-			const files = getPendingFiles();
-			const signature = pendingFilesSignature( files );
-
-			if ( ! files.length ) {
-				record.preparedFilesSignature = '';
-				record.preparedFilesCount = 0;
-				return Promise.resolve( false );
-			}
-
-			if ( ! force && signature && signature === record.preparedFilesSignature ) {
-				return Promise.resolve( false );
-			}
-
-			if ( ! record.element || 'function' !== typeof record.element.setComposerValue ) {
-				log( 'debug', 'ChatKit composer file prefill is not supported by the current element.' );
-				return Promise.resolve( false );
-			}
-
-			return Promise.resolve( record.element.setComposerValue( { files: files } ) ).then( function() {
-				record.preparedFilesSignature = signature;
-				record.preparedFilesCount = files.length;
-				log( 'info', 'Prepared pending photos in ChatKit composer.', { file_count: files.length } );
-				return true;
-			} ).catch( function( error ) {
-				log( 'error', 'Assistant file prefill failed.', { error: summarizeError( error ) } );
-				return false;
-			} );
-		};
-
-		record.prepareComposerFiles = prepareComposerFiles;
-
 		const buildOptions = function() {
 			const uploadConfig = record.session && record.session.file_upload && 'object' === typeof record.session.file_upload
 				? record.session.file_upload
@@ -420,7 +351,7 @@
 				composer: {
 					placeholder: record.options.composerPlaceholder || undefined,
 					attachments: {
-						enabled: true,
+						enabled: false,
 						accept: {
 							'image/*': [ '.jpg', '.jpeg', '.png', '.webp', '.heic', '.heif' ]
 						},
@@ -471,7 +402,6 @@
 					window.clearTimeout( record.readyTimer );
 				}
 				log( 'info', 'ChatKit ready event fired.' );
-				prepareComposerFiles();
 				if ( typeof record.options.onSessionReady === 'function' ) {
 					record.options.onSessionReady( record.session || null );
 				}
@@ -495,12 +425,8 @@
 				} );
 				if ( 'composer.submit' === detail.name && typeof record.options.onComposerSubmit === 'function' ) {
 					record.options.onComposerSubmit( {
-						attachmentsCount: detail.data && detail.data.attachmentsCount ? detail.data.attachmentsCount : 0,
-						preparedFilesCount: record.preparedFilesCount,
-						preparedFilesSignature: record.preparedFilesSignature
+						attachmentsCount: detail.data && detail.data.attachmentsCount ? detail.data.attachmentsCount : 0
 					} );
-					record.preparedFilesSignature = '';
-					record.preparedFilesCount = 0;
 				}
 				const structured = extractStructuredResult( detail );
 				if ( structured ) {
@@ -580,9 +506,6 @@
 						return true;
 					} );
 				} );
-			},
-			addFiles: function() {
-				return prepareComposerFiles( true );
 			},
 			unmount: function() {
 				if ( record.readyTimer ) {

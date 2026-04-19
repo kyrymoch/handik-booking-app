@@ -218,7 +218,17 @@ class Handik_Booking_App_Controller {
 		}
 
 		$context['request_id'] = $request_id;
-		return $this->upload_service->upload_image( $file, $context );
+		$result = $this->upload_service->upload_image( $file, $context );
+		if ( empty( $result['error'] ) ) {
+			$this->job_requests->update_app_state(
+				$request_id,
+				array(
+					'photo_analysis_status' => 'queued',
+				)
+			);
+		}
+
+		return $result;
 	}
 
 	/**

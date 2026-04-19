@@ -11,6 +11,16 @@ class Handik_Booking_App_Changelog_Service {
 	public function get_entries() {
 		return array(
 			array(
+				'version'      => '2.0.40',
+				'date'         => '2026-04-19',
+				'title'        => 'Stabilize Intake Screens And Make Photo Analysis The Only Production Photo Path',
+				'notes'        => array(
+					'Removed the old info-mode toggle and simplified booking-app notifications to always-on error, warning, and info messages, while dropping the older success and task-specific toast types.',
+					'Address details now require a real Google-suggested address before Continue activates, Contact details validate full name, email, and phone formats live, and the task step now includes a sticky Selected tasks bottom sheet with descriptions and hourly rates.',
+					'The Virtual assistant step no longer depends on hosted ChatKit file handoff attempts; uploaded photos are saved to WordPress, queued for backend photo analysis, and the assistant waits on the stable photo-analysis path instead of native chat file injection.',
+				),
+			),
+			array(
 				'version'      => '2.0.39',
 				'date'         => '2026-04-19',
 				'title'        => 'Warm Uploaded Photo Analysis Before Mounting The Virtual Assistant',
