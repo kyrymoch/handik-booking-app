@@ -11,6 +11,16 @@ class Handik_Booking_App_Changelog_Service {
 	public function get_entries() {
 		return array(
 			array(
+				'version'      => '2.0.41',
+				'date'         => '2026-04-19',
+				'title'        => 'Fix Services & Categories Saving And Replace The Catalog With The New Service Map',
+				'notes'        => array(
+					'The Services & Categories editor now saves reliably because dynamic catalog fields are renumbered on the admin side and the backend can rebuild the catalog directly from the submitted form fields instead of depending only on the hidden JSON payload.',
+					'Replaced the old starter catalog with the new eight-category Handik service map covering Assembly, Plumbing, Electrical, Interior Finishes, Doors and Windows, Carpentry, Exterior work, and Not Sure / Project Help.',
+					'Added a legacy-catalog detector so older installs that still point at the original built-in service set automatically fall forward to the new default catalog structure instead of staying stuck on the outdated groups.',
+				),
+			),
+			array(
 				'version'      => '2.0.40',
 				'date'         => '2026-04-19',
 				'title'        => 'Stabilize Intake Screens And Make Photo Analysis The Only Production Photo Path',

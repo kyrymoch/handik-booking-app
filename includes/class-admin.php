@@ -551,7 +551,7 @@ class Handik_Booking_App_Admin {
 			<div class="handik-catalog-group__header">
 				<label>
 					<span><?php esc_html_e( 'Category title', 'handik-booking-app' ); ?></span>
-					<input type="text" data-handik-group-name value="<?php echo esc_attr( $group['group'] ); ?>" />
+					<input type="text" name="<?php echo esc_attr( 'service_catalog_groups[' . (int) $group_index . '][group]' ); ?>" data-handik-group-name value="<?php echo esc_attr( $group['group'] ); ?>" />
 				</label>
 				<button type="button" class="button-link-delete" data-handik-remove-group><?php esc_html_e( 'Remove category', 'handik-booking-app' ); ?></button>
 			</div>
@@ -571,15 +571,15 @@ class Handik_Booking_App_Admin {
 		?>
 		<div class="handik-catalog-task" data-handik-task>
 			<div class="handik-admin-grid">
-				<label><span><?php esc_html_e( 'Service ID', 'handik-booking-app' ); ?></span><input type="text" data-handik-task-id value="<?php echo esc_attr( $task['id'] ?? '' ); ?>" /></label>
-				<label><span><?php esc_html_e( 'Label', 'handik-booking-app' ); ?></span><input type="text" data-handik-task-label value="<?php echo esc_attr( $task['label'] ?? '' ); ?>" /></label>
-				<label><span><?php esc_html_e( 'Hourly price hint', 'handik-booking-app' ); ?></span><input type="text" data-handik-task-rate value="<?php echo esc_attr( $task['rate_label'] ?? '' ); ?>" /></label>
-				<label><span><?php esc_html_e( 'Service family', 'handik-booking-app' ); ?></span><input type="text" data-handik-task-service-family value="<?php echo esc_attr( $task['service_family'] ?? '' ); ?>" /></label>
-				<label><span><?php esc_html_e( 'Rate family', 'handik-booking-app' ); ?></span><input type="text" data-handik-task-rate-family value="<?php echo esc_attr( $task['rate_family'] ?? '' ); ?>" /></label>
+				<label><span><?php esc_html_e( 'Service ID', 'handik-booking-app' ); ?></span><input type="text" name="<?php echo esc_attr( 'service_catalog_groups[' . (int) $group_index . '][tasks][' . (int) $task_index . '][id]' ); ?>" data-handik-task-id value="<?php echo esc_attr( $task['id'] ?? '' ); ?>" /></label>
+				<label><span><?php esc_html_e( 'Label', 'handik-booking-app' ); ?></span><input type="text" name="<?php echo esc_attr( 'service_catalog_groups[' . (int) $group_index . '][tasks][' . (int) $task_index . '][label]' ); ?>" data-handik-task-label value="<?php echo esc_attr( $task['label'] ?? '' ); ?>" /></label>
+				<label><span><?php esc_html_e( 'Hourly price hint', 'handik-booking-app' ); ?></span><input type="text" name="<?php echo esc_attr( 'service_catalog_groups[' . (int) $group_index . '][tasks][' . (int) $task_index . '][rate_label]' ); ?>" data-handik-task-rate value="<?php echo esc_attr( $task['rate_label'] ?? '' ); ?>" /></label>
+				<label><span><?php esc_html_e( 'Service family', 'handik-booking-app' ); ?></span><input type="text" name="<?php echo esc_attr( 'service_catalog_groups[' . (int) $group_index . '][tasks][' . (int) $task_index . '][service_family]' ); ?>" data-handik-task-service-family value="<?php echo esc_attr( $task['service_family'] ?? '' ); ?>" /></label>
+				<label><span><?php esc_html_e( 'Rate family', 'handik-booking-app' ); ?></span><input type="text" name="<?php echo esc_attr( 'service_catalog_groups[' . (int) $group_index . '][tasks][' . (int) $task_index . '][rate_family]' ); ?>" data-handik-task-rate-family value="<?php echo esc_attr( $task['rate_family'] ?? '' ); ?>" /></label>
 			</div>
 			<label style="display:grid;gap:8px;">
 				<span><?php esc_html_e( 'Client-facing description', 'handik-booking-app' ); ?></span>
-				<textarea rows="2" data-handik-task-description><?php echo esc_textarea( $task['description'] ?? '' ); ?></textarea>
+				<textarea rows="2" name="<?php echo esc_attr( 'service_catalog_groups[' . (int) $group_index . '][tasks][' . (int) $task_index . '][description]' ); ?>" data-handik-task-description><?php echo esc_textarea( $task['description'] ?? '' ); ?></textarea>
 			</label>
 			<p><button type="button" class="button-link-delete" data-handik-remove-task><?php esc_html_e( 'Remove service', 'handik-booking-app' ); ?></button></p>
 		</div>

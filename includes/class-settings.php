@@ -197,6 +197,13 @@ class Handik_Booking_App_Settings {
 	 * @return array<string, mixed>
 	 */
 	protected function sanitize_settings( array $input ) {
+		if ( ! empty( $input['service_catalog_groups'] ) && is_array( $input['service_catalog_groups'] ) ) {
+			$catalog = $this->sanitize_service_catalog_groups( $input['service_catalog_groups'] );
+			if ( ! empty( $catalog ) ) {
+				$input['service_catalog_json'] = wp_json_encode( $catalog );
+			}
+		}
+
 		$output = array();
 		foreach ( $this->defaults() as $key => $default ) {
 			if ( isset( $this->constant_map[ $key ] ) && defined( $this->constant_map[ $key ] ) ) {
@@ -279,5 +286,56 @@ class Handik_Booking_App_Settings {
 		}
 
 		return $output;
+	}
+
+	/**
+	 * @param array<int|string, mixed> $groups Raw catalog groups.
+	 * @return array<int, array<string, mixed>>
+	 */
+	protected function sanitize_service_catalog_groups( array $groups ) {
+		$sanitized = array();
+
+		foreach ( $groups as $group ) {
+			if ( ! is_array( $group ) ) {
+				continue;
+			}
+
+			$group_name = sanitize_text_field( $group['group'] ?? '' );
+			$raw_tasks   = isset( $group['tasks'] ) && is_array( $group['tasks'] ) ? $group['tasks'] : array();
+			$tasks       = array();
+
+			foreach ( $raw_tasks as $task ) {
+				if ( ! is_array( $task ) ) {
+					continue;
+				}
+
+				$task_id = sanitize_key( $task['id'] ?? '' );
+				$label   = sanitize_text_field( $task['label'] ?? '' );
+
+				if ( '' === $task_id || '' === $label ) {
+					continue;
+				}
+
+				$tasks[] = array(
+					'id'             => $task_id,
+					'label'          => $label,
+					'description'    => sanitize_textarea_field( $task['description'] ?? '' ),
+					'rate_label'     => sanitize_text_field( $task['rate_label'] ?? '' ),
+					'service_family' => sanitize_key( $task['service_family'] ?? '' ),
+					'rate_family'    => sanitize_key( $task['rate_family'] ?? '' ),
+				);
+			}
+
+			if ( '' === $group_name || empty( $tasks ) ) {
+				continue;
+			}
+
+			$sanitized[] = array(
+				'group' => $group_name,
+				'tasks' => $tasks,
+			);
+		}
+
+		return $sanitized;
 	}
 }

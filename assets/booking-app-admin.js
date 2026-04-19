@@ -1,7 +1,37 @@
 ( function() {
 	'use strict';
 
+	function syncCatalogFieldNames( editor ) {
+		Array.from( editor.querySelectorAll( '[data-handik-group]' ) ).forEach( function( group, groupIndex ) {
+			const groupName = group.querySelector( '[data-handik-group-name]' );
+			if ( groupName ) {
+				groupName.name = 'service_catalog_groups[' + groupIndex + '][group]';
+			}
+
+			Array.from( group.querySelectorAll( '[data-handik-task]' ) ).forEach( function( task, taskIndex ) {
+				const prefix = 'service_catalog_groups[' + groupIndex + '][tasks][' + taskIndex + ']';
+				const fieldMap = {
+					'[data-handik-task-id]': 'id',
+					'[data-handik-task-label]': 'label',
+					'[data-handik-task-rate]': 'rate_label',
+					'[data-handik-task-service-family]': 'service_family',
+					'[data-handik-task-rate-family]': 'rate_family',
+					'[data-handik-task-description]': 'description'
+				};
+
+				Object.keys( fieldMap ).forEach( function( selector ) {
+					const field = task.querySelector( selector );
+					if ( field ) {
+						field.name = prefix + '[' + fieldMap[ selector ] + ']';
+					}
+				} );
+			} );
+		} );
+	}
+
 	function serializeCatalog( editor ) {
+		syncCatalogFieldNames( editor );
+
 		const groups = Array.from( editor.querySelectorAll( '[data-handik-group]' ) ).map( function( group ) {
 			return {
 				group: ( group.querySelector( '[data-handik-group-name]' ) || {} ).value || '',
@@ -32,13 +62,13 @@
 		return '' +
 		'<div class="handik-catalog-task" data-handik-task>' +
 			'<div class="handik-admin-grid">' +
-				'<label><span>Service ID</span><input type="text" data-handik-task-id /></label>' +
-				'<label><span>Label</span><input type="text" data-handik-task-label /></label>' +
-				'<label><span>Hourly price hint</span><input type="text" data-handik-task-rate /></label>' +
-				'<label><span>Service family</span><input type="text" data-handik-task-service-family /></label>' +
-				'<label><span>Rate family</span><input type="text" data-handik-task-rate-family /></label>' +
+				'<label><span>Service ID</span><input type="text" name="" data-handik-task-id /></label>' +
+				'<label><span>Label</span><input type="text" name="" data-handik-task-label /></label>' +
+				'<label><span>Hourly price hint</span><input type="text" name="" data-handik-task-rate /></label>' +
+				'<label><span>Service family</span><input type="text" name="" data-handik-task-service-family /></label>' +
+				'<label><span>Rate family</span><input type="text" name="" data-handik-task-rate-family /></label>' +
 			'</div>' +
-			'<label style="display:grid;gap:8px;"><span>Client-facing description</span><textarea rows="2" data-handik-task-description></textarea></label>' +
+			'<label style="display:grid;gap:8px;"><span>Client-facing description</span><textarea rows="2" name="" data-handik-task-description></textarea></label>' +
 			'<p><button type="button" class="button-link-delete" data-handik-remove-task>Remove service</button></p>' +
 		'</div>';
 	}
@@ -47,7 +77,7 @@
 		return '' +
 		'<div class="handik-catalog-group" data-handik-group>' +
 			'<div class="handik-catalog-group__header">' +
-				'<label><span>Category title</span><input type="text" data-handik-group-name /></label>' +
+				'<label><span>Category title</span><input type="text" name="" data-handik-group-name /></label>' +
 				'<button type="button" class="button-link-delete" data-handik-remove-group>Remove category</button>' +
 			'</div>' +
 			'<div class="handik-catalog-group__tasks">' + taskTemplate() + '</div>' +
