@@ -11,6 +11,16 @@ class Handik_Booking_App_Changelog_Service {
 	public function get_entries() {
 		return array(
 			array(
+				'version'      => '2.0.34',
+				'date'         => '2026-04-18',
+				'title'        => 'Enable Native Chat Attachment Path For AI Review Photos',
+				'notes'        => array(
+					'Enabled the hosted ChatKit composer attachment configuration so the assistant-step Add photos for AI review control now feeds files into a fully attachment-capable chat composer.',
+					'The same assistant-step photo picker still dual-uploads the selected images into WordPress CRM, while the chat side now uses the supported native file upload path instead of a half-configured composer state.',
+					'Mirrored the chat file-upload limits from the session response into the composer configuration and added the file-upload config to ChatKit session logs for easier validation.',
+				),
+			),
+			array(
 				'version'      => '2.0.33',
 				'date'         => '2026-04-18',
 				'title'        => 'Rollback To Stable Assistant Photo Flow',

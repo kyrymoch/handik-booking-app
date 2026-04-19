@@ -376,6 +376,11 @@
 		record.prepareComposerFiles = prepareComposerFiles;
 
 		const buildOptions = function() {
+			const uploadConfig = record.session && record.session.file_upload && 'object' === typeof record.session.file_upload
+				? record.session.file_upload
+				: null;
+			const maxCount = uploadConfig && uploadConfig.max_files ? Number( uploadConfig.max_files ) : 5;
+			const maxSizeMb = uploadConfig && uploadConfig.max_file_size ? Number( uploadConfig.max_file_size ) : 10;
 			return {
 				api: {
 					getClientSecret: async function( currentSecret ) {
@@ -405,7 +410,15 @@
 				} : undefined,
 				initialThread: record.latestThreadId || undefined,
 				composer: {
-					placeholder: record.options.composerPlaceholder || undefined
+					placeholder: record.options.composerPlaceholder || undefined,
+					attachments: {
+						enabled: true,
+						accept: {
+							'image/*': [ '.jpg', '.jpeg', '.png', '.webp', '.heic', '.heif' ]
+						},
+						maxCount: maxCount > 0 ? maxCount : 5,
+						maxSize: maxSizeMb > 0 ? maxSizeMb * 1024 * 1024 : ( 10 * 1024 * 1024 )
+					}
 				}
 			};
 		};
@@ -434,7 +447,8 @@
 			log( 'info', 'ChatKit session fetched.', {
 				has_client_secret: true,
 				has_thread: !! record.latestThreadId,
-				has_file_upload: !! session.file_upload
+				has_file_upload: !! session.file_upload,
+				file_upload_config: session.file_upload || null
 			} );
 
 			record.element = document.createElement( CHATKIT_TAG );
