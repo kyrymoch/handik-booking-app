@@ -33,18 +33,25 @@ class Handik_Booking_App_ChatKit_Service {
 	protected $cal;
 
 	/**
+	 * @var Handik_Booking_App_Photo_Analysis_Service
+	 */
+	protected $photo_analysis;
+
+	/**
 	 * @param Handik_Booking_App_Settings             $settings Settings.
 	 * @param Handik_Booking_App_Logger               $logger Logger.
 	 * @param Handik_Booking_App_Job_Requests_Service $job_requests Requests.
 	 * @param Handik_Booking_App_Routing_Service      $routing Routing.
 	 * @param Handik_Booking_App_Cal_Service          $cal Cal.
+	 * @param Handik_Booking_App_Photo_Analysis_Service $photo_analysis Photo analysis.
 	 */
-	public function __construct( $settings, $logger, $job_requests, $routing, $cal ) {
-		$this->settings     = $settings;
-		$this->logger       = $logger;
-		$this->job_requests = $job_requests;
-		$this->routing      = $routing;
-		$this->cal          = $cal;
+	public function __construct( $settings, $logger, $job_requests, $routing, $cal, $photo_analysis ) {
+		$this->settings       = $settings;
+		$this->logger         = $logger;
+		$this->job_requests   = $job_requests;
+		$this->routing        = $routing;
+		$this->cal            = $cal;
+		$this->photo_analysis = $photo_analysis;
 	}
 
 	/**
@@ -164,6 +171,9 @@ class Handik_Booking_App_ChatKit_Service {
 			)
 		);
 
+		$draft_context                  = $this->job_requests->build_context( $request_id );
+		$draft_context['photo_analysis'] = $this->photo_analysis->cached_analysis( $request );
+
 		return array(
 			'client_secret'   => $client_secret,
 			'clientSecret'    => $client_secret,
@@ -171,8 +181,31 @@ class Handik_Booking_App_ChatKit_Service {
 			'user_id'         => $user_id,
 			'workflow_id'     => $workflow,
 			'state_variables' => $this->state_variables( $request ),
-			'draft_context'   => $this->job_requests->build_context( $request_id ),
+			'draft_context'   => $draft_context,
 			'file_upload'     => is_array( $payload['chatkit_configuration']['file_upload'] ?? null ) ? $payload['chatkit_configuration']['file_upload'] : null,
+		);
+	}
+
+	/**
+	 * @param int    $request_id Request ID.
+	 * @param string $draft_token Token.
+	 * @return array<string, mixed>
+	 */
+	public function warm_photo_analysis( $request_id, $draft_token ) {
+		if ( ! $this->job_requests->verify_draft_token( $request_id, $draft_token ) ) {
+			return array( 'error' => __( 'Invalid draft token.', 'handik-booking-app' ), 'status' => 403 );
+		}
+
+		$request = $this->job_requests->get( $request_id );
+		if ( ! $request ) {
+			return array( 'error' => __( 'Draft request not found.', 'handik-booking-app' ), 'status' => 404 );
+		}
+
+		$analysis = $this->photo_analysis->analyze_request( $request, false );
+		return array(
+			'success'        => true,
+			'photo_analysis' => $analysis,
+			'cached'         => ! empty( $analysis['source'] ) && 'cache' === $analysis['source'],
 		);
 	}
 
@@ -238,9 +271,10 @@ class Handik_Booking_App_ChatKit_Service {
 			return array( 'error' => __( 'Draft request not found.', 'handik-booking-app' ), 'status' => 404 );
 		}
 
-		$assistant = $this->merge_assistant_result(
+		$photo_analysis = $this->photo_analysis->analyze_request( $request, false );
+		$assistant      = $this->merge_assistant_result(
 			$this->sanitize_assistant_result( is_array( $request['assistant_result'] ?? null ) ? $request['assistant_result'] : array() ),
-			$this->sanitize_assistant_result( $assistant_result )
+			$this->sanitize_assistant_result( $this->inject_photo_analysis_into_result( $assistant_result, $photo_analysis ) )
 		);
 		$routing   = $this->routing->route( $request, $assistant );
 		$this->job_requests->apply_routing( $request_id, $routing, $assistant );
@@ -266,6 +300,7 @@ class Handik_Booking_App_ChatKit_Service {
 			'assistant_result' => $assistant,
 			'routing'       => $routing,
 			'booking_url'   => $booking_url,
+			'photo_analysis'=> $photo_analysis,
 			'unsafe_flag'   => ! empty( $routing['unsafe_flag'] ),
 			'unsafe_reason' => $routing['unsafe_reason'],
 		);
@@ -342,6 +377,45 @@ class Handik_Booking_App_ChatKit_Service {
 			'unsafe_reason'     => sanitize_textarea_field( $result['unsafe_reason'] ?? '' ),
 			'is_project'        => ! empty( $result['is_project'] ),
 		);
+	}
+
+	/**
+	 * @param array<string, mixed> $incoming Incoming assistant result.
+	 * @param array<string, mixed> $photo_analysis Photo analysis.
+	 * @return array<string, mixed>
+	 */
+	protected function inject_photo_analysis_into_result( array $incoming, array $photo_analysis ) {
+		if ( empty( $photo_analysis['has_actionable_visual_context'] ) ) {
+			return $incoming;
+		}
+
+		$summary = ! empty( $photo_analysis['visual_summary'] ) ? sanitize_textarea_field( (string) $photo_analysis['visual_summary'] ) : '';
+		$notes   = ! empty( $photo_analysis['visual_estimate_notes'] ) ? sanitize_textarea_field( (string) $photo_analysis['visual_estimate_notes'] ) : '';
+
+		if ( $summary && empty( $incoming['assistant_summary'] ) ) {
+			$incoming['assistant_summary'] = $summary;
+		}
+
+		$photo_notes = array();
+		if ( $summary ) {
+			$photo_notes[] = 'Photo observations: ' . $summary;
+		}
+		if ( $notes ) {
+			$photo_notes[] = $notes;
+		}
+		if ( ! empty( $photo_analysis['safety_observations'] ) && is_array( $photo_analysis['safety_observations'] ) ) {
+			$photo_notes[] = 'Visible cautions: ' . implode( '; ', array_map( 'sanitize_text_field', $photo_analysis['safety_observations'] ) );
+		}
+
+		$photo_block = implode( "\n", array_filter( $photo_notes ) );
+		if ( $photo_block ) {
+			$current_notes = ! empty( $incoming['estimate_notes'] ) ? (string) $incoming['estimate_notes'] : '';
+			if ( false === strpos( $current_notes, $photo_block ) ) {
+				$incoming['estimate_notes'] = trim( $current_notes ? $current_notes . "\n\n" . $photo_block : $photo_block );
+			}
+		}
+
+		return $incoming;
 	}
 
 	/**

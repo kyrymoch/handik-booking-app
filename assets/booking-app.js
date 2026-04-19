@@ -23,6 +23,7 @@
 			this.notificationTimers = new Map();
 			this.assistantBridge = null;
 			this.pendingPhotoFiles = [];
+			this.photoAnalysisWarmRequestId = 0;
 			this.infoModeEnabled = this.readStoredBoolean( this.infoModeStorageKey, true );
 			this.state = {
 				step: 'client_type',
@@ -671,6 +672,7 @@
 						window.HandikChatKitBridge.reset( 'request_' + String( this.state.requestId ) );
 					}
 					this.pendingPhotoFiles = [];
+					this.photoAnalysisWarmRequestId = 0;
 					this.state = Object.assign( this.state, {
 						step: 'client_type',
 						clientType: '',
@@ -823,6 +825,31 @@
 				formData.append( 'app_session_key', this.state.appSessionKey );
 				const uploaded = await this.api( 'app/upload', {}, 'POST', formData );
 				this.state.photos.push( uploaded );
+			}
+			this.photoAnalysisWarmRequestId = 0;
+		}
+
+		async warmPhotoAnalysis() {
+			if ( ! this.state.requestId || ! this.state.draftToken || ! this.state.photos.length ) {
+				return;
+			}
+
+			if ( this.photoAnalysisWarmRequestId === this.state.requestId ) {
+				return;
+			}
+
+			this.photoAnalysisWarmRequestId = this.state.requestId;
+
+			try {
+				await this.api( 'photo-analysis', {
+					request_id: this.state.requestId,
+					draft_token: this.state.draftToken
+				} );
+			} catch ( error ) {
+				this.logClient( 'debug', 'Photo analysis warmup failed.', {
+					request_id: this.state.requestId,
+					error: error && error.message ? error.message : 'unknown'
+				} );
 			}
 		}
 
@@ -1313,6 +1340,7 @@
 				loadingSubtitle: config.strings.loadingAssistantSubtext || 'Charging the tiny robot brain for your next step.',
 				endpoints: {
 					createSession: config.restBase + 'chatkit-session',
+					warmPhotoAnalysis: config.restBase + 'photo-analysis',
 					saveAssistantResult: config.restBase + 'assistant-result',
 					associateThread: config.restBase + 'chatkit-thread',
 					clientLog: config.restBase + 'client-log'
@@ -1375,6 +1403,7 @@
 			this.renderNotifications();
 			if ( 'assistant' === this.state.step ) {
 				window.setTimeout( () => this.mountAssistant(), 0 );
+				window.setTimeout( () => this.warmPhotoAnalysis(), 0 );
 			}
 			if ( 'address_details' === this.state.step ) {
 				window.setTimeout( () => this.mountAddressAutocomplete(), 0 );

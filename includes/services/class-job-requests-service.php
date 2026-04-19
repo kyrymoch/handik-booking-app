@@ -29,7 +29,9 @@ class Handik_Booking_App_Job_Requests_Service {
 
 		$table     = Handik_Booking_App_DB::table( 'job_requests' );
 		$existing  = $request_id ? $this->get( $request_id ) : null;
-		$app_state = ! empty( $payload['app_state'] ) && is_array( $payload['app_state'] ) ? $payload['app_state'] : array();
+		$existing_app_state = ( $existing && ! empty( $existing['app_state'] ) && is_array( $existing['app_state'] ) ) ? $existing['app_state'] : array();
+		$incoming_app_state = ! empty( $payload['app_state'] ) && is_array( $payload['app_state'] ) ? $payload['app_state'] : array();
+		$app_state          = array_replace_recursive( $existing_app_state, $incoming_app_state );
 
 		$data = array(
 			'contact_id'          => $contact_id ? $contact_id : ( $existing ? (int) $existing['contact_id'] : null ),
@@ -328,9 +330,37 @@ class Handik_Booking_App_Job_Requests_Service {
 			'preferred_timeframe' => $row['preferred_timeframe'],
 			'short_description'   => $row['short_description'],
 			'photos'              => $row['photos'],
+			'photo_analysis'      => ! empty( $row['app_state']['photo_analysis'] ) && is_array( $row['app_state']['photo_analysis'] ) ? $row['app_state']['photo_analysis'] : array(),
 			'assistant_summary'   => $row['assistant_summary'],
 			'chat_thread_id'      => $row['chat_thread_id'],
 		);
+	}
+
+	/**
+	 * @param int                  $request_id Request ID.
+	 * @param array<string, mixed> $patch Patch.
+	 * @return array<string, mixed>|null
+	 */
+	public function update_app_state( $request_id, array $patch ) {
+		global $wpdb;
+
+		$request = $this->get( $request_id );
+		if ( ! $request ) {
+			return null;
+		}
+
+		$app_state = ! empty( $request['app_state'] ) && is_array( $request['app_state'] ) ? $request['app_state'] : array();
+		$app_state = array_replace_recursive( $app_state, $patch );
+
+		$wpdb->update(
+			Handik_Booking_App_DB::table( 'job_requests' ),
+			array(
+				'app_state_json' => wp_json_encode( $app_state ),
+			),
+			array( 'id' => $request_id )
+		);
+
+		return $this->get( $request_id );
 	}
 
 	/**

@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.0.29
+Stable tag: 2.0.30
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, returning-client auth, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,11 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.0.30 =
+* Added a backend OpenAI vision pass that analyzes uploaded WordPress request photos and caches the result on the draft request.
+* Warmed photo analysis in the background on the Virtual assistant step and merge the visual observations into estimate notes before final routing is saved.
+* Added cached uploaded-photo analysis to the admin booking detail view so operators can see what the system inferred from the images.
 
 = 2.0.29 =
 * Keeps photo File objects in frontend memory after the Photos step while still uploading them to WordPress for CRM storage.

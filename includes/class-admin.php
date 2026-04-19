@@ -290,6 +290,8 @@ class Handik_Booking_App_Admin {
 		echo '<div class="handik-admin-note">' . nl2br( esc_html( (string) ( $request['estimate_notes'] ?? '' ) ) ) . '</div>';
 		echo '<h3>' . esc_html__( 'Latest assistant output', 'handik-booking-app' ) . '</h3>';
 		echo $this->assistant_output_markup( $request );
+		echo '<h3>' . esc_html__( 'Uploaded photo analysis', 'handik-booking-app' ) . '</h3>';
+		echo $this->photo_analysis_markup( $request );
 		echo '</div>';
 
 		echo '<div class="handik-admin-panel">';
@@ -713,6 +715,15 @@ class Handik_Booking_App_Admin {
 		}
 
 		return '<pre>' . esc_html( wp_json_encode( $output, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE ) ) . '</pre>';
+	}
+
+	protected function photo_analysis_markup( $request ) {
+		$analysis = ! empty( $request['app_state']['photo_analysis'] ) && is_array( $request['app_state']['photo_analysis'] ) ? $request['app_state']['photo_analysis'] : array();
+		if ( empty( $analysis ) ) {
+			return '<p>' . esc_html__( 'No cached photo analysis yet.', 'handik-booking-app' ) . '</p>';
+		}
+
+		return '<pre>' . esc_html( wp_json_encode( $analysis, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE ) ) . '</pre>';
 	}
 
 	protected function photos_gallery_markup( array $photos ) {

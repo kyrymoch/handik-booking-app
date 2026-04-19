@@ -11,6 +11,16 @@ class Handik_Booking_App_Changelog_Service {
 	public function get_entries() {
 		return array(
 			array(
+				'version'      => '2.0.30',
+				'date'         => '2026-04-18',
+				'title'        => 'Photo Vision Analysis From WordPress Uploads',
+				'notes'        => array(
+					'Added a backend photo-analysis pass that reviews the uploaded WordPress request photos with OpenAI vision and caches the result on the request record.',
+					'The booking flow now warms that photo analysis in the background on the Virtual assistant step and merges the visual observations into estimate notes before routing and booking decisions are saved.',
+					'Bookings admin now shows the cached uploaded-photo analysis alongside the latest assistant output so the final CRM record makes it clear what the system inferred from the images.',
+				),
+			),
+			array(
 				'version'      => '2.0.29',
 				'date'         => '2026-04-18',
 				'title'        => 'Photo Handoff Into The Virtual Assistant Composer',
