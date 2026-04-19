@@ -11,6 +11,16 @@ class Handik_Booking_App_Changelog_Service {
 	public function get_entries() {
 		return array(
 			array(
+				'version'      => '2.0.27',
+				'date'         => '2026-04-18',
+				'title'        => 'Quieter Info Mode Toggle',
+				'notes'        => array(
+					'Made the Info mode button smaller, calmer, and less decorative so it feels more like a subtle utility control than a prominent action.',
+					'Extended the toggle to hide warning notices as well, leaving success and true error messages visible while helper guidance is off.',
+					'Added short forced status messages when the toggle changes so clients see a clear “Hints are enabled” or “Hints are disabled” confirmation.',
+				),
+			),
+			array(
 				'version'      => '2.0.26',
 				'date'         => '2026-04-18',
 				'title'        => 'Info Mode Toggle And Simpler Notification Copy',

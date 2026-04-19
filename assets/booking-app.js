@@ -157,7 +157,7 @@
 
 		notify( type, title, message, duration, options ) {
 			const settings = options || {};
-			if ( ! this.infoModeEnabled && ( 'info' === type || 'task' === type ) ) {
+			if ( ! settings.force && ! this.infoModeEnabled && ( 'info' === type || 'task' === type || 'warning' === type ) ) {
 				return;
 			}
 			const item = {
@@ -457,6 +457,15 @@
 			this.infoModeEnabled = ! this.infoModeEnabled;
 			this.writeStoredBoolean( this.infoModeStorageKey, this.infoModeEnabled );
 			this.state.infoModeTooltipVisible = true;
+			this.notify(
+				'info',
+				'',
+				this.infoModeEnabled
+					? ( config.strings.infoModeEnabledMessage || 'Hints are enabled.' )
+					: ( config.strings.infoModeDisabledMessage || 'Hints are disabled.' ),
+				2200,
+				{ force: true }
+			);
 			this.render();
 			window.setTimeout( () => {
 				this.state.infoModeTooltipVisible = false;

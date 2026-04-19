@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.0.26
+Stable tag: 2.0.27
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, returning-client auth, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,11 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.0.27 =
+* Made the Info mode button smaller, calmer, and less decorative so it reads as a lightweight utility control.
+* Extended the toggle to hide warning notices as well, while still leaving success and real error messages visible.
+* Added short forced status messages when the toggle changes so clients see a clear “Hints are enabled” or “Hints are disabled” confirmation.
 
 = 2.0.26 =
 * Added an Info mode toggle with a short onboarding tooltip and cached client preference so helper tips can stay on or off between visits.
