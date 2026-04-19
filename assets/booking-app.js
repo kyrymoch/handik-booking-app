@@ -8,6 +8,8 @@
 	class HandikBookingApp {
 		constructor( root ) {
 			this.root = root;
+			this.instanceId = 'handik-app-' + Math.random().toString( 36 ).slice( 2 );
+			this.notificationRootId = this.instanceId + '-notifications';
 			this.bootstrap = null;
 			this.addressAutocomplete = null;
 			this.bookingStatusTimer = null;
@@ -280,8 +282,22 @@
 				'</div>';
 		}
 
+		ensureNotificationRoot() {
+			let root = document.getElementById( this.notificationRootId );
+			if ( root ) {
+				return root;
+			}
+
+			root = document.createElement( 'div' );
+			root.id = this.notificationRootId;
+			root.className = 'handik-booking-app__notifications';
+			root.setAttribute( 'data-handik-app-notifications', this.instanceId );
+			document.body.appendChild( root );
+			return root;
+		}
+
 		renderNotifications() {
-			const root = this.root.querySelector( '.handik-booking-app__notifications' );
+			const root = this.ensureNotificationRoot();
 			if ( ! root ) {
 				return;
 			}
@@ -1236,7 +1252,7 @@
 		}
 
 		render() {
-			this.root.innerHTML = '<div class="handik-booking-app__shell">' + this.progressMarkup() + this.stepMarkup() + '<div class="handik-booking-app__notifications"></div></div>';
+			this.root.innerHTML = '<div class="handik-booking-app__shell">' + this.progressMarkup() + this.stepMarkup() + '</div>';
 			this.bind();
 			this.renderNotifications();
 			if ( 'assistant' === this.state.step ) {

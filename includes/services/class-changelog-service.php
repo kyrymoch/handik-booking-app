@@ -11,6 +11,16 @@ class Handik_Booking_App_Changelog_Service {
 	public function get_entries() {
 		return array(
 			array(
+				'version'      => '2.0.25',
+				'date'         => '2026-04-18',
+				'title'        => 'Notification Portal Above Site Header',
+				'notes'        => array(
+					'Moved interactive notifications out of the booking app container and into document.body so they are no longer trapped inside the page builder stacking context.',
+					'This fixes the case where the site header or another fixed menu could still appear above notifications despite the toast layer using a very high z-index.',
+					'The notification layer now behaves like a true global overlay while keeping the same bottom-right desktop placement and top placement on mobile.',
+				),
+			),
+			array(
 				'version'      => '2.0.24',
 				'date'         => '2026-04-18',
 				'title'        => 'Notification Placement And Timer Polish',

@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.0.24
+Stable tag: 2.0.25
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, returning-client auth, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,11 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.0.25 =
+* Moved interactive notifications into `document.body` so they are no longer trapped inside the booking app container's stacking context.
+* Fixed the case where a fixed site header or menu could still appear above notifications despite the toast layer using a very high z-index.
+* Kept the same compact desktop bottom-right placement and top placement on mobile while making the layer behave like a true global overlay.
 
 = 2.0.24 =
 * Reduced desktop interactive notifications and moved them to the bottom-right corner to better match the intended compact reference style.
