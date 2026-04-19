@@ -11,6 +11,16 @@ class Handik_Booking_App_Changelog_Service {
 	public function get_entries() {
 		return array(
 			array(
+				'version'      => '2.0.31',
+				'date'         => '2026-04-18',
+				'title'        => 'Assistant Step Dual Upload For AI Review Photos',
+				'notes'        => array(
+					'Added a dedicated Add photos for AI review control on the Virtual assistant step so clients can upload images right where they ask the AI for help.',
+					'Those assistant-step images now dual-upload: they are saved into the WordPress request record for CRM visibility and also queued into the hosted ChatKit composer for the next user message.',
+					'If the hosted ChatKit composer accepts the files, the same photos can travel with the user message while backend photo analysis still runs from the WordPress copies as a reliable fallback.',
+				),
+			),
+			array(
 				'version'      => '2.0.30',
 				'date'         => '2026-04-18',
 				'title'        => 'Photo Vision Analysis From WordPress Uploads',

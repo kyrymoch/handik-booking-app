@@ -961,6 +961,24 @@ openai-chatkit {
 	gap: 6px;
 }
 
+.handik-assistant-tools {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 10px;
+	margin-bottom: 14px;
+}
+
+.handik-assistant-tools__button {
+	min-width: 0;
+}
+
+.handik-assistant-tools__status {
+	font-size: 0.9rem;
+	line-height: 1.4;
+	color: var(--handik-muted-text, #64748b);
+}
+
 .handik-booking-app__screen-body {
 	padding-bottom: calc(132px + env(safe-area-inset-bottom, 0px));
 }
@@ -997,6 +1015,14 @@ openai-chatkit {
 	.handik-booking-app__screen-tools {
 		right: 4px;
 		top: 4px;
+	}
+
+	.handik-assistant-tools {
+		align-items: stretch;
+	}
+
+	.handik-assistant-tools__button {
+		width: 100%;
 	}
 
 	.handik-booking-app__info-mode {

@@ -558,6 +558,47 @@
 			}
 		}
 
+		async pushPendingFilesIntoAssistant() {
+			if ( ! this.assistantBridge || 'function' !== typeof this.assistantBridge.addFiles ) {
+				return false;
+			}
+
+			try {
+				return await this.assistantBridge.addFiles();
+			} catch ( error ) {
+				this.logClient( 'debug', 'Assistant composer addFiles failed.', {
+					request_id: this.state.requestId,
+					error: error && error.message ? error.message : 'unknown'
+				} );
+				return false;
+			}
+		}
+
+		async handleSelectedPhotos( selectedFiles, successTitle, successMessage ) {
+			if ( ! selectedFiles || ! selectedFiles.length ) {
+				return;
+			}
+
+			this.mergePendingPhotoFiles( selectedFiles );
+			this.state.photoUploading = true;
+			this.clearFooterHint();
+			this.render();
+
+			try {
+				await this.uploadFiles( selectedFiles );
+				if ( 'assistant' === this.state.step ) {
+					await this.pushPendingFilesIntoAssistant();
+					await this.warmPhotoAnalysis();
+				}
+				this.notify( 'success', successTitle || 'Photos added', successMessage || 'Your photos were uploaded and attached to this request.' );
+			} catch ( error ) {
+				this.setFooterHint( error.message, true );
+			}
+
+			this.state.photoUploading = false;
+			this.render();
+		}
+
 		toggleTask( id ) {
 			if ( this.taskSelected( id ) ) {
 				this.state.selectedTasks = this.state.selectedTasks.filter( ( taskId ) => taskId !== id );
@@ -663,6 +704,14 @@
 						const photoInput = this.root.querySelector( '#handik-photo-input' );
 						if ( photoInput ) {
 							photoInput.click();
+						}
+					}
+					break;
+				case 'choose-assistant-photos':
+					{
+						const assistantPhotoInput = this.root.querySelector( '#handik-assistant-photo-input' );
+						if ( assistantPhotoInput ) {
+							assistantPhotoInput.click();
 						}
 					}
 					break;
@@ -1515,7 +1564,11 @@
 		}
 
 		assistantMarkup() {
-			return '<p class="handik-booking-app__intro">' + this.escape( config.strings.assistantHelper || 'Describe the task, ask any questions you have, and continue when you are ready to choose a time.' ) + '</p><div class="handik-assistant-layout"><div class="handik-assistant-panel"><div class="handik-booking-app__assistant-host"></div>' + this.footerActions( '', 'assistant-next', this.escape( config.strings.assistantContinue || 'Go to time and date selection' ), '', { continueMuted: false, hideBack: true } ) + '</div></div>';
+			const photoCount = Array.isArray( this.state.photos ) ? this.state.photos.length : 0;
+			const photoStatus = photoCount
+				? '<span class="handik-assistant-tools__status">' + this.escape( photoCount + ' photo' + ( 1 === photoCount ? '' : 's' ) + ' ready for AI review' ) + '</span>'
+				: '<span class="handik-assistant-tools__status">' + this.escape( 'Add photos if you want the AI to inspect the job visually.' ) + '</span>';
+			return '<p class="handik-booking-app__intro">' + this.escape( config.strings.assistantHelper || 'Describe the task, ask any questions you have, and continue when you are ready to choose a time.' ) + '</p><div class="handik-assistant-layout"><div class="handik-assistant-panel"><div class="handik-assistant-tools"><input type="file" id="handik-assistant-photo-input" class="handik-photo-input" multiple accept="image/*" /><button type="button" class="handik-btn is-secondary handik-assistant-tools__button" data-action="choose-assistant-photos">' + this.escape( 'Add photos for AI review' ) + '</button>' + photoStatus + '</div><div class="handik-booking-app__assistant-host"></div>' + this.footerActions( '', 'assistant-next', this.escape( config.strings.assistantContinue || 'Go to time and date selection' ), '', { continueMuted: false, hideBack: true } ) + '</div></div>';
 		}
 
 		contactMarkup() {
@@ -1719,19 +1772,20 @@
 						return;
 					}
 					const selectedFiles = Array.from( photoInput.files || [] );
-					this.mergePendingPhotoFiles( selectedFiles );
-					this.state.photoUploading = true;
-					this.clearFooterHint();
-					this.render();
-					try {
-						await this.uploadFiles( selectedFiles );
-						this.notify( 'success', 'Photos added', 'Your photos were uploaded and attached to this request.' );
-					} catch ( error ) {
-						this.setFooterHint( error.message, true );
-					}
 					photoInput.value = '';
-					this.state.photoUploading = false;
-					this.render();
+					await this.handleSelectedPhotos( selectedFiles, 'Photos added', 'Your photos were uploaded and attached to this request.' );
+				} );
+			}
+
+			const assistantPhotoInput = this.root.querySelector( '#handik-assistant-photo-input' );
+			if ( assistantPhotoInput ) {
+				assistantPhotoInput.addEventListener( 'change', async () => {
+					if ( ! assistantPhotoInput.files.length ) {
+						return;
+					}
+					const selectedFiles = Array.from( assistantPhotoInput.files || [] );
+					assistantPhotoInput.value = '';
+					await this.handleSelectedPhotos( selectedFiles, 'AI review photos added', 'Your photos were saved to this request and prepared for the virtual assistant.' );
 				} );
 			}
 		}

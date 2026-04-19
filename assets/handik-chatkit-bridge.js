@@ -194,6 +194,12 @@
 					return cachedRecord.element;
 				},
 				ready: Promise.resolve( cachedRecord.session || null ),
+				addFiles: function() {
+					if ( 'function' === typeof cachedRecord.prepareComposerFiles ) {
+						return cachedRecord.prepareComposerFiles( true );
+					}
+					return Promise.resolve( false );
+				},
 				unmount: function() {}
 			};
 		}
@@ -337,7 +343,7 @@
 			log( 'info', 'ChatKit became interactive.', { source: source } );
 		};
 
-		const prepareComposerFiles = function() {
+		const prepareComposerFiles = function( force ) {
 			const files = getPendingFiles();
 			const signature = pendingFilesSignature( files );
 
@@ -347,7 +353,7 @@
 				return Promise.resolve( false );
 			}
 
-			if ( signature && signature === record.preparedFilesSignature ) {
+			if ( ! force && signature && signature === record.preparedFilesSignature ) {
 				return Promise.resolve( false );
 			}
 
@@ -543,6 +549,9 @@
 				return record.element;
 			},
 			ready: ready,
+			addFiles: function() {
+				return prepareComposerFiles( true );
+			},
 			unmount: function() {
 				if ( record.readyTimer ) {
 					window.clearTimeout( record.readyTimer );
