@@ -184,7 +184,7 @@
 				}
 			} );
 			if ( cachedRecord.ready && typeof options.onSessionReady === 'function' ) {
-				options.onSessionReady();
+				options.onSessionReady( cachedRecord.session || null );
 			}
 			if ( cachedRecord.latestThreadId && typeof options.onThreadChange === 'function' ) {
 				options.onThreadChange( cachedRecord.latestThreadId );
@@ -473,7 +473,7 @@
 				log( 'info', 'ChatKit ready event fired.' );
 				prepareComposerFiles();
 				if ( typeof record.options.onSessionReady === 'function' ) {
-					record.options.onSessionReady();
+					record.options.onSessionReady( record.session || null );
 				}
 			} );
 

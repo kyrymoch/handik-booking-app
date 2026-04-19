@@ -11,6 +11,16 @@ class Handik_Booking_App_Changelog_Service {
 	public function get_entries() {
 		return array(
 			array(
+				'version'      => '2.0.39',
+				'date'         => '2026-04-19',
+				'title'        => 'Warm Uploaded Photo Analysis Before Mounting The Virtual Assistant',
+				'notes'        => array(
+					'The assistant step now prepares uploaded-photo analysis before the first hosted ChatKit mount for new photo-backed requests, which removes the old race where the assistant could greet the customer before photo context was ready.',
+					'ChatKit bridge callbacks now receive the full session payload on onSessionReady, so the booking app can use draft-context photo analysis that already exists on the server without guessing.',
+					'Added an assistant preparation loading state and photo-context handoff after session readiness so uploaded-photo context reaches the live conversation in a more predictable order.',
+				),
+			),
+			array(
 				'version'      => '2.0.38',
 				'date'         => '2026-04-19',
 				'title'        => 'Inject Uploaded Photo Summary Into The Live Assistant Thread',

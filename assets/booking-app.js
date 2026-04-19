@@ -20,6 +20,8 @@
 			this.calEmbedNamespace = '';
 			this.calEmbedMountKey = '';
 			this.calEmbedListenerKey = '';
+			this.assistantPreparationPromise = null;
+			this.pendingAssistantContextAnalysis = null;
 			this.notificationTimers = new Map();
 			this.assistantBridge = null;
 			this.pendingPhotoFiles = [];
@@ -52,6 +54,7 @@
 				footerHint: '',
 				footerHintError: false,
 				lastAssistantNotice: '',
+				assistantPreparing: false,
 				infoModeTooltipVisible: false,
 				loading: false,
 				photoUploading: false,
@@ -769,6 +772,7 @@
 					this.pendingPhotoFiles = [];
 					this.photoAnalysisWarmRequestId = 0;
 					this.photoContextSignatureSent = '';
+					this.pendingAssistantContextAnalysis = null;
 					this.state = Object.assign( this.state, {
 						step: 'client_type',
 						clientType: '',
@@ -790,6 +794,7 @@
 						bookingStatusMessage: '',
 						unsafeReason: '',
 						message: '',
+						assistantPreparing: false,
 						footerHint: '',
 						footerHintError: false,
 						photoUploading: false,
@@ -925,7 +930,7 @@
 			this.photoAnalysisWarmRequestId = 0;
 		}
 
-		async warmPhotoAnalysis() {
+		async warmPhotoAnalysis( sendToAssistant ) {
 			if ( ! this.state.requestId || ! this.state.draftToken || ! this.state.photos.length ) {
 				return;
 			}
@@ -949,7 +954,7 @@
 					request_id: this.state.requestId,
 					photo_count: this.state.photos.length
 				} );
-				if ( response && response.photo_analysis ) {
+				if ( false !== sendToAssistant && response && response.photo_analysis ) {
 					this.sendPhotoContextToAssistant( response.photo_analysis );
 				}
 				return response ? response.photo_analysis || null : null;
@@ -1024,6 +1029,48 @@
 			}
 
 			return false;
+		}
+
+		async prepareAssistantStep() {
+			if ( 'assistant' !== this.state.step || ! this.state.requestId || ! this.state.draftToken ) {
+				return;
+			}
+
+			if ( this.assistantPreparationPromise ) {
+				return this.assistantPreparationPromise;
+			}
+
+			const shouldWarmBeforeMount = ! this.assistantBridge && Array.isArray( this.state.photos ) && this.state.photos.length && this.photoAnalysisWarmRequestId !== this.state.requestId;
+
+			if ( ! shouldWarmBeforeMount ) {
+				this.mountAssistant();
+				return;
+			}
+
+			this.state.assistantPreparing = true;
+			this.render();
+			this.assistantPreparationPromise = ( async() => {
+				try {
+					this.pendingAssistantContextAnalysis = await this.withTimeout( this.warmPhotoAnalysis( false ), 12000, 'Assistant photo analysis preparation' );
+				} catch ( error ) {
+					this.logClient( 'debug', 'Assistant preparation warmup failed.', {
+						request_id: this.state.requestId,
+						error: error && error.message ? error.message : 'unknown'
+					} );
+				}
+
+				if ( 'assistant' === this.state.step ) {
+					this.mountAssistant();
+				}
+			} )().finally( () => {
+				this.assistantPreparationPromise = null;
+				this.state.assistantPreparing = false;
+				if ( 'assistant' === this.state.step ) {
+					this.render();
+				}
+			} );
+
+			return this.assistantPreparationPromise;
 		}
 
 		async ensureDraftRequest( appStep ) {
@@ -1518,8 +1565,12 @@
 					associateThread: config.restBase + 'chatkit-thread',
 					clientLog: config.restBase + 'client-log'
 				},
-				onSessionReady: () => {
+				onSessionReady: ( session ) => {
 					this.setAssistantNotice( config.strings.assistantHelper || 'Describe the job in chat, ask questions if needed, then tap Continue when you are ready.', false );
+					const analysis = this.pendingAssistantContextAnalysis || ( session && session.draft_context && session.draft_context.photo_analysis ? session.draft_context.photo_analysis : null );
+					if ( analysis ) {
+						window.setTimeout( () => this.sendPhotoContextToAssistant( analysis ), 0 );
+					}
 				},
 				onThreadChange: ( threadId ) => {
 					this.state.assistantThreadId = threadId || this.state.assistantThreadId;
@@ -1575,8 +1626,7 @@
 			this.bind();
 			this.renderNotifications();
 			if ( 'assistant' === this.state.step ) {
-				window.setTimeout( () => this.mountAssistant(), 0 );
-				window.setTimeout( () => this.warmPhotoAnalysis(), 0 );
+				window.setTimeout( () => this.prepareAssistantStep(), 0 );
 			}
 			if ( 'address_details' === this.state.step ) {
 				window.setTimeout( () => this.mountAddressAutocomplete(), 0 );
@@ -1644,7 +1694,7 @@
 		}
 
 		screen( title, body, modifier ) {
-			const overlay = ( this.state.loading || this.state.photoUploading ) ? '<div class="handik-booking-app__loading-overlay" aria-live="polite">' + this.loaderMarkup() + '</div>' : '';
+			const overlay = ( this.state.loading || this.state.photoUploading || this.state.assistantPreparing ) ? '<div class="handik-booking-app__loading-overlay" aria-live="polite">' + this.loaderMarkup() + '</div>' : '';
 			return '<section class="handik-booking-app__screen ' + ( modifier || '' ) + '"><div class="handik-booking-app__screen-header">' + this.infoModeControlMarkup() + '<h2>' + this.escape( title ) + '</h2></div><div class="handik-booking-app__screen-body">' + body + overlay + '</div></section>';
 		}
 
