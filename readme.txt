@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.0.28
+Stable tag: 2.0.29
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, returning-client auth, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,11 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.0.29 =
+* Keeps photo File objects in frontend memory after the Photos step while still uploading them to WordPress for CRM storage.
+* Preloads pending photos into the hosted ChatKit composer so the client can send the first real assistant message together with the same images.
+* Clears the pending photo queue after composer submit so attachments are not silently duplicated on later assistant visits.
 
 = 2.0.28 =
 * Reworked the booking flow order to run through address, tasks, photos, contact details, virtual assistant, and booking with the sticky action dock fixed to the bottom on desktop and mobile.

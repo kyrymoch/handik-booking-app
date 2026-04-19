@@ -11,6 +11,16 @@ class Handik_Booking_App_Changelog_Service {
 	public function get_entries() {
 		return array(
 			array(
+				'version'      => '2.0.29',
+				'date'         => '2026-04-18',
+				'title'        => 'Photo Handoff Into The Virtual Assistant Composer',
+				'notes'        => array(
+					'Photos selected on the Photos step now stay available in browser memory for the virtual assistant while still uploading to WordPress for CRM and admin storage.',
+					'When the hosted ChatKit assistant becomes ready, the bridge preloads those pending images into the composer so the client can send their first real message together with the same photos.',
+					'Once the client submits that first message, the pending photo queue is cleared so the same files are not silently reattached again on later assistant visits.',
+				),
+			),
+			array(
 				'version'      => '2.0.28',
 				'date'         => '2026-04-18',
 				'title'        => 'Flow Reorder, Better Booking Admin, And More Stable Assistant Mounting',

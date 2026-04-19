@@ -22,6 +22,7 @@
 			this.calEmbedListenerKey = '';
 			this.notificationTimers = new Map();
 			this.assistantBridge = null;
+			this.pendingPhotoFiles = [];
 			this.infoModeEnabled = this.readStoredBoolean( this.infoModeStorageKey, true );
 			this.state = {
 				step: 'client_type',
@@ -523,6 +524,39 @@
 			return this.state.selectedTasks.includes( id );
 		}
 
+		fileSignature( file ) {
+			if ( ! file ) {
+				return '';
+			}
+			return [ file.name || '', file.size || 0, file.lastModified || 0, file.type || '' ].join( ':' );
+		}
+
+		mergePendingPhotoFiles( files ) {
+			const incoming = Array.from( files || [] ).filter( ( file ) => file instanceof window.File );
+			if ( ! incoming.length ) {
+				return;
+			}
+
+			const existing = new Set( this.pendingPhotoFiles.map( ( file ) => this.fileSignature( file ) ) );
+			incoming.forEach( ( file ) => {
+				const signature = this.fileSignature( file );
+				if ( signature && ! existing.has( signature ) ) {
+					existing.add( signature );
+					this.pendingPhotoFiles.push( file );
+				}
+			} );
+		}
+
+		clearCommittedPendingPhotos( payload ) {
+			const details = payload || {};
+			const attachmentsCount = Number( details.attachmentsCount || 0 );
+			const preparedFilesCount = Number( details.preparedFilesCount || 0 );
+
+			if ( attachmentsCount > 0 || preparedFilesCount > 0 ) {
+				this.pendingPhotoFiles = [];
+			}
+		}
+
 		toggleTask( id ) {
 			if ( this.taskSelected( id ) ) {
 				this.state.selectedTasks = this.state.selectedTasks.filter( ( taskId ) => taskId !== id );
@@ -636,6 +670,7 @@
 					if ( window.HandikChatKitBridge && typeof window.HandikChatKitBridge.reset === 'function' && this.state.requestId ) {
 						window.HandikChatKitBridge.reset( 'request_' + String( this.state.requestId ) );
 					}
+					this.pendingPhotoFiles = [];
 					this.state = Object.assign( this.state, {
 						step: 'client_type',
 						clientType: '',
@@ -1271,6 +1306,7 @@
 				draftToken: this.state.draftToken,
 				cacheKey: 'request_' + String( this.state.requestId ),
 				initialThreadId: this.state.assistantThreadId,
+				pendingFiles: () => this.pendingPhotoFiles.slice(),
 				startScreenGreeting: config.strings.assistantGreeting || 'Describe the task and I will help estimate time, materials, and the next step.',
 				composerPlaceholder: config.strings.assistantGreeting || 'Describe the task and I will help estimate time, materials, and the next step.',
 				loadingTitle: config.strings.loadingAssistant || 'Loading virtual assistant...',
@@ -1302,6 +1338,10 @@
 						this.setAssistantNotice( config.strings.assistantHelper || 'Describe the job in chat, ask questions if needed, then tap Continue when you are ready.', false );
 						this.setAssistantContinueBusy( false );
 					}
+				},
+				onComposerSubmit: ( payload ) => {
+					this.state.assistantUserMessageSent = true;
+					this.clearCommittedPendingPhotos( payload );
 				},
 				onComplete: ( normalized, payload ) => {
 					this.state.assistantResult = Object.assign( {}, payload && payload.routing ? payload.routing : {}, normalized );
@@ -1649,15 +1689,18 @@
 					if ( ! photoInput.files.length ) {
 						return;
 					}
+					const selectedFiles = Array.from( photoInput.files || [] );
+					this.mergePendingPhotoFiles( selectedFiles );
 					this.state.photoUploading = true;
 					this.clearFooterHint();
 					this.render();
 					try {
-						await this.uploadFiles( photoInput.files );
+						await this.uploadFiles( selectedFiles );
 						this.notify( 'success', 'Photos added', 'Your photos were uploaded and attached to this request.' );
 					} catch ( error ) {
 						this.setFooterHint( error.message, true );
 					}
+					photoInput.value = '';
 					this.state.photoUploading = false;
 					this.render();
 				} );

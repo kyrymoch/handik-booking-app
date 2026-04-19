@@ -178,6 +178,11 @@
 			cachedRecord.options = options;
 			options.container.innerHTML = '';
 			options.container.appendChild( cachedRecord.element );
+			window.requestAnimationFrame( function() {
+				if ( 'function' === typeof cachedRecord.prepareComposerFiles ) {
+					cachedRecord.prepareComposerFiles();
+				}
+			} );
 			if ( cachedRecord.ready && typeof options.onSessionReady === 'function' ) {
 				options.onSessionReady();
 			}
@@ -202,7 +207,10 @@
 			ready: false,
 			interactive: false,
 			element: null,
-			session: null
+			session: null,
+			preparedFilesSignature: '',
+			preparedFilesCount: 0,
+			prepareComposerFiles: null
 		};
 
 		BRIDGE_CACHE.set( cacheKey, record );
@@ -211,6 +219,29 @@
 			if ( typeof record.options.onStatus === 'function' ) {
 				record.options.onStatus( text, context || {} );
 			}
+		};
+
+		const getPendingFiles = function() {
+			if ( 'function' === typeof record.options.pendingFiles ) {
+				try {
+					const files = record.options.pendingFiles();
+					return Array.isArray( files ) ? files.filter( function( file ) {
+						return file instanceof window.File;
+					} ) : [];
+				} catch ( error ) {
+					return [];
+				}
+			}
+
+			return Array.isArray( record.options.pendingFiles ) ? record.options.pendingFiles.filter( function( file ) {
+				return file instanceof window.File;
+			} ) : [];
+		};
+
+		const pendingFilesSignature = function( files ) {
+			return ( files || [] ).map( function( file ) {
+				return [ file.name || '', file.size || 0, file.lastModified || 0, file.type || '' ].join( ':' );
+			} ).join( '|' );
 		};
 
 		const log = function( level, message, context ) {
@@ -306,6 +337,38 @@
 			log( 'info', 'ChatKit became interactive.', { source: source } );
 		};
 
+		const prepareComposerFiles = function() {
+			const files = getPendingFiles();
+			const signature = pendingFilesSignature( files );
+
+			if ( ! files.length ) {
+				record.preparedFilesSignature = '';
+				record.preparedFilesCount = 0;
+				return Promise.resolve( false );
+			}
+
+			if ( signature && signature === record.preparedFilesSignature ) {
+				return Promise.resolve( false );
+			}
+
+			if ( ! record.element || 'function' !== typeof record.element.setComposerValue ) {
+				log( 'debug', 'ChatKit composer file prefill is not supported by the current element.' );
+				return Promise.resolve( false );
+			}
+
+			return Promise.resolve( record.element.setComposerValue( { files: files } ) ).then( function() {
+				record.preparedFilesSignature = signature;
+				record.preparedFilesCount = files.length;
+				log( 'info', 'Prepared pending photos in ChatKit composer.', { file_count: files.length } );
+				return true;
+			} ).catch( function( error ) {
+				log( 'error', 'Assistant file prefill failed.', { error: summarizeError( error ) } );
+				return false;
+			} );
+		};
+
+		record.prepareComposerFiles = prepareComposerFiles;
+
 		const buildOptions = function() {
 			return {
 				api: {
@@ -380,6 +443,7 @@
 					window.clearTimeout( record.readyTimer );
 				}
 				log( 'info', 'ChatKit ready event fired.' );
+				prepareComposerFiles();
 				if ( typeof record.options.onSessionReady === 'function' ) {
 					record.options.onSessionReady();
 				}
@@ -401,6 +465,15 @@
 					name: detail.name || '',
 					data: detail.data || {}
 				} );
+				if ( 'composer.submit' === detail.name && typeof record.options.onComposerSubmit === 'function' ) {
+					record.options.onComposerSubmit( {
+						attachmentsCount: detail.data && detail.data.attachmentsCount ? detail.data.attachmentsCount : 0,
+						preparedFilesCount: record.preparedFilesCount,
+						preparedFilesSignature: record.preparedFilesSignature
+					} );
+					record.preparedFilesSignature = '';
+					record.preparedFilesCount = 0;
+				}
 				const structured = extractStructuredResult( detail );
 				if ( structured ) {
 					saveStructuredResult( structured, 'log:' + ( detail.name || 'unknown' ) );
