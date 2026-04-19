@@ -618,21 +618,16 @@
 				return;
 			}
 
-			this.mergePendingPhotoFiles( selectedFiles );
 			this.state.photoUploading = true;
 			this.clearFooterHint();
 			this.render();
 
 			try {
 				await this.uploadFiles( selectedFiles );
+				this.pendingPhotoFiles = [];
 				if ( 'assistant' === this.state.step ) {
-					const preparedForChat = await this.pushPendingFilesIntoAssistant();
 					this.warmPhotoAnalysis();
-					if ( preparedForChat ) {
-						this.notify( 'success', successTitle || 'Photos added', successMessage || 'Your photos were saved to this request and prepared for the virtual assistant.' );
-					} else {
-						this.notify( 'success', successTitle || 'Photos added', 'Your photos were saved to this request. AI review will use the saved photos even if chat attachments take longer to appear.' );
-					}
+					this.notify( 'success', successTitle || 'Photos added', 'Your photos were saved to this request. The AI will review the uploaded photos from the saved request images.' );
 				} else {
 					this.notify( 'success', successTitle || 'Photos added', successMessage || 'Your photos were uploaded and attached to this request.' );
 				}
@@ -1435,7 +1430,7 @@
 				draftToken: this.state.draftToken,
 				cacheKey: 'request_' + String( this.state.requestId ),
 				initialThreadId: this.state.assistantThreadId,
-				pendingFiles: () => this.pendingPhotoFiles.slice(),
+				pendingFiles: () => [],
 				startScreenGreeting: config.strings.assistantGreeting || 'Describe the task and I will help estimate time, materials, and the next step.',
 				composerPlaceholder: config.strings.assistantGreeting || 'Describe the task and I will help estimate time, materials, and the next step.',
 				loadingTitle: config.strings.loadingAssistant || 'Loading virtual assistant...',

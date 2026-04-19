@@ -11,6 +11,16 @@ class Handik_Booking_App_Changelog_Service {
 	public function get_entries() {
 		return array(
 			array(
+				'version'      => '2.0.36',
+				'date'         => '2026-04-19',
+				'title'        => 'Stabilize AI Review Photos By Using Saved Request Images',
+				'notes'        => array(
+					'Stopped sending Add photos for AI review files into the hosted ChatKit composer because that native file handoff was causing the assistant conversation to stop responding after the next user message.',
+					'The assistant-step photo button now saves the images to WordPress CRM and immediately warms backend photo-analysis from those saved request files instead of trying to attach them inside the chat composer.',
+					'This keeps the chat responsive while preserving the real business goal: the AI can still review the uploaded photos and the CRM still stores them on the request.',
+				),
+			),
+			array(
 				'version'      => '2.0.35',
 				'date'         => '2026-04-18',
 				'title'        => 'Stop Infinite Loading On Assistant Photo Uploads',
