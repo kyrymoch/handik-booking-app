@@ -11,6 +11,16 @@ class Handik_Booking_App_Changelog_Service {
 	public function get_entries() {
 		return array(
 			array(
+				'version'      => '2.0.45',
+				'date'         => '2026-04-19',
+				'title'        => 'Switch Uploaded Photo Context To A Hosted ChatKit Client Tool',
+				'notes'        => array(
+					'Added a dedicated request-photo-context REST endpoint so the hosted assistant can retrieve current uploaded-photo analysis directly from WordPress instead of waiting for fragile hidden context messages to land in the thread.',
+					'The ChatKit bridge now handles the client tool `get_request_photo_context`, forwards the current request and draft token to WordPress, and returns the photo-context payload back into the workflow as a supported hosted tool result.',
+					'Removed the old HANDIK_CONTEXT thread-dispatch dependency from the assistant gate and kept the pre-chat warmup only as a preparation step, so the chat no longer depends on hidden thread injection before the user can type.',
+				),
+			),
+			array(
 				'version'      => '2.0.44',
 				'date'         => '2026-04-19',
 				'title'        => 'Send Photo Context Even When Analysis Is Inconclusive Or Failed',

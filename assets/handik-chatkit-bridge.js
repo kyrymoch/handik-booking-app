@@ -304,6 +304,43 @@
 			throw error;
 		};
 
+		const handleClientTool = function( toolCall ) {
+			const name = toolCall && toolCall.name ? String( toolCall.name ) : '';
+			const params = toolCall && toolCall.params && 'object' === typeof toolCall.params ? toolCall.params : {};
+			log( 'info', 'ChatKit client tool invoked.', {
+				name: name,
+				params: params
+			} );
+
+			if ( 'get_request_photo_context' === name ) {
+				if ( ! endpoints.requestPhotoContext ) {
+					throw new Error( 'Photo context endpoint is not configured.' );
+				}
+
+				return requestJson( endpoints.requestPhotoContext, {
+					request_id: record.options.requestId,
+					draft_token: record.options.draftToken,
+					tool_params: params
+				} ).then( function( payload ) {
+					log( 'info', 'ChatKit client tool completed.', {
+						name: name,
+						has_photos: !! payload.has_photos,
+						photo_analysis_status: payload.photo_analysis_status || '',
+						has_actionable_visual_context: !! payload.has_actionable_visual_context
+					} );
+					return payload;
+				} ).catch( function( error ) {
+					log( 'error', 'ChatKit client tool failed.', {
+						name: name,
+						error: summarizeError( error )
+					} );
+					throw error;
+				} );
+			}
+
+			throw new Error( 'Unhandled client tool: ' + name );
+		};
+
 		const emitSessionReady = function( source ) {
 			if ( record.sessionReadyFired ) {
 				return;
@@ -373,7 +410,8 @@
 						maxCount: maxCount > 0 ? maxCount : 5,
 						maxSize: maxSizeMb > 0 ? maxSizeMb * 1024 * 1024 : ( 10 * 1024 * 1024 )
 					}
-				}
+				},
+				onClientTool: handleClientTool
 			};
 		};
 

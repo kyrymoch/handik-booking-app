@@ -19,13 +19,13 @@
 			this.calEmbedMountKey = '';
 			this.calEmbedListenerKey = '';
 			this.assistantPreparationPromise = null;
+			this.assistantMountPromise = null;
 			this.pendingAssistantContextAnalysis = null;
 			this.notificationTimers = new Map();
 			this.assistantBridge = null;
 			this.photoAnalysisWarmRequestId = 0;
 			this.photoAnalysisWarmPromise = null;
 			this.photoAnalysisWarmPromiseRequestId = 0;
-			this.photoContextSignatureSent = '';
 			this.assistantContextDispatchPromise = null;
 			this.state = {
 				step: 'client_type',
@@ -797,8 +797,8 @@
 					this.photoAnalysisWarmRequestId = 0;
 					this.photoAnalysisWarmPromise = null;
 					this.photoAnalysisWarmPromiseRequestId = 0;
-					this.photoContextSignatureSent = '';
 					this.assistantContextDispatchPromise = null;
+					this.assistantMountPromise = null;
 					this.pendingAssistantContextAnalysis = null;
 					this.state = Object.assign( this.state, {
 						step: 'client_type',
@@ -965,7 +965,6 @@
 			this.photoAnalysisWarmRequestId = 0;
 			this.photoAnalysisWarmPromise = null;
 			this.photoAnalysisWarmPromiseRequestId = 0;
-			this.photoContextSignatureSent = '';
 			this.assistantContextDispatchPromise = null;
 			this.pendingAssistantContextAnalysis = null;
 		}
@@ -1016,89 +1015,6 @@
 			return this.photoAnalysisWarmPromise;
 		}
 
-		buildPhotoContextMessage( analysis ) {
-			if ( ! analysis ) {
-				return '';
-			}
-
-			const lines = [
-				'[HANDIK_CONTEXT]',
-				'The booking app already has uploaded photos for this request. Treat this as application-provided visual context for the current job.'
-			];
-
-			if ( analysis.has_actionable_visual_context && analysis.visual_summary ) {
-				lines.push( 'Photo summary: ' + analysis.visual_summary );
-			}
-			if ( analysis.has_actionable_visual_context && analysis.visual_estimate_notes ) {
-				lines.push( 'Photo estimate notes: ' + analysis.visual_estimate_notes );
-			}
-			if ( analysis.has_actionable_visual_context && Array.isArray( analysis.visible_tasks ) && analysis.visible_tasks.length ) {
-				lines.push( 'Visible tasks: ' + analysis.visible_tasks.join( ', ' ) );
-			}
-			if ( analysis.has_actionable_visual_context && Array.isArray( analysis.safety_observations ) && analysis.safety_observations.length ) {
-				lines.push( 'Visible cautions: ' + analysis.safety_observations.join( '; ' ) );
-			}
-			if ( ! analysis.has_actionable_visual_context ) {
-				lines.push( 'Uploaded photos were received, but automatic visual analysis is currently limited or inconclusive.' );
-				if ( Array.isArray( analysis.missing_visual_details ) && analysis.missing_visual_details.length ) {
-					lines.push( 'Still unclear from the photos: ' + analysis.missing_visual_details.join( '; ' ) );
-				}
-			}
-
-			return lines.join( '\n' );
-		}
-
-		contextDispatchSignature( analysis ) {
-			if ( analysis && analysis.photos_signature ) {
-				return String( analysis.photos_signature );
-			}
-
-			const message = this.buildPhotoContextMessage( analysis );
-			if ( ! message ) {
-				return '';
-			}
-
-			return 'fallback_' + String( this.state.requestId || 'draft' ) + '_' + String( message.length );
-		}
-
-		async sendPhotoContextToAssistant( analysis ) {
-			const signature = this.contextDispatchSignature( analysis );
-			const message = this.buildPhotoContextMessage( analysis );
-			if ( ! signature || ! message ) {
-				return false;
-			}
-			if ( signature === this.photoContextSignatureSent ) {
-				return false;
-			}
-			if ( ! this.assistantBridge || 'function' !== typeof this.assistantBridge.sendContextMessage ) {
-				return false;
-			}
-
-			try {
-				await this.logClient( 'info', 'Assistant photo context message started.', {
-					request_id: this.state.requestId,
-					photos_signature: signature
-				} );
-				const sent = await this.withTimeout( this.assistantBridge.sendContextMessage( message ), 12000, 'Assistant photo context message' );
-				if ( sent ) {
-					this.photoContextSignatureSent = signature;
-					await this.logClient( 'info', 'Assistant photo context message completed.', {
-						request_id: this.state.requestId,
-						photos_signature: signature
-					} );
-					return true;
-				}
-			} catch ( error ) {
-				await this.logClient( 'debug', 'Assistant photo context message failed.', {
-					request_id: this.state.requestId,
-					photos_signature: signature,
-					error: error && error.message ? error.message : 'unknown'
-				} );
-			}
-
-			return false;
-		}
-
 		async unlockAssistantAfterPhotoContext( session ) {
 			if ( this.assistantContextDispatchPromise ) {
 				return this.assistantContextDispatchPromise;
@@ -1106,15 +1022,13 @@
 
 			this.assistantContextDispatchPromise = ( async() => {
 				const analysis = this.pendingAssistantContextAnalysis || ( session && session.draft_context && session.draft_context.photo_analysis ? session.draft_context.photo_analysis : null );
-				const signature = this.contextDispatchSignature( analysis );
-				const message = this.buildPhotoContextMessage( analysis );
-				const needsContextDispatch = !! ( message && signature !== this.photoContextSignatureSent );
+				const signature = analysis && analysis.photos_signature ? String( analysis.photos_signature ) : '';
 
 				try {
 					await this.logClient( 'info', 'Assistant photo gate started.', {
 						request_id: this.state.requestId,
 						has_analysis: !! analysis,
-						needs_context_dispatch: needsContextDispatch
+						tool_context_available: !! ( Array.isArray( this.state.photos ) && this.state.photos.length )
 					} );
 
 					if ( analysis ) {
@@ -1124,33 +1038,9 @@
 							actionable: !! analysis.has_actionable_visual_context
 						} );
 					}
-
-					if ( needsContextDispatch ) {
-						await this.logClient( 'info', 'Assistant context dispatch started.', {
-							request_id: this.state.requestId,
-							photos_signature: signature
-						} );
-
-						let sent = await this.sendPhotoContextToAssistant( analysis );
-						if ( ! sent ) {
-							sent = await this.sendPhotoContextToAssistant( analysis );
-						}
-
-						if ( sent ) {
-							await this.logClient( 'info', 'Assistant context dispatch completed.', {
-								request_id: this.state.requestId,
-								photos_signature: signature
-							} );
-						} else {
-							await this.logClient( 'debug', 'Assistant context dispatch failed.', {
-								request_id: this.state.requestId,
-								photos_signature: signature
-							} );
-						}
-					}
 				} finally {
 					this.setAssistantPreparingState( false );
-					await this.logClient( 'info', 'Assistant composer unlocked after photo context.', {
+					await this.logClient( 'info', 'Assistant composer unlocked for tool-based photo context.', {
 						request_id: this.state.requestId,
 						photos_signature: signature || ''
 					} );
@@ -1678,61 +1568,72 @@
 				return;
 			}
 
-			this.assistantBridge = window.HandikChatKitBridge.mount( {
-				container: container,
-				requestId: this.state.requestId,
-				draftToken: this.state.draftToken,
-				cacheKey: 'request_' + String( this.state.requestId ),
-				initialThreadId: this.state.assistantThreadId,
-				startScreenGreeting: config.strings.assistantGreeting || 'Describe the task and I will help estimate time, materials, and the next step.',
-				composerPlaceholder: config.strings.assistantGreeting || 'Describe the task and I will help estimate time, materials, and the next step.',
-				loadingTitle: config.strings.loadingAssistant || 'Loading virtual assistant...',
-				loadingSubtitle: config.strings.loadingAssistantSubtext || 'Charging the tiny robot brain for your next step.',
-				endpoints: {
-					createSession: config.restBase + 'chatkit-session',
-					saveAssistantResult: config.restBase + 'assistant-result',
-					associateThread: config.restBase + 'chatkit-thread',
-					clientLog: config.restBase + 'client-log'
-				},
-				onSessionReady: ( session ) => {
-					window.setTimeout( () => this.unlockAssistantAfterPhotoContext( session ), 0 );
-				},
-				onThreadChange: ( threadId ) => {
-					this.state.assistantThreadId = threadId || this.state.assistantThreadId;
-					if ( threadId ) {
+			if ( this.assistantMountPromise ) {
+				return;
+			}
+
+			this.assistantMountPromise = Promise.resolve().then( () => {
+				this.assistantBridge = window.HandikChatKitBridge.mount( {
+					container: container,
+					requestId: this.state.requestId,
+					draftToken: this.state.draftToken,
+					cacheKey: 'request_' + String( this.state.requestId ),
+					initialThreadId: this.state.assistantThreadId,
+					startScreenGreeting: config.strings.assistantGreeting || 'Describe the task and I will help estimate time, materials, and the next step.',
+					composerPlaceholder: config.strings.assistantGreeting || 'Describe the task and I will help estimate time, materials, and the next step.',
+					loadingTitle: config.strings.loadingAssistant || 'Loading virtual assistant...',
+					loadingSubtitle: config.strings.loadingAssistantSubtext || 'Charging the tiny robot brain for your next step.',
+					endpoints: {
+						createSession: config.restBase + 'chatkit-session',
+						requestPhotoContext: config.restBase + 'request-photo-context',
+						saveAssistantResult: config.restBase + 'assistant-result',
+						associateThread: config.restBase + 'chatkit-thread',
+						clientLog: config.restBase + 'client-log'
+					},
+					onSessionReady: ( session ) => {
+						window.setTimeout( () => this.unlockAssistantAfterPhotoContext( session ), 0 );
+					},
+					onThreadChange: ( threadId ) => {
+						this.state.assistantThreadId = threadId || this.state.assistantThreadId;
+						if ( threadId ) {
+							this.state.assistantUserMessageSent = true;
+						}
+						this.setAssistantContinueBusy( false );
+					},
+					onMessageActivity: ( detail ) => {
+						const role = detail && ( detail.role || detail.author_role || ( detail.message && detail.message.role ) ) ? String( detail.role || detail.author_role || detail.message.role ).toLowerCase() : '';
+						const messageType = detail && ( detail.type || detail.message_type || ( detail.message && detail.message.type ) ) ? String( detail.type || detail.message_type || detail.message.type ).toLowerCase() : '';
+						const direction = detail && ( detail.direction || ( detail.message && detail.message.direction ) ) ? String( detail.direction || detail.message.direction ).toLowerCase() : '';
+						const source = detail && ( detail.source || detail.origin || ( detail.message && ( detail.message.source || detail.message.origin ) ) ) ? String( detail.source || detail.origin || detail.message.source || detail.message.origin ).toLowerCase() : '';
+						const isUserLike = 'user' === role || false !== messageType.indexOf( 'user' ) || 'outgoing' === direction || 'user' === source || 'client' === source;
+						if ( isUserLike ) {
+							this.state.assistantUserMessageSent = true;
+							this.setAssistantContinueBusy( false );
+						}
+					},
+					onComposerSubmit: () => {
 						this.state.assistantUserMessageSent = true;
-					}
-					this.setAssistantContinueBusy( false );
-				},
-				onMessageActivity: ( detail ) => {
-					const role = detail && ( detail.role || detail.author_role || ( detail.message && detail.message.role ) ) ? String( detail.role || detail.author_role || detail.message.role ).toLowerCase() : '';
-					const messageType = detail && ( detail.type || detail.message_type || ( detail.message && detail.message.type ) ) ? String( detail.type || detail.message_type || detail.message.type ).toLowerCase() : '';
-					const direction = detail && ( detail.direction || ( detail.message && detail.message.direction ) ) ? String( detail.direction || detail.message.direction ).toLowerCase() : '';
-					const source = detail && ( detail.source || detail.origin || ( detail.message && ( detail.message.source || detail.message.origin ) ) ) ? String( detail.source || detail.origin || detail.message.source || detail.message.origin ).toLowerCase() : '';
-					const isUserLike = 'user' === role || false !== messageType.indexOf( 'user' ) || 'outgoing' === direction || 'user' === source || 'client' === source;
-					if ( isUserLike ) {
+					},
+					onComplete: ( normalized, payload ) => {
+						this.state.assistantResult = Object.assign( {}, payload && payload.routing ? payload.routing : {}, normalized );
 						this.state.assistantUserMessageSent = true;
 						this.setAssistantContinueBusy( false );
+						if ( payload && payload.unsafe_flag ) {
+							this.state.unsafeReason = payload.unsafe_reason || 'Unsafe request detected.';
+							this.goTo( 'unsafe' );
+							return;
+						}
+						this.setAssistantNotice( config.strings.assistantReadyNotice || 'The virtual assistant has enough information. Continue when you are ready.', false );
+					},
+					onError: ( error ) => {
+						this.setAssistantPreparingState( false );
+						this.setAssistantNotice( error.message || 'The virtual assistant had trouble loading. Give it another moment, then send a short message about the job.', true );
 					}
-				},
-				onComposerSubmit: () => {
-					this.state.assistantUserMessageSent = true;
-				},
-				onComplete: ( normalized, payload ) => {
-					this.state.assistantResult = Object.assign( {}, payload && payload.routing ? payload.routing : {}, normalized );
-					this.state.assistantUserMessageSent = true;
-					this.setAssistantContinueBusy( false );
-					if ( payload && payload.unsafe_flag ) {
-						this.state.unsafeReason = payload.unsafe_reason || 'Unsafe request detected.';
-						this.goTo( 'unsafe' );
-						return;
-					}
-					this.setAssistantNotice( config.strings.assistantReadyNotice || 'The virtual assistant has enough information. Continue when you are ready.', false );
-				},
-				onError: ( error ) => {
-					this.setAssistantPreparingState( false );
-					this.setAssistantNotice( error.message || 'The virtual assistant had trouble loading. Give it another moment, then send a short message about the job.', true );
-				}
+				} );
+
+				return this.assistantBridge && this.assistantBridge.ready ? this.assistantBridge.ready.catch( () => {} ) : null;
+			} ).finally( () => {
+				this.assistantMountPromise = null;
 			} );
 		}
 

@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.0.44
+Stable tag: 2.0.45
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, returning-client auth, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,11 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.0.45 =
+* Added a dedicated `request-photo-context` endpoint so hosted ChatKit can retrieve uploaded-photo analysis and visual estimate context directly from WordPress instead of relying on hidden thread messages.
+* The ChatKit bridge now supports the hosted client tool `get_request_photo_context` and returns the current request's photo context into the workflow as a proper tool result.
+* Removed the assistant step's dependency on `HANDIK_CONTEXT` thread injection, leaving photo warmup as a preparation step while the live assistant now fetches visual context through the supported client-tool path.
 
 = 2.0.44 =
 * Photo-analysis failure and inconclusive paths now persist a complete `photo_analysis` object with a stable signature instead of leaving the assistant gate with an empty `photos_signature`.

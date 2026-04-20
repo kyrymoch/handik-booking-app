@@ -211,6 +211,55 @@ class Handik_Booking_App_ChatKit_Service {
 	}
 
 	/**
+	 * @param int    $request_id Request ID.
+	 * @param string $draft_token Token.
+	 * @return array<string, mixed>
+	 */
+	public function request_photo_context( $request_id, $draft_token ) {
+		if ( ! $this->job_requests->verify_draft_token( $request_id, $draft_token ) ) {
+			return array( 'error' => __( 'Invalid draft token.', 'handik-booking-app' ), 'status' => 403 );
+		}
+
+		$request = $this->job_requests->get( $request_id );
+		if ( ! $request ) {
+			return array( 'error' => __( 'Draft request not found.', 'handik-booking-app' ), 'status' => 404 );
+		}
+
+		$has_photos = ! empty( $request['photos'] ) && is_array( $request['photos'] );
+		$analysis   = array();
+
+		if ( $has_photos ) {
+			$analysis = $this->photo_analysis->analyze_request( $request, false );
+			$request  = $this->job_requests->get( $request_id );
+			if ( ! $request ) {
+				return array( 'error' => __( 'Draft request not found.', 'handik-booking-app' ), 'status' => 404 );
+			}
+
+			if ( empty( $analysis ) ) {
+				$analysis = $this->photo_analysis->cached_analysis( $request );
+			}
+		}
+
+		$payload = $this->build_photo_context_payload( $request, $analysis );
+		$this->logger->info(
+			'Photo context requested for ChatKit client tool.',
+			array(
+				'request_id'                    => $request_id,
+				'has_photos'                    => ! empty( $payload['has_photos'] ),
+				'photo_analysis_status'         => $payload['photo_analysis_status'],
+				'has_actionable_visual_context' => ! empty( $payload['has_actionable_visual_context'] ),
+			)
+		);
+
+		return array_merge(
+			array(
+				'success' => true,
+			),
+			$payload
+		);
+	}
+
+	/**
 	 * @param mixed $payload Parsed payload.
 	 * @return string
 	 */
@@ -367,6 +416,53 @@ class Handik_Booking_App_ChatKit_Service {
 			'visible_tasks_summary'        => (string) ( $analysis['visible_tasks_summary'] ?? '' ),
 			'safety_summary'               => (string) ( $analysis['safety_summary'] ?? '' ),
 			'visual_estimate_notes'        => (string) ( $analysis['visual_estimate_notes'] ?? '' ),
+		);
+	}
+
+	/**
+	 * @param array<string, mixed> $request Request.
+	 * @param array<string, mixed> $analysis Analysis.
+	 * @return array<string, mixed>
+	 */
+	protected function build_photo_context_payload( array $request, array $analysis ) {
+		$app_state   = ! empty( $request['app_state'] ) && is_array( $request['app_state'] ) ? $request['app_state'] : array();
+		$photos      = ! empty( $request['photos'] ) && is_array( $request['photos'] ) ? array_values( $request['photos'] ) : array();
+		$has_photos  = ! empty( $photos );
+		$status      = ! empty( $app_state['photo_analysis_status'] ) ? sanitize_key( (string) $app_state['photo_analysis_status'] ) : '';
+		$summary     = ! empty( $analysis['photo_context_summary'] ) ? (string) $analysis['photo_context_summary'] : (string) ( $app_state['photo_context_summary'] ?? '' );
+		$tasks       = ! empty( $analysis['visible_tasks_summary'] ) ? (string) $analysis['visible_tasks_summary'] : (string) ( $app_state['visible_tasks_summary'] ?? '' );
+		$safety      = ! empty( $analysis['safety_summary'] ) ? (string) $analysis['safety_summary'] : (string) ( $app_state['safety_summary'] ?? '' );
+		$notes       = ! empty( $analysis['visual_estimate_notes'] ) ? (string) $analysis['visual_estimate_notes'] : (string) ( $app_state['visual_estimate_notes'] ?? '' );
+		$actionable  = ! empty( $analysis['has_actionable_visual_context'] ) || ! empty( $app_state['has_actionable_visual_context'] );
+		$missing     = ! empty( $analysis['missing_visual_details'] ) && is_array( $analysis['missing_visual_details'] ) ? array_values( array_map( 'sanitize_text_field', $analysis['missing_visual_details'] ) ) : array();
+		$signature   = ! empty( $analysis['photos_signature'] ) ? sanitize_text_field( (string) $analysis['photos_signature'] ) : '';
+
+		if ( ! $status ) {
+			if ( $has_photos && ! empty( $analysis ) ) {
+				$status = 'ready';
+			} elseif ( $has_photos ) {
+				$status = 'unavailable';
+			} else {
+				$status = 'not_requested';
+			}
+		}
+
+		if ( $has_photos && empty( $missing ) && ! $actionable ) {
+			$missing[] = __( 'Uploaded photos are available, but the current visual context is still limited.', 'handik-booking-app' );
+		}
+
+		return array(
+			'request_id'                    => (int) $request['id'],
+			'has_photos'                    => $has_photos,
+			'photo_count'                   => count( $photos ),
+			'photo_analysis_status'         => $status,
+			'has_actionable_visual_context' => $actionable,
+			'photo_context_summary'         => sanitize_textarea_field( $summary ),
+			'visible_tasks_summary'         => sanitize_text_field( $tasks ),
+			'safety_summary'                => sanitize_textarea_field( $safety ),
+			'visual_estimate_notes'         => sanitize_textarea_field( $notes ),
+			'missing_visual_details'        => $missing,
+			'photos_signature'              => $signature,
 		);
 	}
 
