@@ -415,6 +415,21 @@
 			};
 		};
 
+		const applyOptions = function() {
+			if ( ! record.element ) {
+				return;
+			}
+
+			const nextOptions = buildOptions();
+			record.element.options = nextOptions;
+			if ( 'function' === typeof record.element.setOptions ) {
+				record.element.setOptions( nextOptions );
+			}
+			log( 'debug', 'ChatKit options applied.', {
+				has_on_client_tool: 'function' === typeof nextOptions.onClientTool
+			} );
+		};
+
 		options.container.innerHTML = '<div class="handik-chatkit-bridge__loading"><div class="handik-loading-visual handik-loading-visual--square" aria-hidden="true"><span class="handik-loading-square"></span></div><strong>' + ( record.options.loadingTitle || 'Загрузка...' ) + '</strong></div>';
 		log( 'info', 'Bridge mount started.', { request_id: record.options.requestId } );
 
@@ -529,10 +544,14 @@
 				}
 			} );
 
-			record.element.setOptions( buildOptions() );
 			options.container.innerHTML = '';
 			options.container.appendChild( record.element );
+			applyOptions();
 			log( 'info', 'ChatKit mounted into container.' );
+
+			window.requestAnimationFrame( function() {
+				applyOptions();
+			} );
 
 			record.readyTimer = window.setTimeout( function() {
 				if ( ! record.ready && ! record.interactive ) {

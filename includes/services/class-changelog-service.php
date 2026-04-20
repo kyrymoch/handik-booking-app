@@ -11,6 +11,16 @@ class Handik_Booking_App_Changelog_Service {
 	public function get_entries() {
 		return array(
 			array(
+				'version'      => '2.0.46',
+				'date'         => '2026-04-20',
+				'title'        => 'Re-Apply Hosted ChatKit Client Tool Options After Mount',
+				'notes'        => array(
+					'The ChatKit bridge now applies options through both the element options property and setOptions(), and repeats that application after the hosted widget is attached to the DOM so client-tool callbacks are present on the live element.',
+					'Added a bridge diagnostic for ChatKit option application with onClientTool enabled, which should make it obvious whether the browser-side tool handler is actually registered before the first workflow tool call arrives.',
+					'This is a focused hotfix for the hosted get_request_photo_context tool path, where the workflow was calling the tool but the browser handler was not firing and the chat stalled at the Classification Agent.',
+				),
+			),
+			array(
 				'version'      => '2.0.45',
 				'date'         => '2026-04-19',
 				'title'        => 'Switch Uploaded Photo Context To A Hosted ChatKit Client Tool',

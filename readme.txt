@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.0.45
+Stable tag: 2.0.46
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, returning-client auth, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,11 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.0.46 =
+* The hosted ChatKit bridge now applies its options through both the element `options` property and `setOptions()`, then reapplies them after the widget is attached to the DOM so browser-side client tools are registered on the live element.
+* Added a bridge diagnostic for option application with `onClientTool` enabled, which makes it easier to see whether the client-tool handler was actually attached before the workflow calls `get_request_photo_context`.
+* This hotfix targets the stalled-assistant issue where the workflow invoked the photo-context tool but the browser-side handler never fired, leaving the chat stuck at the Classification Agent.
 
 = 2.0.45 =
 * Added a dedicated `request-photo-context` endpoint so hosted ChatKit can retrieve uploaded-photo analysis and visual estimate context directly from WordPress instead of relying on hidden thread messages.
