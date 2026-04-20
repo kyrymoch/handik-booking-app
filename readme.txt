@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.0.46
+Stable tag: 2.0.47
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, returning-client auth, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,11 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.0.47 =
+* The hosted ChatKit bridge now binds `get_request_photo_context` both in `options.onClientTool` and directly on the mounted web component as `element.onClientTool`, covering runtimes that only honor live element callbacks for client tools.
+* Added explicit info-level diagnostics for client-tool invocation, fetch start/completion, payload return, and a browser-side tool probe so it is clear whether the runtime can complete the tool call before the user sends a message.
+* Client-tool failures now return a safe JSON fallback payload instead of leaving the workflow with `No output`, reducing the chance that the assistant stalls indefinitely at the Classification Agent.
 
 = 2.0.46 =
 * The hosted ChatKit bridge now applies its options through both the element `options` property and `setOptions()`, then reapplies them after the widget is attached to the DOM so browser-side client tools are registered on the live element.

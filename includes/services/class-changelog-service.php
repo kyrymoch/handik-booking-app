@@ -11,6 +11,16 @@ class Handik_Booking_App_Changelog_Service {
 	public function get_entries() {
 		return array(
 			array(
+				'version'      => '2.0.47',
+				'date'         => '2026-04-20',
+				'title'        => 'Bind Hosted ChatKit Client Tools On The Element And Add Runtime Probes',
+				'notes'        => array(
+					'The hosted ChatKit bridge now binds `get_request_photo_context` both through `options.onClientTool` and directly on the mounted element as `element.onClientTool`, to cover runtimes that only honor property-level callbacks on the live web component.',
+					'Added explicit info-level logs for client-tool invocation, fetch start, fetch completion, payload return, and a browser-side tool probe so it is immediately visible whether the runtime is capable of completing the tool call before the user sends a message.',
+					'Client-tool failures now return a safe JSON fallback payload instead of leaving the workflow tool call with no output, which should prevent the assistant from stalling indefinitely at the Classification Agent.',
+				),
+			),
+			array(
 				'version'      => '2.0.46',
 				'date'         => '2026-04-20',
 				'title'        => 'Re-Apply Hosted ChatKit Client Tool Options After Mount',

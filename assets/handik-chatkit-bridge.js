@@ -304,6 +304,19 @@
 			throw error;
 		};
 
+		const fallbackToolResponse = function( message ) {
+			return {
+				ok: false,
+				has_photos: false,
+				has_actionable_visual_context: false,
+				photo_context_summary: '',
+				visible_tasks_summary: '',
+				safety_summary: '',
+				visual_estimate_notes: '',
+				missing_visual_details: [ sanitizeText( message || 'Photo context unavailable.' ) ]
+			};
+		};
+
 		const handleClientTool = function( toolCall ) {
 			const name = toolCall && toolCall.name ? String( toolCall.name ) : '';
 			const params = toolCall && toolCall.params && 'object' === typeof toolCall.params ? toolCall.params : {};
@@ -314,27 +327,48 @@
 
 			if ( 'get_request_photo_context' === name ) {
 				if ( ! endpoints.requestPhotoContext ) {
-					throw new Error( 'Photo context endpoint is not configured.' );
+					log( 'error', 'ChatKit client tool endpoint missing.', { name: name } );
+					return Promise.resolve( fallbackToolResponse( 'Photo context endpoint is not configured.' ) );
 				}
 
+				log( 'info', 'ChatKit client tool fetch started.', {
+					name: name,
+					request_id: record.options.requestId
+				} );
 				return requestJson( endpoints.requestPhotoContext, {
 					request_id: record.options.requestId,
 					draft_token: record.options.draftToken,
 					tool_params: params
 				} ).then( function( payload ) {
+					log( 'info', 'ChatKit client tool fetch completed.', {
+						name: name,
+						ok: !! payload.success,
+						has_photos: !! payload.has_photos,
+						photo_analysis_status: payload.photo_analysis_status || ''
+					} );
+					const responsePayload = Object.assign(
+						{
+							ok: true
+						},
+						payload || {}
+					);
 					log( 'info', 'ChatKit client tool completed.', {
 						name: name,
-						has_photos: !! payload.has_photos,
-						photo_analysis_status: payload.photo_analysis_status || '',
-						has_actionable_visual_context: !! payload.has_actionable_visual_context
+						has_photos: !! responsePayload.has_photos,
+						photo_analysis_status: responsePayload.photo_analysis_status || '',
+						has_actionable_visual_context: !! responsePayload.has_actionable_visual_context
 					} );
-					return payload;
+					log( 'info', 'ChatKit client tool returning payload.', {
+						name: name,
+						keys: Object.keys( responsePayload )
+					} );
+					return responsePayload;
 				} ).catch( function( error ) {
 					log( 'error', 'ChatKit client tool failed.', {
 						name: name,
 						error: summarizeError( error )
 					} );
-					throw error;
+					return fallbackToolResponse( summarizeError( error ) );
 				} );
 			}
 
@@ -421,12 +455,14 @@
 			}
 
 			const nextOptions = buildOptions();
+			record.element.onClientTool = handleClientTool;
 			record.element.options = nextOptions;
 			if ( 'function' === typeof record.element.setOptions ) {
 				record.element.setOptions( nextOptions );
 			}
-			log( 'debug', 'ChatKit options applied.', {
-				has_on_client_tool: 'function' === typeof nextOptions.onClientTool
+			log( 'info', 'ChatKit options applied.', {
+				has_on_client_tool: 'function' === typeof nextOptions.onClientTool,
+				has_element_on_client_tool: 'function' === typeof record.element.onClientTool
 			} );
 		};
 
@@ -561,6 +597,23 @@
 					emitSessionReady( 'timeout' );
 				}
 			}, CHATKIT_TIMEOUT );
+
+			Promise.resolve().then( function() {
+				return handleClientTool( {
+					name: 'get_request_photo_context',
+					params: { probe: true }
+				} );
+			} ).then( function( payload ) {
+				log( 'info', 'ChatKit client tool probe completed.', {
+					ok: !! ( payload && payload.ok ),
+					has_photos: !! ( payload && payload.has_photos ),
+					photo_analysis_status: payload && payload.photo_analysis_status ? payload.photo_analysis_status : ''
+				} );
+			} ).catch( function( error ) {
+				log( 'error', 'ChatKit client tool probe failed.', {
+					error: summarizeError( error )
+				} );
+			} );
 
 			return session;
 		} ).catch( handleMountError );
