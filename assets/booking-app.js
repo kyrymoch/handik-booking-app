@@ -82,13 +82,33 @@
 
 		setAssistantPreparingState( isPreparing ) {
 			this.state.assistantPreparing = !! isPreparing;
-			if ( 'assistant' === this.state.step ) {
-				this.render();
+			if ( 'assistant' !== this.state.step ) {
+				return;
+			}
+
+			const body = this.root.querySelector( '.handik-booking-app__screen-body' );
+			if ( ! body ) {
+				return;
+			}
+
+			let overlay = body.querySelector( '[data-assistant-preparing-overlay]' );
+			if ( isPreparing ) {
+				if ( ! overlay ) {
+					const wrapper = document.createElement( 'div' );
+					wrapper.innerHTML = '<div class="handik-booking-app__loading-overlay" data-assistant-preparing-overlay="1" aria-live="polite">' + this.loaderMarkup( 'Loading' ) + '</div>';
+					overlay = wrapper.firstChild;
+					body.appendChild( overlay );
+				}
+				return;
+			}
+
+			if ( overlay ) {
+				overlay.remove();
 			}
 		}
 
 		loaderMarkup( message ) {
-			return '<div class="sp sp-loadbar" aria-hidden="true"></div><strong>' + this.escape( message || config.strings.loading || 'Loading...' ) + '</strong>';
+			return '<div class="sp sp-loadbar" aria-hidden="true"></div><h5>' + this.escape( message || 'Loading' ) + '</h5>';
 		}
 
 		async api( path, data, method, formData ) {
@@ -1053,8 +1073,6 @@
 			}
 
 			const shouldWarmBeforeMount = ! this.assistantBridge && Array.isArray( this.state.photos ) && this.state.photos.length;
-			this.setAssistantPreparingState( ! this.assistantBridge );
-			this.render();
 			this.assistantPreparationPromise = ( async() => {
 				if ( shouldWarmBeforeMount ) {
 					try {
@@ -1073,6 +1091,9 @@
 			} )().finally( () => {
 				this.assistantPreparationPromise = null;
 			} );
+
+			this.state.assistantPreparing = ! this.assistantBridge;
+			this.render();
 
 			return this.assistantPreparationPromise;
 		}
@@ -1696,7 +1717,8 @@
 		}
 
 		screen( title, body, modifier ) {
-			const overlay = ( this.state.loading || this.state.photoUploading || this.state.assistantPreparing ) ? '<div class="handik-booking-app__loading-overlay" aria-live="polite">' + this.loaderMarkup() + '</div>' : '';
+			const overlayNeeded = this.state.loading || this.state.photoUploading || ( this.state.assistantPreparing && 'assistant' !== this.state.step );
+			const overlay = overlayNeeded ? '<div class="handik-booking-app__loading-overlay" aria-live="polite">' + this.loaderMarkup( 'Loading' ) + '</div>' : '';
 			return '<section class="handik-booking-app__screen ' + ( modifier || '' ) + '"><div class="handik-booking-app__screen-header"><h2>' + this.escape( title ) + '</h2></div><div class="handik-booking-app__screen-body">' + body + overlay + '</div></section>';
 		}
 

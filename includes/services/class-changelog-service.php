@@ -11,6 +11,16 @@ class Handik_Booking_App_Changelog_Service {
 	public function get_entries() {
 		return array(
 			array(
+				'version'      => '2.0.49',
+				'date'         => '2026-04-20',
+				'title'        => 'Stabilize Virtual Assistant Loading And Match The Requested Loadbar Loader',
+				'notes'        => array(
+					'Replaced the frontend and bridge loading visuals with the exact `sp-loadbar` style and the plain `Loading` label from the provided loader reference file.',
+					'Restored a safer Virtual assistant loading lifecycle so the assistant overlay is attached directly to the chat screen body without forcing extra re-renders during mount.',
+					'Separated the assistant-specific loading overlay from the generic screen overlay so hosted ChatKit can finish mounting without falling into a white-screen or full-page freeze loop.',
+				),
+			),
+			array(
 				'version'      => '2.0.48',
 				'date'         => '2026-04-20',
 				'title'        => 'Stabilize App Setup Persistence And Refresh Admin And Frontend UX',

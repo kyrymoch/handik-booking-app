@@ -54,6 +54,14 @@
 	font-size: 1.05rem;
 }
 
+.handik-booking-app__loading h5,
+.handik-booking-app__loading-overlay h5,
+.handik-chatkit-bridge__loading h5 {
+	margin: 0;
+	font-size: 1.05rem;
+	font-weight: 700;
+}
+
 .handik-booking-app__loading-subtitle {
 	max-width: 320px;
 	font-size: 0.95rem;
@@ -66,6 +74,10 @@
 .sp {
 	position: relative;
 	display: inline-block;
+	width: 32px;
+	height: 32px;
+	clear: both;
+	margin: 20px auto;
 }
 
 .sp-loadbar {
@@ -74,9 +86,10 @@
 	border: 1px solid #1a1a1c;
 	border-radius: 4px;
 	background:
-		linear-gradient(-60deg, transparent 0%, transparent 46%, var(--handik-accent, #283618) 47%, var(--handik-accent, #283618) 53%, transparent 54%, transparent 100%);
-	background-size: 20px 20px;
-	animation: handik-loadbar 0.8s linear infinite;
+		linear-gradient(-45deg, rgba(0, 0, 0, 0) 46%, #000 47%, #000 52%, rgba(0, 0, 0, 0) 53%);
+	background-size: 20px 30px;
+	background-position: 0 0;
+	animation: handik-loadbar 0.8s infinite linear;
 }
 
 .handik-loading-visual--roller {
@@ -1007,7 +1020,7 @@ openai-chatkit {
 		background-position: 0 0;
 	}
 	to {
-		background-position: 20px 0;
+		background-position: -20px 0;
 	}
 }
 

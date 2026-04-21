@@ -466,7 +466,7 @@
 			} );
 		};
 
-		options.container.innerHTML = '<div class="handik-chatkit-bridge__loading"><div class="handik-loading-visual handik-loading-visual--square" aria-hidden="true"><span class="handik-loading-square"></span></div><strong>' + ( record.options.loadingTitle || 'Загрузка...' ) + '</strong></div>';
+		options.container.innerHTML = '<div class="handik-chatkit-bridge__loading"><div class="sp sp-loadbar" aria-hidden="true"></div><h5>Loading</h5></div>';
 		log( 'info', 'Bridge mount started.', { request_id: record.options.requestId } );
 
 		const ready = waitForChatKitElement().then( function() {
