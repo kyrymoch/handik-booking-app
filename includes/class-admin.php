@@ -286,7 +286,8 @@ class Handik_Booking_App_Admin {
 		$address = ( $request && ! empty( $request['address_id'] ) ) ? $this->addresses->get( (int) $request['address_id'] ) : null;
 		$photos  = is_array( $request['photos'] ?? null ) ? $request['photos'] : array();
 		$logs    = $this->booking_chat_logs( $request, $booking );
-		$map_url = $this->map_embed_url( $address['address_full'] ?? ( $request['address_full'] ?? '' ) );
+		$full_address = $this->full_request_address( $request, $address );
+		$map_url = $this->map_embed_url( $full_address );
 
 		echo '<p><a class="button button-secondary" href="' . esc_url( admin_url( 'admin.php?page=handik-booking-app-bookings' ) ) . '">' . esc_html__( 'Back to bookings', 'handik-booking-app' ) . '</a></p>';
 
@@ -294,7 +295,7 @@ class Handik_Booking_App_Admin {
 		echo $this->admin_stat_card( __( 'Client', 'handik-booking-app' ), (string) ( $contact['full_name'] ?? __( 'Unknown client', 'handik-booking-app' ) ) );
 		echo $this->admin_stat_card( __( 'Date', 'handik-booking-app' ), $this->format_booking_window( $booking, 'detail' ) );
 		echo $this->admin_stat_card( __( 'Selected tasks', 'handik-booking-app' ), $this->task_summary_with_rates_text( is_array( $request['selected_tasks'] ?? null ) ? $request['selected_tasks'] : array() ) );
-		echo $this->admin_stat_card( __( 'Address', 'handik-booking-app' ), (string) ( $address['address_full'] ?? $request['address_full'] ?? '' ) );
+		echo $this->admin_stat_card( __( 'Address', 'handik-booking-app' ), $full_address );
 		echo '</div>';
 
 		echo '<div class="handik-admin-detail-grid">';
@@ -316,11 +317,11 @@ class Handik_Booking_App_Admin {
 			array(
 				__( 'Date', 'handik-booking-app' )         => $this->format_booking_window( $booking, 'detail' ),
 				__( 'Selected tasks', 'handik-booking-app' ) => $this->task_summary_with_rates_text( is_array( $request['selected_tasks'] ?? null ) ? $request['selected_tasks'] : array() ),
-				__( 'Address', 'handik-booking-app' )      => (string) ( $address['address_full'] ?? $request['address_full'] ?? '' ),
+				__( 'Address', 'handik-booking-app' )      => $full_address,
 				__( 'Hourly rate hint', 'handik-booking-app' ) => $this->request_rate_label( $request ),
 			)
 		);
-		$apple_maps_url = $this->apple_maps_url( (string) ( $address['address_full'] ?? $request['address_full'] ?? '' ) );
+		$apple_maps_url = $this->apple_maps_url( $full_address );
 		if ( $apple_maps_url ) {
 			echo '<p><a class="button button-secondary" target="_blank" rel="noopener noreferrer" href="' . esc_url( $apple_maps_url ) . '">' . esc_html__( 'Open in Apple Maps', 'handik-booking-app' ) . '</a></p>';
 		}
@@ -803,6 +804,34 @@ class Handik_Booking_App_Admin {
 		}
 
 		return '';
+	}
+
+	protected function full_request_address( $request, $address ) {
+		$base_address = '';
+		$unit = '';
+
+		if ( is_array( $address ) ) {
+			$base_address = ! empty( $address['address_full'] ) ? (string) $address['address_full'] : $base_address;
+			$unit = ! empty( $address['address_unit'] ) ? (string) $address['address_unit'] : $unit;
+		}
+
+		if ( '' === $base_address && is_array( $request ) ) {
+			$base_address = ! empty( $request['address_full'] ) ? (string) $request['address_full'] : '';
+			$unit = ! empty( $request['address_unit'] ) ? (string) $request['address_unit'] : $unit;
+		}
+
+		$base_address = trim( $base_address );
+		$unit = trim( $unit );
+
+		if ( '' === $unit || '' === $base_address ) {
+			return $base_address;
+		}
+
+		if ( false !== stripos( $base_address, $unit ) ) {
+			return $base_address;
+		}
+
+		return trim( $base_address . ', ' . $unit );
 	}
 
 	protected function client_type_label( $client_type ) {

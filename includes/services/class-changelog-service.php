@@ -11,6 +11,16 @@ class Handik_Booking_App_Changelog_Service {
 	public function get_entries() {
 		return array(
 			array(
+				'version'      => '2.0.51',
+				'date'         => '2026-04-20',
+				'title'        => 'Improve Phone Entry, Selected Tasks Motion, And Assistant Readiness Feedback',
+				'notes'        => array(
+					'Stopped rewriting the phone field on every keystroke so customers can type naturally, while validation and API submission still normalize the number into the expected backend format.',
+					'Added a bounce-style entrance animation for the Selected tasks sheet so the collapsed panel is more noticeable when the client picks tasks.',
+					'Updated the Virtual assistant fallback copy, included Unit or apartment in the admin booking address summary, and dismiss the assistant loading overlay as soon as the chat session is actually ready.',
+				),
+			),
+			array(
 				'version'      => '2.0.50',
 				'date'         => '2026-04-20',
 				'title'        => 'Stabilize Virtual Assistant Mount And Tighten The Loadbar Animation',

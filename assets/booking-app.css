@@ -1108,6 +1108,21 @@ openai-chatkit {
 	}
 }
 
+@keyframes handik-selected-sheet-bounce {
+	0% {
+		opacity: 0;
+		transform: translateY(20px) scale(0.96);
+	}
+	60% {
+		opacity: 1;
+		transform: translateY(-6px) scale(1.01);
+	}
+	100% {
+		opacity: 1;
+		transform: translateY(0) scale(1);
+	}
+}
+
 .handik-task-groups {
 	padding-bottom: 220px;
 }
@@ -1136,6 +1151,7 @@ openai-chatkit {
 	box-shadow: 0 20px 48px rgba(15, 23, 42, 0.16);
 	overflow: hidden;
 	backdrop-filter: blur(12px);
+	animation: handik-selected-sheet-bounce 0.55s cubic-bezier(0.2, 0.9, 0.22, 1.15);
 }
 
 .handik-selected-sheet__toggle {

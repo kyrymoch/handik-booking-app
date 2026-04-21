@@ -495,7 +495,7 @@
 
 		phoneDigits( value ) {
 			let digits = String( value || '' ).replace( /\D/g, '' );
-			if ( 11 === digits.length && '1' === digits.charAt( 0 ) ) {
+			if ( digits.length > 10 && '1' === digits.charAt( 0 ) ) {
 				digits = digits.slice( 1 );
 			}
 			return digits.slice( 0, 10 );
@@ -530,7 +530,7 @@
 		}
 
 		validatePhone( value ) {
-			return /^\+1 \d{3} \d{3} \d{2} \d{2}$/.test( String( value || '' ).trim() );
+			return 10 === this.phoneDigits( value ).length;
 		}
 
 		validateContactFields() {
@@ -1601,6 +1601,7 @@
 						clientLog: config.restBase + 'client-log'
 					},
 					onSessionReady: ( session ) => {
+						this.setAssistantPreparingState( false );
 						window.setTimeout( () => this.unlockAssistantAfterPhotoContext( session ), 0 );
 					},
 					onThreadChange: ( threadId ) => {
@@ -1761,7 +1762,7 @@
 		}
 
 		assistantMarkup() {
-			return '<p class="handik-booking-app__intro">' + this.escape( config.strings.assistantIntro || 'This AI assistant can help estimate the job, time, materials, and next steps while collecting the details we need to prepare properly.' ) + '</p><div class="handik-assistant-layout"><div class="handik-assistant-panel"><div class="handik-booking-app__assistant-host"></div>' + this.footerActions( '', 'assistant-next', this.escape( config.strings.assistantContinue || 'Choose time' ), '', { continueMuted: false, hideBack: true } ) + '</div></div>';
+			return '<p class="handik-booking-app__intro">' + this.escape( config.strings.assistantIntro || 'This AI assistant helps estimate the job, time, materials, and next steps while collecting the details we need to prepare properly.' ) + '</p><div class="handik-assistant-layout"><div class="handik-assistant-panel"><div class="handik-booking-app__assistant-host"></div>' + this.footerActions( '', 'assistant-next', this.escape( config.strings.assistantContinue || 'Choose a time' ), '', { continueMuted: false, hideBack: true } ) + '</div></div>';
 		}
 
 		contactMarkup() {
@@ -1929,7 +1930,7 @@
 						this.state.touched.full_name = true;
 					}
 					if ( 'contact.phone' === model ) {
-						value = this.formatPhoneDisplay( value );
+						value = String( value || '' ).replace( /[^0-9+\s()-]/g, '' );
 						input.value = value;
 						this.state.touched.phone = true;
 					}
