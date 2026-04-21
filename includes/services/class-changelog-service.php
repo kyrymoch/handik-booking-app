@@ -11,6 +11,16 @@ class Handik_Booking_App_Changelog_Service {
 	public function get_entries() {
 		return array(
 			array(
+				'version'      => '2.0.53',
+				'date'         => '2026-04-20',
+				'title'        => 'Tighten Selected Tasks Bounce And Remove The Extra Assistant Loader Layer',
+				'notes'        => array(
+					'Adjusted the Selected tasks entrance motion so the sheet appears first and then performs a quick up-down-up return before settling in place.',
+					'Normalized older saved Virtual assistant strings to the new shorter greeting and clearer `Book a time` footer action label.',
+					'Removed the bridge-side loading placeholder so the Virtual assistant step now relies on a single loading animation while hosted ChatKit initializes.',
+				),
+			),
+			array(
 				'version'      => '2.0.52',
 				'date'         => '2026-04-20',
 				'title'        => 'Refine Selected Tasks Entrance Motion And Address Unit Formatting',

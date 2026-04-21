@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.0.52
+Stable tag: 2.0.53
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, returning-client auth, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,11 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.0.53 =
+* Refined the `Selected tasks` bounce so the panel appears first, then performs a short up-down-up return instead of a single pop.
+* Normalized older saved Virtual assistant text into the new shorter greeting and the clearer `Book a time` button label.
+* Removed the extra bridge-side loading placeholder so the Virtual assistant step now shows only one loading animation layer while chat initializes.
 
 = 2.0.52 =
 * Trigger the `Selected tasks` bounce animation only when the sheet first appears after going from zero selected tasks to one.

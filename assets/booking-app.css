@@ -1110,12 +1110,17 @@ openai-chatkit {
 
 @keyframes handik-selected-sheet-bounce {
 	0% {
-		opacity: 0;
-		transform: translateY(20px) scale(0.96);
-	}
-	60% {
 		opacity: 1;
-		transform: translateY(-6px) scale(1.01);
+		transform: translateY(0) scale(1);
+	}
+	22% {
+		transform: translateY(-10px) scale(1.01);
+	}
+	48% {
+		transform: translateY(5px) scale(0.995);
+	}
+	72% {
+		transform: translateY(-4px) scale(1.003);
 	}
 	100% {
 		opacity: 1;
@@ -1154,7 +1159,7 @@ openai-chatkit {
 }
 
 .handik-selected-sheet.is-bouncing {
-	animation: handik-selected-sheet-bounce 0.55s cubic-bezier(0.2, 0.9, 0.22, 1.15);
+	animation: handik-selected-sheet-bounce 0.62s cubic-bezier(0.2, 0.9, 0.22, 1.15) 0.003s;
 }
 
 .handik-selected-sheet__toggle {

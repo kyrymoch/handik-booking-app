@@ -125,7 +125,7 @@ class Handik_Booking_App_Settings {
 			'ui_assistant_helper'       => 'This AI assistant helps you understand rough cost, timing, materials, and what to expect, while helping us collect the details needed to prepare for the job properly.',
 			'ui_assistant_greeting'     => 'Describe the job.',
 			'ui_assistant_ready_notice' => 'The virtual assistant has enough information. Continue when you are ready.',
-			'ui_assistant_continue_button' => 'Choose a time',
+			'ui_assistant_continue_button' => 'Book a time',
 			'ui_contact_continue_button' => 'Go to AI estimate',
 			'ui_contact_intro'         => 'This is the last step where you can change the booking details before the AI review starts.',
 			'ui_project_notice'        => 'Complex Project Work means a bigger scope that usually needs a consultation-style visit before the work is scheduled.',

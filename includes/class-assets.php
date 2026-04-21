@@ -44,6 +44,22 @@ class Handik_Booking_App_Assets {
 		wp_enqueue_script( 'handik-booking-app-chatkit-hosted' );
 		wp_enqueue_script( 'handik-booking-app-chatkit-bridge' );
 		wp_enqueue_script( 'handik-booking-app' );
+
+		$assistant_greeting = (string) $this->settings->get( 'ui_assistant_greeting', 'Describe the job.' );
+		if ( '' === trim( $assistant_greeting ) || in_array( trim( $assistant_greeting ), array( 'Describe the task and I will help estimate time, materials, and the next step.', 'Describe the task and I will help estimate time, materials, and the next step', 'Describe the job.' ), true ) ) {
+			$assistant_greeting = 'Describe the job.';
+		}
+
+		$assistant_intro = (string) $this->settings->get( 'ui_assistant_intro', (string) $this->settings->get( 'ui_assistant_helper', '' ) );
+		if ( '' === trim( $assistant_intro ) || in_array( trim( $assistant_intro ), array( 'Describe the task, ask any questions you have, and continue when you are ready to choose a time.', 'This AI assistant can help estimate the job, time, materials, and next steps while collecting the details we need to prepare properly.', 'This AI assistant helps estimate the job, time, materials, and next steps while collecting the details we need to prepare properly.' ), true ) ) {
+			$assistant_intro = 'This AI assistant helps you understand rough cost, timing, materials, and what to expect, while helping us collect the details needed to prepare for the job properly.';
+		}
+
+		$assistant_continue = (string) $this->settings->get( 'ui_assistant_continue_button', 'Book a time' );
+		if ( '' === trim( $assistant_continue ) || in_array( trim( $assistant_continue ), array( 'Go to time and date selection', 'Choose time', 'Choose a time' ), true ) ) {
+			$assistant_continue = 'Book a time';
+		}
+
 		wp_localize_script(
 			'handik-booking-app',
 			'HandikBookingAppConfig',
@@ -67,7 +83,7 @@ class Handik_Booking_App_Assets {
 					'launchAssistant'    => __( 'Open assistant', 'handik-booking-app' ),
 					'uploading'          => (string) $this->settings->get( 'ui_photos_loading', 'Uploading your photos...' ),
 					'unsafeTitle'        => (string) $this->settings->get( 'ui_unsafe_title', 'We need to stop the normal booking flow' ),
-					'assistantGreeting'  => (string) $this->settings->get( 'ui_assistant_greeting', 'Describe the job.' ),
+					'assistantGreeting'  => $assistant_greeting,
 					'assistantReadyNotice' => (string) $this->settings->get( 'ui_assistant_ready_notice', 'The virtual assistant has enough information. Continue when you are ready.' ),
 					'bookingWaiting'     => (string) $this->settings->get( 'ui_booking_waiting', 'Stay on this screen while we wait for Cal.com to confirm the booking.' ),
 					'bookingConfirmed'   => (string) $this->settings->get( 'ui_booking_confirmed', 'Booking confirmed. Finishing your request...' ),
@@ -98,8 +114,8 @@ class Handik_Booking_App_Assets {
 					'photosCta'          => (string) $this->settings->get( 'ui_photos_cta', 'Tap to add photos' ),
 					'photosEmpty'        => (string) $this->settings->get( 'ui_photos_empty', 'No photos added yet' ),
 					'assistantTitle'     => (string) $this->settings->get( 'ui_assistant_title', 'Virtual assistant' ),
-					'assistantIntro'     => (string) $this->settings->get( 'ui_assistant_intro', (string) $this->settings->get( 'ui_assistant_helper', 'This AI assistant helps you understand rough cost, timing, materials, and what to expect, while helping us collect the details needed to prepare for the job properly.' ) ),
-					'assistantContinue'  => (string) $this->settings->get( 'ui_assistant_continue_button', 'Choose a time' ),
+					'assistantIntro'     => $assistant_intro,
+					'assistantContinue'  => $assistant_continue,
 					'contactContinue'    => (string) $this->settings->get( 'ui_contact_continue_button', 'Go to AI estimate' ),
 					'contactIntro'       => (string) $this->settings->get( 'ui_contact_intro', 'This is the last step where you can change the booking details before the AI review starts.' ),
 					'projectNotice'      => (string) $this->settings->get( 'ui_project_notice', 'Project / Large Job means a bigger scope that usually needs a consultation-style visit before the work is scheduled.' ),

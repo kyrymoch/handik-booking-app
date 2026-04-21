@@ -427,7 +427,7 @@
 			const button = this.root.querySelector( '[data-action="assistant-next"]' );
 			if ( button ) {
 				button.disabled = !! isBusy;
-				button.textContent = isBusy ? ( config.strings.loading || 'Loading...' ) : ( config.strings.assistantContinue || 'Choose time' );
+				button.textContent = isBusy ? ( config.strings.loading || 'Loading...' ) : ( config.strings.assistantContinue || 'Book a time' );
 				button.classList.remove( 'is-pending' );
 				button.classList.add( 'is-primary' );
 				button.setAttribute( 'aria-disabled', isBusy ? 'true' : 'false' );
@@ -1668,10 +1668,8 @@
 			this.renderNotifications();
 			if ( this.state.selectedTasksSheetAnimate ) {
 				window.setTimeout( () => {
-					if ( this.state.selectedTasksSheetAnimate ) {
-						this.state.selectedTasksSheetAnimate = false;
-					}
-				}, 650 );
+					this.state.selectedTasksSheetAnimate = false;
+				}, 0 );
 			}
 			if ( 'assistant' === this.state.step ) {
 				window.setTimeout( () => this.prepareAssistantStep(), 0 );
@@ -1774,7 +1772,7 @@
 		}
 
 		assistantMarkup() {
-			return '<p class="handik-booking-app__intro">' + this.escape( config.strings.assistantIntro || 'This AI assistant helps estimate the job, time, materials, and next steps while collecting the details we need to prepare properly.' ) + '</p><div class="handik-assistant-layout"><div class="handik-assistant-panel"><div class="handik-booking-app__assistant-host"></div>' + this.footerActions( '', 'assistant-next', this.escape( config.strings.assistantContinue || 'Choose a time' ), '', { continueMuted: false, hideBack: true } ) + '</div></div>';
+			return '<p class="handik-booking-app__intro">' + this.escape( config.strings.assistantIntro || 'This AI assistant helps you understand rough cost, timing, materials, and what to expect, while helping us collect the details needed to prepare for the job properly.' ) + '</p><div class="handik-assistant-layout"><div class="handik-assistant-panel"><div class="handik-booking-app__assistant-host"></div>' + this.footerActions( '', 'assistant-next', this.escape( config.strings.assistantContinue || 'Book a time' ), '', { continueMuted: false, hideBack: true } ) + '</div></div>';
 		}
 
 		contactMarkup() {
