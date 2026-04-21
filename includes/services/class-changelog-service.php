@@ -11,6 +11,16 @@ class Handik_Booking_App_Changelog_Service {
 	public function get_entries() {
 		return array(
 			array(
+				'version'      => '2.0.48',
+				'date'         => '2026-04-20',
+				'title'        => 'Stabilize App Setup Persistence And Refresh Admin And Frontend UX',
+				'notes'        => array(
+					'Fixed App Setup persistence so saving one tab now merges into the existing settings set instead of resetting other tabs back to defaults, which also stops Integrations from being wiped by unrelated saves.',
+					'Moved Integrations into a dedicated admin section with Logs and Changelog, redesigned the Bookings list and booking detail view around client-first booking summaries, and standardized booking times to Eastern Time formatting.',
+					'Updated the booking UI with quieter task selection, cleaner Photos and Contact details screens, new footer button styling controls, a lighter shell that can inherit Elementor styling, loadbar-based loading states, and faster large mobile photo uploads through client-side image downscaling.',
+				),
+			),
+			array(
 				'version'      => '2.0.47',
 				'date'         => '2026-04-20',
 				'title'        => 'Bind Hosted ChatKit Client Tools On The Element And Add Runtime Probes',

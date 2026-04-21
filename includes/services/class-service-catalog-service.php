@@ -416,7 +416,7 @@ class Handik_Booking_App_Service_Catalog_Service {
 					),
 					array(
 						'id'             => 'project_large_job',
-						'label'          => 'Project / Large Job',
+						'label'          => 'Complex Project Work',
 						'description'    => 'Larger jobs, broader scopes, or project-style work such as multiple rooms, extensive repairs, or more complex installations.',
 						'rate_label'     => 'Custom estimate',
 						'service_family' => 'project_large_job',

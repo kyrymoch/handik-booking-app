@@ -2,6 +2,10 @@
 	max-width: 1220px;
 }
 
+.handik-admin-table-wrap {
+	overflow-x: auto;
+}
+
 .handik-admin-cards {
 	display: grid;
 	grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -124,7 +128,7 @@
 	gap: 2px;
 	padding: 10px 12px;
 	border-radius: 999px;
-	background: #ecfeff;
+	background: #fff;
 	border: 1px solid #cbd5e1;
 }
 
@@ -230,4 +234,74 @@
 	overflow: auto;
 	font-size: 12px;
 	line-height: 1.45;
+}
+
+.handik-admin-row-link {
+	cursor: pointer;
+}
+
+.handik-admin-row-link:focus {
+	outline: 2px solid #283618;
+	outline-offset: -2px;
+}
+
+.handik-admin-bookings-table td,
+.handik-admin-bookings-table th {
+	vertical-align: top;
+}
+
+.handik-admin-bookings-table tbody tr:hover {
+	background: #f7faf5;
+}
+
+.handik-admin-cards--booking-overview .handik-admin-card strong {
+	font-size: 16px;
+	line-height: 1.5;
+}
+
+.handik-admin-changelog-entry + .handik-admin-changelog-entry {
+	margin-top: 18px;
+	padding-top: 18px;
+	border-top: 1px solid #e2e8f0;
+}
+
+@media (max-width: 900px) {
+	.handik-admin-wrap {
+		max-width: 100%;
+	}
+
+	.handik-admin-grid,
+	.handik-admin-detail-grid,
+	.handik-admin-cards {
+		grid-template-columns: 1fr;
+	}
+
+	.handik-admin-bookings-table thead {
+		display: none;
+	}
+
+	.handik-admin-bookings-table,
+	.handik-admin-bookings-table tbody,
+	.handik-admin-bookings-table tr,
+	.handik-admin-bookings-table td {
+		display: block;
+		width: 100%;
+	}
+
+	.handik-admin-bookings-table tr {
+		margin-bottom: 12px;
+		border: 1px solid #dbe3ea;
+		border-radius: 14px;
+		overflow: hidden;
+		background: #fff;
+	}
+
+	.handik-admin-bookings-table td {
+		padding: 12px 14px;
+		border-bottom: 1px solid #eef2f7;
+	}
+
+	.handik-admin-bookings-table td:last-child {
+		border-bottom: 0;
+	}
 }

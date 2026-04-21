@@ -62,17 +62,22 @@ class Handik_Booking_App_Settings {
 			'email_from_address'     => get_option( 'admin_email' ),
 			'debug_mode'             => 0,
 			'app_custom_css'         => '',
-			'app_accent_color'       => '#0f766e',
+			'app_accent_color'       => '#283618',
 			'app_background'         => '#f8fafc',
 			'app_surface'            => '#ffffff',
 			'app_text_color'         => '#0f172a',
 			'app_border_color'       => '#dbe3ea',
 			'app_muted_text_color'   => '#64748b',
 			'app_button_text_color'  => '#ffffff',
+			'app_button_border_color'   => 'var(--e-global-color-d50b40a)',
 			'app_secondary_button_bg'   => '#e2e8f0',
 			'app_secondary_button_text' => '#0f172a',
 			'app_pending_button_bg'     => '#cbd5e1',
 			'app_pending_button_text'   => '#334155',
+			'app_footer_button_inactive_bg'   => '#f9f9f9',
+			'app_footer_button_inactive_text' => '#1a1a1c',
+			'app_footer_button_active_bg'     => '#1a1a1c',
+			'app_footer_button_active_text'   => '#f9f9f9',
 			'app_progress_track'        => '#dbe3ea',
 			'app_font_family'        => 'inherit',
 			'app_radius'             => '18',
@@ -81,8 +86,11 @@ class Handik_Booking_App_Settings {
 			'app_max_width'          => '980',
 			'app_font_scale'         => '1',
 			'app_button_style'       => 'pill',
+			'app_field_gap'          => '8',
+			'app_field_padding_bottom' => '0',
+			'app_task_group_gap'     => '10',
 			'service_catalog_json'   => '',
-			'ui_loading_title'       => 'Загрузка...',
+			'ui_loading_title'       => 'Loading...',
 			'ui_loading_subtitle'    => '',
 			'ui_client_type_title'   => 'Who is booking today?',
 			'ui_client_type_intro'   => 'Choose the option that best matches your situation.',
@@ -96,10 +104,12 @@ class Handik_Booking_App_Settings {
 			'ui_returning_verify_intro' => 'Enter your email or phone to receive a one-time code.',
 			'ui_task_selection_title'   => 'What do you need help with?',
 			'ui_task_selection_intro'   => 'Choose one or more services so we can route your booking correctly.',
-			'ui_project_label'          => 'Project / Large Job',
+			'ui_project_label'          => 'Complex Project Work',
 			'ui_address_title'          => 'Address details',
 			'ui_address_label'          => 'Address of the job',
 			'ui_address_unit_label'     => 'Unit or apartment (optional)',
+			'ui_address_help'           => '',
+			'ui_address_valid_help'     => '',
 			'ui_photos_title'           => 'Photos',
 			'ui_photos_intro'           => 'Photos really help us understand the job faster, but you can continue without them if needed.',
 			'ui_skip_photos_button'     => '',
@@ -111,13 +121,14 @@ class Handik_Booking_App_Settings {
 			'ui_photos_empty'           => 'No photos added yet',
 			'ui_photos_loading'         => 'Uploading your photos...',
 			'ui_assistant_title'        => 'Virtual assistant',
-			'ui_assistant_helper'       => 'This is Handik\'s virtual assistant. Describe the job, mention anything important, and ask questions about time, materials, or the next step. If you want to move faster, give a short description and then tap Continue.',
-			'ui_assistant_greeting'     => 'Describe the task and I will help estimate time, materials, and the next step.',
+			'ui_assistant_intro'        => 'This AI assistant can help estimate the job, time, materials, and next steps while collecting the details we need to prepare properly.',
+			'ui_assistant_helper'       => 'This AI assistant can help estimate the job, time, materials, and next steps while collecting the details we need to prepare properly.',
+			'ui_assistant_greeting'     => 'Describe the job.',
 			'ui_assistant_ready_notice' => 'The virtual assistant has enough information. Continue when you are ready.',
-			'ui_assistant_continue_button' => 'Go to time and date selection',
+			'ui_assistant_continue_button' => 'Choose time',
 			'ui_contact_continue_button' => 'Go to AI estimate',
 			'ui_contact_intro'         => 'This is the last step where you can change the booking details before the AI review starts.',
-			'ui_project_notice'        => 'Project / Large Job means a bigger scope that usually needs a consultation-style visit before the work is scheduled.',
+			'ui_project_notice'        => 'Complex Project Work means a bigger scope that usually needs a consultation-style visit before the work is scheduled.',
 			'ui_contact_title'          => 'Contact details',
 			'ui_booking_title'          => 'Book your time slot',
 			'ui_success_title'          => 'Success',
@@ -131,7 +142,7 @@ class Handik_Booking_App_Settings {
 			'ui_open_booking_button'    => 'Open calendar in new tab',
 			'ui_complete_booking_button'=> 'Check booking status',
 			'ui_restart_button'         => 'Start another booking',
-			'ui_loading_assistant_title'=> 'Загрузка...',
+			'ui_loading_assistant_title'=> 'Loading...',
 			'ui_loading_assistant_subtitle' => '',
 			'ui_error_pick_client_type' => 'Choose whether you are a new client or a returning client to continue.',
 			'ui_error_select_task'      => 'Select at least one task or mark this as a project.',
@@ -144,9 +155,6 @@ class Handik_Booking_App_Settings {
 			'ui_booking_confirmed'      => 'Your time slot is booked. Finishing your request now...',
 			'ui_booking_cancelled'      => 'This booking was cancelled. You can choose another slot below.',
 			'ui_address_placeholder'    => 'Start typing the address of the job',
-			'ui_info_mode_tooltip'      => 'Toggle helper tips and descriptive notifications on or off.',
-			'ui_info_mode_enabled_message' => 'Hints are enabled.',
-			'ui_info_mode_disabled_message' => 'Hints are disabled.',
 		);
 	}
 
@@ -180,8 +188,9 @@ class Handik_Booking_App_Settings {
 	 * @param array<string, mixed> $input Input.
 	 */
 	public function update( array $input ) {
-		$sanitized     = $this->sanitize_settings( $input );
-		$this->settings = wp_parse_args( $sanitized, $this->defaults() );
+		$current        = wp_parse_args( get_option( HANDIK_BOOKING_APP_OPTION, array() ), $this->defaults() );
+		$sanitized      = $this->sanitize_settings( $input );
+		$this->settings = array_merge( $current, $sanitized );
 		update_option( HANDIK_BOOKING_APP_OPTION, $this->settings, false );
 	}
 
@@ -206,12 +215,16 @@ class Handik_Booking_App_Settings {
 
 		$output = array();
 		foreach ( $this->defaults() as $key => $default ) {
+			if ( ! array_key_exists( $key, $input ) && 'service_catalog_json' !== $key ) {
+				continue;
+			}
+
 			if ( isset( $this->constant_map[ $key ] ) && defined( $this->constant_map[ $key ] ) ) {
 				$output[ $key ] = constant( $this->constant_map[ $key ] );
 				continue;
 			}
 
-			$value = isset( $input[ $key ] ) ? $input[ $key ] : $default;
+			$value = array_key_exists( $key, $input ) ? $input[ $key ] : $default;
 			switch ( $key ) {
 				case 'openai_api_base':
 				case 'chatkit_script_url':
@@ -249,6 +262,9 @@ class Handik_Booking_App_Settings {
 				case 'app_spacing':
 				case 'app_max_width':
 				case 'app_font_scale':
+				case 'app_field_gap':
+				case 'app_field_padding_bottom':
+				case 'app_task_group_gap':
 					$output[ $key ] = preg_replace( '/[^0-9.]/', '', (string) $value );
 					break;
 				case 'ui_loading_subtitle':
@@ -259,6 +275,9 @@ class Handik_Booking_App_Settings {
 				case 'ui_task_selection_intro':
 				case 'ui_photos_intro':
 				case 'ui_photos_help':
+				case 'ui_address_help':
+				case 'ui_address_valid_help':
+				case 'ui_assistant_intro':
 				case 'ui_assistant_helper':
 				case 'ui_assistant_ready_notice':
 				case 'ui_contact_intro':
@@ -275,9 +294,6 @@ class Handik_Booking_App_Settings {
 				case 'ui_booking_waiting':
 				case 'ui_booking_confirmed':
 				case 'ui_booking_cancelled':
-				case 'ui_info_mode_tooltip':
-				case 'ui_info_mode_enabled_message':
-				case 'ui_info_mode_disabled_message':
 					$output[ $key ] = sanitize_textarea_field( (string) $value );
 					break;
 				default:

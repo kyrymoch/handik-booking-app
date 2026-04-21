@@ -44,6 +44,7 @@
 				assistantUserMessageSent: false,
 				assistantThreadId: '',
 				contact: { first_name: '', last_name: '', full_name: '', email: '', phone: '' },
+				touched: { full_name: false, email: false, phone: false },
 				verificationCode: '',
 				bookingUrl: '',
 				bookingStatus: '',
@@ -81,33 +82,13 @@
 
 		setAssistantPreparingState( isPreparing ) {
 			this.state.assistantPreparing = !! isPreparing;
-			if ( 'assistant' !== this.state.step ) {
-				return;
-			}
-
-			const body = this.root.querySelector( '.handik-booking-app__screen-body' );
-			if ( ! body ) {
-				return;
-			}
-
-			let overlay = body.querySelector( '[data-assistant-preparing-overlay]' );
-			if ( isPreparing ) {
-				if ( ! overlay ) {
-					const wrapper = document.createElement( 'div' );
-					wrapper.innerHTML = '<div class="handik-booking-app__loading-overlay" data-assistant-preparing-overlay="1" aria-live="polite">' + this.loaderMarkup( config.strings.loadingAssistant || 'Loading virtual assistant...' ) + '</div>';
-					overlay = wrapper.firstChild;
-					body.appendChild( overlay );
-				}
-				return;
-			}
-
-			if ( overlay ) {
-				overlay.remove();
+			if ( 'assistant' === this.state.step ) {
+				this.render();
 			}
 		}
 
 		loaderMarkup( message ) {
-			return '<div class="handik-loading-visual handik-loading-visual--square" aria-hidden="true"><span class="handik-loading-square"></span></div><strong>' + this.escape( message || config.strings.loading || 'Загрузка...' ) + '</strong>';
+			return '<div class="sp sp-loadbar" aria-hidden="true"></div><strong>' + this.escape( message || config.strings.loading || 'Loading...' ) + '</strong>';
 		}
 
 		async api( path, data, method, formData ) {
@@ -207,20 +188,6 @@
 				this.updateNotification( item.id, { visible: true } );
 				this.resumeNotification( item.id );
 			} );
-		}
-
-		notifyTask( task ) {
-			if ( ! task ) {
-				return;
-			}
-
-			const meta = [];
-
-			if ( task.rate_label ) {
-				meta.push( { label: task.rate_label, tone: 'rate' } );
-			}
-
-			this.notify( 'info', '', task.description || task.label || ( config.strings.taskTitle || 'Task' ), 5200, { meta: meta } );
 		}
 
 		updateNotification( id, patch ) {
@@ -439,7 +406,7 @@
 			const button = this.root.querySelector( '[data-action="assistant-next"]' );
 			if ( button ) {
 				button.disabled = !! isBusy;
-				button.textContent = isBusy ? ( config.strings.loading || 'Загрузка...' ) : ( config.strings.assistantContinue || 'Go to time and date selection' );
+				button.textContent = isBusy ? ( config.strings.loading || 'Loading...' ) : ( config.strings.assistantContinue || 'Choose time' );
 				button.classList.remove( 'is-pending' );
 				button.classList.add( 'is-primary' );
 				button.setAttribute( 'aria-disabled', isBusy ? 'true' : 'false' );
@@ -558,6 +525,11 @@
 			};
 		}
 
+		isFieldInvalid( fieldName ) {
+			const validation = this.validateContactFields();
+			return !! ( this.state.touched && this.state.touched[ fieldName ] && false === validation[ fieldName ] );
+		}
+
 		contactValidationMessage() {
 			const errors = config.strings.errors || {};
 			const validation = this.validateContactFields();
@@ -618,17 +590,17 @@
 			}
 
 			if ( 'contact.full_name' === model ) {
-				field.classList.toggle( 'is-invalid', ! this.validateFullName( this.state.contact.full_name ) );
+				field.classList.toggle( 'is-invalid', this.isFieldInvalid( 'full_name' ) );
 				return;
 			}
 
 			if ( 'contact.email' === model ) {
-				field.classList.toggle( 'is-invalid', ! this.validateEmail( this.state.contact.email ) );
+				field.classList.toggle( 'is-invalid', this.isFieldInvalid( 'email' ) );
 				return;
 			}
 
 			if ( 'contact.phone' === model ) {
-				field.classList.toggle( 'is-invalid', ! this.validatePhone( this.state.contact.phone ) );
+				field.classList.toggle( 'is-invalid', this.isFieldInvalid( 'phone' ) );
 				return;
 			}
 
@@ -653,7 +625,6 @@
 			try {
 				await this.uploadFiles( selectedFiles );
 				this.warmPhotoAnalysis();
-				this.notify( 'info', '', noticeMessage || noticeTitle || 'Your photos were uploaded. We are reviewing them now.' );
 			} catch ( error ) {
 				this.setFooterHint( error.message, true );
 			} finally {
@@ -665,14 +636,16 @@
 		toggleTask( id ) {
 			if ( this.taskSelected( id ) ) {
 				this.state.selectedTasks = this.state.selectedTasks.filter( ( taskId ) => taskId !== id );
+				if ( 'project_large_job' === id ) {
+					this.state.isProject = false;
+				}
 			} else {
 				this.state.selectedTasks = this.state.selectedTasks.concat( id );
-				const task = this.findTask( id );
-				if ( task ) {
-					this.notifyTask( task );
+				if ( 'project_large_job' === id ) {
+					this.state.isProject = true;
 				}
 			}
-			this.state.selectedTasksSheetOpen = !! ( this.state.isProject || this.state.selectedTasks.length );
+			this.state.selectedTasksSheetOpen = this.state.selectedTasks.length ? this.state.selectedTasksSheetOpen : false;
 			this.state.jobShape = this.state.isProject ? 'project' : ( this.state.selectedTasks.length > 1 ? 'multiple_tasks' : 'single_task' );
 			this.render();
 		}
@@ -689,16 +662,7 @@
 		}
 
 		selectedTaskItems() {
-			const items = this.state.selectedTasks.map( ( id ) => this.findTask( id ) ).filter( Boolean );
-			if ( this.state.isProject ) {
-				items.push( {
-					id: 'project_large_job',
-					label: config.strings.projectLabel || 'Project / Large Job',
-					description: config.strings.projectNotice || 'Project / Large Job means a bigger scope that usually needs a consultation-style visit before the work is scheduled.',
-					rate_label: ''
-				} );
-			}
-			return items;
+			return this.state.selectedTasks.map( ( id ) => this.findTask( id ) ).filter( Boolean );
 		}
 
 		selectedTasksSheetMarkup() {
@@ -853,17 +817,6 @@
 					this.goTo( 'photos' );
 					break;
 				case 'toggle-project':
-					this.state.isProject = ! this.state.isProject;
-					this.state.selectedTasksSheetOpen = !! ( this.state.isProject || this.state.selectedTasks.length );
-					this.state.jobShape = this.state.isProject ? 'project' : ( this.state.selectedTasks.length > 1 ? 'multiple_tasks' : 'single_task' );
-					if ( this.state.isProject ) {
-						this.notify(
-							'info',
-							'',
-							config.strings.projectNotice || 'Project / Large Job means a bigger scope that usually needs a consultation-style visit before the work is scheduled.'
-						);
-					}
-					this.render();
 					break;
 				case 'toggle-selected-tasks':
 					this.state.selectedTasksSheetOpen = ! this.state.selectedTasksSheetOpen;
@@ -952,7 +905,11 @@
 				return;
 			}
 			await this.ensureDraftRequest( 'photos' );
-			const uploads = await Promise.all( files.map( ( file ) => {
+			const preparedFiles = [];
+			for ( const file of files ) {
+				preparedFiles.push( await this.prepareUploadFile( file ) );
+			}
+			const uploads = await Promise.all( preparedFiles.map( ( file ) => {
 				const formData = new window.FormData();
 				formData.append( 'file', file );
 				formData.append( 'request_id', String( this.state.requestId || 0 ) );
@@ -967,6 +924,40 @@
 			this.photoAnalysisWarmPromiseRequestId = 0;
 			this.assistantContextDispatchPromise = null;
 			this.pendingAssistantContextAnalysis = null;
+		}
+
+		async prepareUploadFile( file ) {
+			if ( ! file || ! file.type || 0 !== file.type.indexOf( 'image/' ) || file.size < 1400000 || ! window.HTMLCanvasElement ) {
+				return file;
+			}
+
+			try {
+				const bitmap = await window.createImageBitmap( file );
+				const maxDimension = 1600;
+				const scale = Math.min( 1, maxDimension / Math.max( bitmap.width, bitmap.height ) );
+				const width = Math.max( 1, Math.round( bitmap.width * scale ) );
+				const height = Math.max( 1, Math.round( bitmap.height * scale ) );
+				const canvas = document.createElement( 'canvas' );
+				canvas.width = width;
+				canvas.height = height;
+				const context = canvas.getContext( '2d' );
+				if ( ! context ) {
+					return file;
+				}
+
+				context.drawImage( bitmap, 0, 0, width, height );
+				const mimeType = /png|webp/i.test( file.type ) ? 'image/jpeg' : file.type;
+				const blob = await new Promise( ( resolve ) => canvas.toBlob( resolve, mimeType, 0.82 ) );
+				if ( ! blob || blob.size >= file.size ) {
+					return file;
+				}
+
+				const extension = 'image/png' === mimeType ? '.png' : '.jpg';
+				const baseName = String( file.name || 'photo' ).replace( /\.[^.]+$/, '' );
+				return new window.File( [ blob ], baseName + extension, { type: mimeType, lastModified: Date.now() } );
+			} catch ( error ) {
+				return file;
+			}
 		}
 
 		async warmPhotoAnalysis() {
@@ -1062,23 +1053,18 @@
 			}
 
 			const shouldWarmBeforeMount = ! this.assistantBridge && Array.isArray( this.state.photos ) && this.state.photos.length;
-
-			if ( ! shouldWarmBeforeMount ) {
-				this.setAssistantPreparingState( false );
-				this.mountAssistant();
-				return;
-			}
-
-			this.setAssistantPreparingState( true );
+			this.setAssistantPreparingState( ! this.assistantBridge );
 			this.render();
 			this.assistantPreparationPromise = ( async() => {
-				try {
-					this.pendingAssistantContextAnalysis = await this.withTimeout( this.warmPhotoAnalysis(), 12000, 'Assistant photo analysis preparation' );
-				} catch ( error ) {
-					this.logClient( 'debug', 'Assistant preparation warmup failed.', {
-						request_id: this.state.requestId,
-						error: error && error.message ? error.message : 'unknown'
-					} );
+				if ( shouldWarmBeforeMount ) {
+					try {
+						this.pendingAssistantContextAnalysis = await this.withTimeout( this.warmPhotoAnalysis(), 12000, 'Assistant photo analysis preparation' );
+					} catch ( error ) {
+						this.logClient( 'debug', 'Assistant preparation warmup failed.', {
+							request_id: this.state.requestId,
+							error: error && error.message ? error.message : 'unknown'
+						} );
+					}
 				}
 
 				if ( 'assistant' === this.state.step ) {
@@ -1127,6 +1113,10 @@
 
 		async saveContactAndPrepareBooking() {
 			if ( ! this.stepCanContinue( 'contact_details' ) ) {
+				this.state.touched.full_name = true;
+				this.state.touched.email = true;
+				this.state.touched.phone = true;
+				this.render();
 				this.setFooterHint( this.contactValidationMessage(), true );
 				return;
 			}
@@ -1579,8 +1569,8 @@
 					draftToken: this.state.draftToken,
 					cacheKey: 'request_' + String( this.state.requestId ),
 					initialThreadId: this.state.assistantThreadId,
-					startScreenGreeting: config.strings.assistantGreeting || 'Describe the task and I will help estimate time, materials, and the next step.',
-					composerPlaceholder: config.strings.assistantGreeting || 'Describe the task and I will help estimate time, materials, and the next step.',
+					startScreenGreeting: config.strings.assistantGreeting || 'Describe the job.',
+					composerPlaceholder: config.strings.assistantGreeting || 'Describe the job.',
 					loadingTitle: config.strings.loadingAssistant || 'Loading virtual assistant...',
 					loadingSubtitle: config.strings.loadingAssistantSubtext || 'Charging the tiny robot brain for your next step.',
 					endpoints: {
@@ -1725,7 +1715,6 @@
 				groups.map( ( group ) => '<div class="handik-task-group"><h3>' + this.escape( group.group ) + '</h3><div class="handik-task-grid">' +
 					group.tasks.map( ( task ) => '<button type="button" class="handik-task ' + ( this.taskSelected( task.id ) ? 'is-selected' : '' ) + '" data-task-id="' + this.escape( task.id ) + '">' + this.escape( task.label ) + '</button>' ).join( '' ) +
 				'</div></div>' ).join( '' ) +
-				'<button type="button" class="handik-project-toggle ' + ( this.state.isProject ? 'is-selected' : '' ) + '" data-action="toggle-project"><span aria-hidden="true">&#9733;</span><span>' + this.escape( config.strings.projectLabel || 'Project / Large Job' ) + '</span></button>' +
 				this.footerActions( 'back-tasks', 'tasks-next', this.escape( config.strings.continue ), '', { continueMuted: ! this.stepCanContinue( 'task_selection' ) } ) +
 				this.selectedTasksSheetMarkup() +
 			'</div>';
@@ -1735,7 +1724,7 @@
 			const addressOptions = this.state.verifiedProfile && Array.isArray( this.state.verifiedProfile.addresses ) ? this.state.verifiedProfile.addresses : [];
 			return (
 				( addressOptions.length ? '<label class="handik-field"><span>' + this.escape( config.strings.savedAddressLabel || 'Saved address' ) + '</span><select id="handik-saved-address"><option value="">' + this.escape( config.strings.savedAddressPlaceholder || 'Choose saved address' ) + '</option>' + addressOptions.map( ( item ) => '<option value="' + item.id + '">' + this.escape( item.address_full ) + '</option>' ).join( '' ) + '</select></label>' : '' ) +
-				'<label class="handik-field handik-field--address' + ( this.state.address.is_valid || ! this.state.address.address_full ? '' : ' is-invalid' ) + '"><span>' + this.escape( config.strings.addressLabel || 'Address of the job' ) + '</span><input id="handik-job-address" type="text" data-model="address.address_full" placeholder="' + this.escape( config.strings.addressPlaceholder || 'Start typing the address of the job' ) + '" value="' + this.escape( this.state.address.address_full || '' ) + '" /></label><span class="handik-field__help">' + this.escape( this.state.address.is_valid ? ( config.strings.addressValidHelp || 'Address verified.' ) : ( config.strings.addressHelp || 'Choose a suggested address from Google to continue.' ) ) + '</span>' +
+				'<label class="handik-field handik-field--address' + ( this.state.address.is_valid || ! this.state.address.address_full ? '' : ' is-invalid' ) + '"><span>' + this.escape( config.strings.addressLabel || 'Address of the job' ) + '</span><input id="handik-job-address" type="text" data-model="address.address_full" placeholder="' + this.escape( config.strings.addressPlaceholder || 'Start typing the address of the job' ) + '" value="' + this.escape( this.state.address.address_full || '' ) + '" /></label>' +
 				'<label class="handik-field"><span>' + this.escape( config.strings.unitLabel || 'Unit or apartment (optional)' ) + '</span><input type="text" data-model="address.address_unit" value="' + this.escape( this.state.address.address_unit || '' ) + '" /></label>' +
 				this.footerActions( 'back-address', 'address-next', this.escape( config.strings.continue ), '', { continueMuted: ! this.stepCanContinue( 'address_details' ) } )
 			);
@@ -1746,24 +1735,23 @@
 				? '<div class="handik-photo-list">' + this.state.photos.map( ( photo ) => '<span>' + this.escape( photo.name || photo.url || 'photo' ) + '</span>' ).join( '' ) + '</div>'
 				: '<div class="handik-photo-list is-empty"><span>' + this.escape( config.strings.photosEmpty || 'No photos added yet' ) + '</span></div>';
 			return '<p class="handik-booking-app__intro">' + this.escape( config.strings.photosIntro || 'Photos really help us understand the job faster, but you can continue without them if needed.' ) + '</p>' +
-				'<label class="handik-field"><span>' + this.escape( config.strings.photosLabel || 'Photos' ) + '</span><span class="handik-field__help">' + this.escape( config.strings.photosHelp || 'Add a few clear photos so we can understand the job faster.' ) + '</span><input type="file" id="handik-photo-input" class="handik-photo-input" multiple accept="image/*" /><button type="button" class="handik-photo-dropzone" data-action="choose-photos"><span class="handik-photo-dropzone__icon" aria-hidden="true"></span><strong>' + this.escape( config.strings.photosCta || 'Tap to add photos' ) + '</strong><span>' + this.escape( this.state.photoUploading ? ( config.strings.uploading || 'Loading...' ) : ( config.strings.photosHelp || 'Add a few clear photos so we can understand the job faster.' ) ) + '</span>' + ( this.state.photoUploading ? '<span class="handik-inline-spinner" aria-hidden="true"></span>' : '' ) + '</button>' + photosMarkup + '</label>' +
+				'<label class="handik-field"><span>' + this.escape( config.strings.photosLabel || 'Photos' ) + '</span><span class="handik-field__help">' + this.escape( config.strings.photosHelp || 'Add a few clear photos so we can understand the job faster.' ) + '</span><input type="file" id="handik-photo-input" class="handik-photo-input" multiple accept="image/*" /><button type="button" class="handik-photo-dropzone" data-action="choose-photos"><span class="handik-photo-dropzone__icon" aria-hidden="true"></span><strong>' + this.escape( config.strings.photosCta || 'Tap to add photos' ) + '</strong>' + ( this.state.photoUploading ? '<span>' + this.escape( config.strings.uploading || 'Loading...' ) + '</span><span class="handik-inline-spinner" aria-hidden="true"></span>' : '' ) + '</button>' + photosMarkup + '</label>' +
 				this.footerActions( 'back-photos', 'photos-next', this.escape( config.strings.continue ), this.escape( config.strings.back ), { continueMuted: ! this.stepCanContinue( 'photos' ) } );
 		}
 
 		assistantMarkup() {
-			return '<p class="handik-booking-app__intro">' + this.escape( config.strings.assistantIntro || 'Describe the task, ask any questions you have, and continue when you are ready to choose a time.' ) + '</p><div class="handik-assistant-layout"><div class="handik-assistant-panel"><div class="handik-booking-app__assistant-host"></div>' + this.footerActions( '', 'assistant-next', this.escape( config.strings.assistantContinue || 'Go to time and date selection' ), '', { continueMuted: false, hideBack: true } ) + '</div></div>';
+			return '<p class="handik-booking-app__intro">' + this.escape( config.strings.assistantIntro || 'This AI assistant can help estimate the job, time, materials, and next steps while collecting the details we need to prepare properly.' ) + '</p><div class="handik-assistant-layout"><div class="handik-assistant-panel"><div class="handik-booking-app__assistant-host"></div>' + this.footerActions( '', 'assistant-next', this.escape( config.strings.assistantContinue || 'Choose time' ), '', { continueMuted: false, hideBack: true } ) + '</div></div>';
 		}
 
 		contactMarkup() {
 			if ( this.state.verifiedProfile && this.state.verifiedProfile.contact && ! this.state.contact.full_name ) {
 				this.prefillFromProfile();
 			}
-			const validation = this.validateContactFields();
 			return '<p class="handik-booking-app__intro">' + this.escape( config.strings.contactIntro || 'This is the last step where you can change the booking details before the AI review starts.' ) + '</p>' +
-				this.input( 'Full name', 'contact.full_name', 'text', validation.full_name ? '' : 'is-invalid', 'Letters only.' ) +
+				this.input( 'Full name', 'contact.full_name', 'text', this.isFieldInvalid( 'full_name' ) ? 'is-invalid' : '', '' ) +
 				'<div class="handik-grid-2">' +
-				this.input( 'Email', 'contact.email', 'email', validation.email ? '' : 'is-invalid', 'Use the format name@example.com.' ) +
-				this.input( 'Phone', 'contact.phone', 'tel', validation.phone ? '' : 'is-invalid', 'Use the format +1 123 456 78 90.' ) +
+				this.input( 'Email', 'contact.email', 'email', this.isFieldInvalid( 'email' ) ? 'is-invalid' : '', '' ) +
+				this.input( 'Phone', 'contact.phone', 'tel', this.isFieldInvalid( 'phone' ) ? 'is-invalid' : '', '' ) +
 				'</div>' +
 				this.footerActions( 'back-contact', 'contact-next', this.escape( config.strings.contactContinue || 'Go to AI estimate' ), '', { continueMuted: ! this.stepCanContinue( 'contact_details' ) } );
 		}
@@ -1917,10 +1905,15 @@
 					if ( 'contact.full_name' === model ) {
 						value = String( value || '' ).replace( /[^\p{L}\s'-]/gu, '' ).replace( /\s{2,}/g, ' ' );
 						input.value = value;
+						this.state.touched.full_name = true;
 					}
 					if ( 'contact.phone' === model ) {
 						value = this.formatPhoneDisplay( value );
 						input.value = value;
+						this.state.touched.phone = true;
+					}
+					if ( 'contact.email' === model ) {
+						this.state.touched.email = true;
 					}
 					if ( 'address.address_full' === model ) {
 						this.state.address.is_valid = false;
@@ -1935,6 +1928,7 @@
 						const normalized = this.formatPhoneDisplay( input.value );
 						this.state.contact.phone = normalized;
 						input.value = normalized;
+						this.state.touched.phone = true;
 					} );
 				}
 			} );
@@ -1967,7 +1961,7 @@
 					}
 					const selectedFiles = Array.from( photoInput.files || [] );
 					photoInput.value = '';
-					await this.handleSelectedPhotos( selectedFiles, 'Photos added', 'Your photos were uploaded and attached to this request.' );
+					await this.handleSelectedPhotos( selectedFiles, 'Photos added', '' );
 				} );
 			}
 

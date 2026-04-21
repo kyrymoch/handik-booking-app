@@ -86,6 +86,29 @@
 	}
 
 	document.addEventListener( 'DOMContentLoaded', function() {
+		document.querySelectorAll( '.handik-admin-row-link[data-href]' ).forEach( function( row ) {
+			const open = function() {
+				const href = row.getAttribute( 'data-href' );
+				if ( href ) {
+					window.location.href = href;
+				}
+			};
+
+			row.addEventListener( 'click', function( event ) {
+				if ( event.target.closest( 'a, button, input, textarea, select, label' ) ) {
+					return;
+				}
+				open();
+			} );
+
+			row.addEventListener( 'keydown', function( event ) {
+				if ( 'Enter' === event.key || ' ' === event.key ) {
+					event.preventDefault();
+					open();
+				}
+			} );
+		} );
+
 		document.querySelectorAll( '[data-handik-catalog-editor]' ).forEach( function( editor ) {
 			editor.addEventListener( 'click', function( event ) {
 				const addGroup = event.target.closest( '[data-handik-add-group]' );

@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.0.47
+Stable tag: 2.0.48
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, returning-client auth, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,13 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.0.48 =
+* Fixed App Setup persistence so saving one tab no longer resets other tabs or wipes Integrations settings.
+* Moved Integrations into a dedicated admin section together with Logs and Changelog for safer daily configuration changes.
+* Redesigned the Bookings list and booking details around client, task, address, photos, and Eastern Time scheduling data, with mobile-friendly admin layouts.
+* Removed task-selection notifications, simplified photos/contact/assistant screen copy, updated footer button styling, and removed shell/screen box styling so the app can inherit its parent Elementor container.
+* Switched the frontend loaders to the new loadbar style and added client-side image downscaling to speed up large photo uploads on mobile.
 
 = 2.0.47 =
 * The hosted ChatKit bridge now binds `get_request_photo_context` both in `options.onClientTool` and directly on the mounted web component as `element.onClientTool`, covering runtimes that only honor live element callbacks for client tools.
