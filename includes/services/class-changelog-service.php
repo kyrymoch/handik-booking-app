@@ -11,6 +11,16 @@ class Handik_Booking_App_Changelog_Service {
 	public function get_entries() {
 		return array(
 			array(
+				'version'      => '2.0.50',
+				'date'         => '2026-04-20',
+				'title'        => 'Stabilize Virtual Assistant Mount And Tighten The Loadbar Animation',
+				'notes'        => array(
+					'Matched the loading animation more closely to the provided `sp-loadbar` reference by restoring the original stripe angle, spacing, and plain `Loading` label.',
+					'Removed the startup ChatKit client-tool probe so the hosted assistant no longer fires an extra tool request while the widget is still mounting.',
+					'Stopped the assistant preparation flow from forcing a full screen re-render during mount, which fixes the white-screen refresh loop on the Virtual assistant step.',
+				),
+			),
+			array(
 				'version'      => '2.0.49',
 				'date'         => '2026-04-20',
 				'title'        => 'Stabilize Virtual Assistant Loading And Match The Requested Loadbar Loader',

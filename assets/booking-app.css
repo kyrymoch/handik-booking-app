@@ -45,7 +45,7 @@
 	padding: 40px 24px;
 	text-align: center;
 	display: grid;
-	gap: 12px;
+	gap: 8px;
 	justify-items: center;
 	color: #334155;
 }
@@ -72,8 +72,6 @@
 }
 
 .sp {
-	position: relative;
-	display: inline-block;
 	width: 32px;
 	height: 32px;
 	clear: both;
@@ -85,10 +83,9 @@
 	height: 18px;
 	border: 1px solid #1a1a1c;
 	border-radius: 4px;
-	background:
-		linear-gradient(-45deg, rgba(0, 0, 0, 0) 46%, #000 47%, #000 52%, rgba(0, 0, 0, 0) 53%);
+	background: linear-gradient(-60deg, transparent 0%, transparent 50%, #000 50%, #000 75%, transparent 75%, transparent);
 	background-size: 20px 30px;
-	background-position: 0 0;
+	background-position: 0px 0px;
 	animation: handik-loadbar 0.8s infinite linear;
 }
 
@@ -1017,10 +1014,10 @@ openai-chatkit {
 
 @keyframes handik-loadbar {
 	from {
-		background-position: 0 0;
+		background-position: 0px 0px;
 	}
 	to {
-		background-position: -20px 0;
+		background-position: -20px 0px;
 	}
 }
 

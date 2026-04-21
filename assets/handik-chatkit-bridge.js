@@ -598,23 +598,6 @@
 				}
 			}, CHATKIT_TIMEOUT );
 
-			Promise.resolve().then( function() {
-				return handleClientTool( {
-					name: 'get_request_photo_context',
-					params: { probe: true }
-				} );
-			} ).then( function( payload ) {
-				log( 'info', 'ChatKit client tool probe completed.', {
-					ok: !! ( payload && payload.ok ),
-					has_photos: !! ( payload && payload.has_photos ),
-					photo_analysis_status: payload && payload.photo_analysis_status ? payload.photo_analysis_status : ''
-				} );
-			} ).catch( function( error ) {
-				log( 'error', 'ChatKit client tool probe failed.', {
-					error: summarizeError( error )
-				} );
-			} );
-
 			return session;
 		} ).catch( handleMountError );
 

@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.0.49
+Stable tag: 2.0.50
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, returning-client auth, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -38,6 +38,11 @@ Features:
 * Redesigned the Bookings list and booking details around client, task, address, photos, and Eastern Time scheduling data, with mobile-friendly admin layouts.
 * Removed task-selection notifications, simplified photos/contact/assistant screen copy, updated footer button styling, and removed shell/screen box styling so the app can inherit its parent Elementor container.
 * Switched the frontend loaders to the new loadbar style and added client-side image downscaling to speed up large photo uploads on mobile.
+
+= 2.0.50 =
+* Matched the loadbar animation more closely to the provided loader reference by restoring the original stripe angle and spacing.
+* Removed the ChatKit startup probe that could interfere with the initial widget lifecycle on the Virtual assistant step.
+* Stopped the assistant preparation flow from forcing a full screen re-render during chat mount, which fixes the white-screen refresh loop.
 
 = 2.0.49 =
 * Reworked the frontend loader to use the exact `sp-loadbar` style and `Loading` label from the provided loader reference file.

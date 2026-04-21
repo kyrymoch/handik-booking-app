@@ -1092,8 +1092,7 @@
 				this.assistantPreparationPromise = null;
 			} );
 
-			this.state.assistantPreparing = ! this.assistantBridge;
-			this.render();
+			this.setAssistantPreparingState( ! this.assistantBridge );
 
 			return this.assistantPreparationPromise;
 		}
