@@ -597,7 +597,7 @@
 .handik-chatkit-bridge__loading {
 	min-height: 520px;
 	display: grid;
-	gap: 12px;
+	gap: 8px;
 	place-items: center;
 	color: #475569;
 	font-weight: 600;
@@ -1151,6 +1151,9 @@ openai-chatkit {
 	box-shadow: 0 20px 48px rgba(15, 23, 42, 0.16);
 	overflow: hidden;
 	backdrop-filter: blur(12px);
+}
+
+.handik-selected-sheet.is-bouncing {
 	animation: handik-selected-sheet-bounce 0.55s cubic-bezier(0.2, 0.9, 0.22, 1.15);
 }
 

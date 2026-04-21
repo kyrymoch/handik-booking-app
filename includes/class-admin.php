@@ -831,7 +831,7 @@ class Handik_Booking_App_Admin {
 			return $base_address;
 		}
 
-		return trim( $base_address . ', ' . $unit );
+		return trim( $base_address . ', Apt ' . $unit );
 	}
 
 	protected function client_type_label( $client_type ) {

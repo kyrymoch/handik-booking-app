@@ -11,6 +11,16 @@ class Handik_Booking_App_Changelog_Service {
 	public function get_entries() {
 		return array(
 			array(
+				'version'      => '2.0.52',
+				'date'         => '2026-04-20',
+				'title'        => 'Refine Selected Tasks Entrance Motion And Address Unit Formatting',
+				'notes'        => array(
+					'The Selected tasks panel now bounces only when it first appears after the selection count goes from zero tasks to one, instead of animating again on every later task change.',
+					'If all tasks are removed the Selected tasks panel disappears completely, and the one-time bounce is re-armed for the next first task that gets added later.',
+					'Admin booking addresses now append apartment data as `Apt ...`, and the Virtual assistant bridge loader spacing has been aligned more closely with the rest of the app loaders.',
+				),
+			),
+			array(
 				'version'      => '2.0.51',
 				'date'         => '2026-04-20',
 				'title'        => 'Improve Phone Entry, Selected Tasks Motion, And Assistant Readiness Feedback',

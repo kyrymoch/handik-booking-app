@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.0.51
+Stable tag: 2.0.52
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, returning-client auth, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,11 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.0.52 =
+* Trigger the `Selected tasks` bounce animation only when the sheet first appears after going from zero selected tasks to one.
+* Hide the `Selected tasks` sheet when all tasks are removed and re-arm the one-time bounce animation for the next first task.
+* Render admin booking addresses with the apartment suffix as `Apt ...` and tighten the Virtual assistant bridge loading spacing so it better matches the rest of the app.
 
 = 2.0.48 =
 * Fixed App Setup persistence so saving one tab no longer resets other tabs or wipes Integrations settings.

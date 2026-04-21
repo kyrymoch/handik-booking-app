@@ -35,6 +35,7 @@
 				draftToken: '',
 				selectedTasks: [],
 				selectedTasksSheetOpen: false,
+				selectedTasksSheetAnimate: false,
 				isProject: false,
 				jobShape: '',
 				address: { address_id: 0, address_full: '', address_line_1: '', address_unit: '', city: '', state: '', zip_code: '', is_valid: false },
@@ -654,6 +655,7 @@
 		}
 
 		toggleTask( id ) {
+			const hadItems = this.state.selectedTasks.length > 0;
 			if ( this.taskSelected( id ) ) {
 				this.state.selectedTasks = this.state.selectedTasks.filter( ( taskId ) => taskId !== id );
 				if ( 'project_large_job' === id ) {
@@ -665,7 +667,9 @@
 					this.state.isProject = true;
 				}
 			}
-			this.state.selectedTasksSheetOpen = this.state.selectedTasks.length ? this.state.selectedTasksSheetOpen : false;
+			const hasItems = this.state.selectedTasks.length > 0;
+			this.state.selectedTasksSheetAnimate = ! hadItems && hasItems;
+			this.state.selectedTasksSheetOpen = hasItems ? this.state.selectedTasksSheetOpen : false;
 			this.state.jobShape = this.state.isProject ? 'project' : ( this.state.selectedTasks.length > 1 ? 'multiple_tasks' : 'single_task' );
 			this.render();
 		}
@@ -692,7 +696,7 @@
 			}
 
 			const expanded = !! this.state.selectedTasksSheetOpen;
-			return '<div class="handik-selected-sheet' + ( expanded ? ' is-open' : '' ) + '">' +
+			return '<div class="handik-selected-sheet' + ( expanded ? ' is-open' : '' ) + ( this.state.selectedTasksSheetAnimate ? ' is-bouncing' : '' ) + '">' +
 				'<button type="button" class="handik-selected-sheet__toggle" data-action="toggle-selected-tasks" aria-expanded="' + ( expanded ? 'true' : 'false' ) + '">' +
 					'<span>Selected tasks</span>' +
 					'<span class="handik-selected-sheet__chevron" aria-hidden="true">' + ( expanded ? '&#8595;' : '&#8593;' ) + '</span>' +
@@ -791,6 +795,7 @@
 						draftToken: '',
 						selectedTasks: [],
 						selectedTasksSheetOpen: false,
+						selectedTasksSheetAnimate: false,
 						isProject: false,
 						jobShape: '',
 						address: { address_id: 0, address_full: '', address_line_1: '', address_unit: '', city: '', state: '', zip_code: '', is_valid: false },
@@ -1661,6 +1666,13 @@
 			this.root.innerHTML = '<div class="handik-booking-app__shell">' + this.stepMarkup() + '</div>';
 			this.bind();
 			this.renderNotifications();
+			if ( this.state.selectedTasksSheetAnimate ) {
+				window.setTimeout( () => {
+					if ( this.state.selectedTasksSheetAnimate ) {
+						this.state.selectedTasksSheetAnimate = false;
+					}
+				}, 650 );
+			}
 			if ( 'assistant' === this.state.step ) {
 				window.setTimeout( () => this.prepareAssistantStep(), 0 );
 			}
