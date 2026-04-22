@@ -11,6 +11,16 @@ class Handik_Booking_App_Changelog_Service {
 	public function get_entries() {
 		return array(
 			array(
+				'version'      => '2.0.54',
+				'date'         => '2026-04-21',
+				'title'        => 'Add Twilio Verify For Returning Client Phone Codes',
+				'notes'        => array(
+					'Added Twilio Verify integration settings for Account SID, Auth Token, and Verify Service SID in the Integrations admin screen.',
+					'Switched phone-based returning-client verification to Twilio Verify so SMS code delivery and code checks now use the configured `VA...` service instead of the previously empty SMS hook path.',
+					'Kept the local email verification flow in place so returning clients can still sign in by email even if they do not use phone verification.',
+				),
+			),
+			array(
 				'version'      => '2.0.53',
 				'date'         => '2026-04-20',
 				'title'        => 'Tighten Selected Tasks Bounce And Remove The Extra Assistant Loader Layer',

@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.0.53
+Stable tag: 2.0.54
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, returning-client auth, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,11 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.0.54 =
+* Added Twilio Verify settings for `Account SID`, `Auth Token`, and `Verify Service SID` in Integrations.
+* Switched phone-based returning-client verification from the empty SMS hook path to real Twilio Verify SMS start and code check requests.
+* Kept the existing email verification path in place as a fallback for email-based returning-client sign-in.
 
 = 2.0.53 =
 * Refined the `Selected tasks` bounce so the panel appears first, then performs a short up-down-up return instead of a single pop.

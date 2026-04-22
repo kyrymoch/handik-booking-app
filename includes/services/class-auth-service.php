@@ -76,7 +76,26 @@ class Handik_Booking_App_Auth_Service {
 
 		$target_email = ! empty( $contact['email'] ) ? sanitize_email( $contact['email'] ) : $email;
 		$target_phone = ! empty( $contact['phone'] ) ? $this->contacts->normalize_phone( $contact['phone'] ) : $phone;
-		$issued       = $this->create_token( (int) $contact['id'], $target_email, $target_phone );
+
+		if ( $phone ) {
+			if ( ! $this->twilio_verify_configured() ) {
+				$this->logger->error(
+					'Twilio Verify is not configured for phone verification.',
+					array(
+						'requested_phone' => $phone,
+						'contact_id'      => (int) $contact['id'],
+					)
+				);
+				return array(
+					'error'  => __( 'Phone verification is not configured yet. Enter your email instead, or finish Twilio Verify setup in Integrations.', 'handik-booking-app' ),
+					'status' => 400,
+				);
+			}
+
+			return $this->start_twilio_phone_verification( (int) $contact['id'], $target_phone );
+		}
+
+		$issued = $this->create_token( (int) $contact['id'], $target_email, $target_phone );
 		$this->send_message( $contact, $issued['code'], $issued['token'], $target_email, $target_phone, $redirect );
 
 		return array(
@@ -93,7 +112,33 @@ class Handik_Booking_App_Auth_Service {
 	 * @return array<string, mixed>
 	 */
 	public function verify( $email, $phone, $code, $token = '' ) {
-		$record = $this->consume_token( sanitize_email( $email ), $this->contacts->normalize_phone( $phone ), sanitize_text_field( $code ), sanitize_text_field( $token ) );
+		$email = sanitize_email( $email );
+		$phone = $this->contacts->normalize_phone( $phone );
+		$code  = sanitize_text_field( $code );
+		$token = sanitize_text_field( $token );
+
+		if ( $phone && $this->twilio_verify_configured() ) {
+			$twilio = $this->check_twilio_phone_verification( $phone, $code );
+			if ( ! empty( $twilio['error'] ) ) {
+				return $twilio;
+			}
+
+			$contact = $this->contacts->find_by_email_or_phone( $email, $phone );
+			if ( ! $contact ) {
+				return array( 'error' => (string) $this->settings->get( 'ui_error_invalid_code', __( 'Code or magic link is invalid or expired.', 'handik-booking-app' ) ), 'status' => 403 );
+			}
+
+			$contact_id = (int) $contact['id'];
+			$this->set_cookie( $contact_id );
+
+			return array(
+				'success'    => true,
+				'contact_id' => $contact_id,
+				'profile'    => $this->profile( $contact_id ),
+			);
+		}
+
+		$record = $this->consume_token( $email, $phone, $code, $token );
 		if ( ! $record ) {
 			return array( 'error' => (string) $this->settings->get( 'ui_error_invalid_code', __( 'Code or magic link is invalid or expired.', 'handik-booking-app' ) ), 'status' => 403 );
 		}
@@ -282,6 +327,157 @@ class Handik_Booking_App_Auth_Service {
 		}
 
 		do_action( 'handik_booking_app_send_sms_code', $phone, $code, $magic_link, $contact );
+	}
+
+	/**
+	 * @return bool
+	 */
+	protected function twilio_verify_configured() {
+		return (bool) (
+			trim( (string) $this->settings->get( 'twilio_account_sid', '' ) ) &&
+			trim( (string) $this->settings->get( 'twilio_auth_token', '' ) ) &&
+			trim( (string) $this->settings->get( 'twilio_verify_service_sid', '' ) )
+		);
+	}
+
+	/**
+	 * @param int    $contact_id Contact ID.
+	 * @param string $phone Phone.
+	 * @return array<string, mixed>
+	 */
+	protected function start_twilio_phone_verification( $contact_id, $phone ) {
+		$response = $this->twilio_verify_request(
+			'Verifications',
+			array(
+				'To'      => $phone,
+				'Channel' => 'sms',
+			)
+		);
+
+		if ( ! empty( $response['error'] ) ) {
+			$this->logger->error(
+				'Twilio Verify SMS start failed.',
+				array(
+					'contact_id' => $contact_id,
+					'phone'      => $phone,
+					'error'      => $response['error'],
+				)
+			);
+			return $response;
+		}
+
+		$this->logger->info(
+			'Twilio Verify SMS started.',
+			array(
+				'contact_id' => $contact_id,
+				'phone'      => $phone,
+				'status'     => $response['status'] ?? '',
+				'sid'        => $response['sid'] ?? '',
+			)
+		);
+
+		return array(
+			'success' => true,
+			'message' => __( 'If we found a matching client, a one-time code has been sent.', 'handik-booking-app' ),
+		);
+	}
+
+	/**
+	 * @param string $phone Phone.
+	 * @param string $code Code.
+	 * @return array<string, mixed>
+	 */
+	protected function check_twilio_phone_verification( $phone, $code ) {
+		$response = $this->twilio_verify_request(
+			'VerificationCheck',
+			array(
+				'To'   => $phone,
+				'Code' => $code,
+			)
+		);
+
+		if ( ! empty( $response['error'] ) ) {
+			$this->logger->error(
+				'Twilio Verify SMS check failed.',
+				array(
+					'phone' => $phone,
+					'error' => $response['error'],
+				)
+			);
+			return $response;
+		}
+
+		if ( 'approved' !== strtolower( (string) ( $response['status'] ?? '' ) ) ) {
+			return array( 'error' => (string) $this->settings->get( 'ui_error_invalid_code', __( 'Code or magic link is invalid or expired.', 'handik-booking-app' ) ), 'status' => 403 );
+		}
+
+		$this->logger->info(
+			'Twilio Verify SMS approved.',
+			array(
+				'phone'  => $phone,
+				'status' => $response['status'] ?? '',
+				'sid'    => $response['sid'] ?? '',
+			)
+		);
+
+		return array( 'success' => true );
+	}
+
+	/**
+	 * @param string               $resource Resource.
+	 * @param array<string,string> $body Body.
+	 * @return array<string, mixed>
+	 */
+	protected function twilio_verify_request( $resource, array $body ) {
+		$account_sid = trim( (string) $this->settings->get( 'twilio_account_sid', '' ) );
+		$auth_token  = trim( (string) $this->settings->get( 'twilio_auth_token', '' ) );
+		$service_sid = trim( (string) $this->settings->get( 'twilio_verify_service_sid', '' ) );
+
+		if ( ! $account_sid || ! $auth_token || ! $service_sid ) {
+			return array(
+				'error'  => __( 'Twilio Verify is not configured.', 'handik-booking-app' ),
+				'status' => 400,
+			);
+		}
+
+		$url      = sprintf( 'https://verify.twilio.com/v2/Services/%1$s/%2$s', rawurlencode( $service_sid ), rawurlencode( $resource ) );
+		$response = wp_remote_post(
+			$url,
+			array(
+				'timeout' => 20,
+				'headers' => array(
+					'Authorization' => 'Basic ' . base64_encode( $account_sid . ':' . $auth_token ),
+					'Content-Type'  => 'application/x-www-form-urlencoded',
+				),
+				'body'    => $body,
+			)
+		);
+
+		if ( is_wp_error( $response ) ) {
+			return array(
+				'error'  => $response->get_error_message(),
+				'status' => 502,
+			);
+		}
+
+		$status = (int) wp_remote_retrieve_response_code( $response );
+		$body   = json_decode( (string) wp_remote_retrieve_body( $response ), true );
+		$body   = is_array( $body ) ? $body : array();
+
+		if ( $status < 200 || $status >= 300 ) {
+			$message = '';
+			if ( ! empty( $body['message'] ) ) {
+				$message = (string) $body['message'];
+			} elseif ( ! empty( $body['detail'] ) ) {
+				$message = (string) $body['detail'];
+			}
+			return array(
+				'error'  => $message ? $message : __( 'Twilio Verify request failed.', 'handik-booking-app' ),
+				'status' => $status ? $status : 502,
+			);
+		}
+
+		return $body;
 	}
 
 	/**

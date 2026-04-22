@@ -185,6 +185,9 @@ class Handik_Booking_App_Admin {
 				<?php $this->field( 'cal_webhook_secret', __( 'Cal Webhook Secret', 'handik-booking-app' ), $s['cal_webhook_secret'], 'password' ); ?>
 				<?php $this->field( 'email_from_name', __( 'Email From Name', 'handik-booking-app' ), $s['email_from_name'] ); ?>
 				<?php $this->field( 'email_from_address', __( 'Email From Address', 'handik-booking-app' ), $s['email_from_address'], 'email' ); ?>
+				<?php $this->field( 'twilio_account_sid', __( 'Twilio Account SID', 'handik-booking-app' ), $s['twilio_account_sid'] ); ?>
+				<?php $this->field( 'twilio_auth_token', __( 'Twilio Auth Token', 'handik-booking-app' ), $s['twilio_auth_token'], 'password' ); ?>
+				<?php $this->field( 'twilio_verify_service_sid', __( 'Twilio Verify Service SID', 'handik-booking-app' ), $s['twilio_verify_service_sid'] ); ?>
 			</div>
 			<div class="handik-admin-panel">
 				<p><?php esc_html_e( 'Frontend app embedding options:', 'handik-booking-app' ); ?></p>

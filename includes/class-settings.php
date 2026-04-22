@@ -28,6 +28,9 @@ class Handik_Booking_App_Settings {
 		'cal_webhook_secret'     => 'HANDIK_BOOKING_APP_CAL_WEBHOOK_SECRET',
 		'email_from_name'        => 'HANDIK_BOOKING_APP_EMAIL_FROM_NAME',
 		'email_from_address'     => 'HANDIK_BOOKING_APP_EMAIL_FROM_ADDRESS',
+		'twilio_account_sid'     => 'HANDIK_BOOKING_APP_TWILIO_ACCOUNT_SID',
+		'twilio_auth_token'      => 'HANDIK_BOOKING_APP_TWILIO_AUTH_TOKEN',
+		'twilio_verify_service_sid' => 'HANDIK_BOOKING_APP_TWILIO_VERIFY_SERVICE_SID',
 		'debug_mode'             => 'HANDIK_BOOKING_APP_DEBUG_MODE',
 	);
 
@@ -60,6 +63,9 @@ class Handik_Booking_App_Settings {
 			'cal_webhook_secret'     => '',
 			'email_from_name'        => get_bloginfo( 'name' ),
 			'email_from_address'     => get_option( 'admin_email' ),
+			'twilio_account_sid'     => '',
+			'twilio_auth_token'      => '',
+			'twilio_verify_service_sid' => '',
 			'debug_mode'             => 0,
 			'app_custom_css'         => '',
 			'app_accent_color'       => '#283618',
@@ -249,6 +255,9 @@ class Handik_Booking_App_Settings {
 					$output[ $key ] = preg_replace( '/[^A-Za-z0-9._\/-]/', '', (string) $value );
 					break;
 				case 'github_release_asset_pattern':
+				case 'twilio_account_sid':
+				case 'twilio_auth_token':
+				case 'twilio_verify_service_sid':
 					$output[ $key ] = sanitize_text_field( (string) $value );
 					break;
 				case 'service_catalog_json':
