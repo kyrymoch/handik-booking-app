@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.0.55
+Stable tag: 2.0.56
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, returning-client auth, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,10 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.0.56 =
+* Added smooth screen-to-screen scroll reset so each new booking step returns to a consistent top anchor with space for a fixed header.
+* Locked the app shell, screen body, and booking embed containers to full-width without horizontal overflow so the Cal.com step no longer introduces side scrolling.
 
 = 2.0.55 =
 * Added detailed admin log entries for returning-client verification, including contact lookup, selected delivery path, Twilio Verify request start, HTTP response status, and Twilio error payloads.

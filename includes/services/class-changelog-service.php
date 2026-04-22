@@ -11,6 +11,15 @@ class Handik_Booking_App_Changelog_Service {
 	public function get_entries() {
 		return array(
 			array(
+				'version'      => '2.0.56',
+				'date'         => '2026-04-21',
+				'title'        => 'Normalize Step Scroll Position And Remove Horizontal Booking Overflow',
+				'notes'        => array(
+					'Added a smooth step-change scroll reset so each new screen returns to a consistent top anchor with an offset for fixed site headers.',
+					'Locked the booking app shell, screen body, and Cal.com embed containers to full width with horizontal overflow clipping so the booking step no longer creates sideways scrolling.',
+				),
+			),
+			array(
 				'version'      => '2.0.55',
 				'date'         => '2026-04-21',
 				'title'        => 'Add Deep Twilio Verify Diagnostics For Returning Client SMS',

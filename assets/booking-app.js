@@ -580,6 +580,26 @@
 			this.state.footerHint = '';
 			this.state.footerHintError = false;
 			this.render();
+			this.scrollStepIntoView();
+		}
+
+		scrollStepIntoView() {
+			window.requestAnimationFrame( () => {
+				const shell = this.root.querySelector( '.handik-booking-app__shell' );
+				const header = this.root.querySelector( '.handik-booking-app__screen-header' );
+				const target = header || shell || this.root;
+				if ( ! target ) {
+					return;
+				}
+
+				const rect = target.getBoundingClientRect();
+				const absoluteTop = rect.top + window.pageYOffset;
+				const top = Math.max( 0, absoluteTop - 70 );
+				window.scrollTo( {
+					top: top,
+					behavior: 'smooth'
+				} );
+			} );
 		}
 
 		setByPath( path, value ) {

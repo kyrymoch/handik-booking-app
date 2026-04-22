@@ -1,5 +1,7 @@
 .handik-booking-app {
 	width: 100%;
+	max-width: 100%;
+	overflow-x: clip;
 	font-size: calc(16px * var(--handik-font-scale, 1));
 	color: var(--handik-text, #0f172a);
 	font-family: var(--handik-font-family, inherit);
@@ -15,15 +17,19 @@
 	border-radius: 0;
 	box-shadow: none;
 	position: relative;
+	overflow-x: clip;
 }
 
 .handik-booking-app__screen {
+	width: 100%;
+	max-width: 100%;
 	background: transparent;
 	border-radius: 0;
 	padding: 0;
 	border: 0;
 	position: relative;
-	overflow: hidden;
+	overflow-x: clip;
+	overflow-y: visible;
 }
 
 .handik-booking-app__screen.is-wide {
@@ -674,22 +680,34 @@ openai-chatkit {
 
 .handik-booking-app__booking-embed,
 .handik-booking-app__booking-frame-wrap {
+	width: 100%;
+	max-width: 100%;
+	min-width: 0;
 	border: 1px solid var(--handik-border, #dbe3ea);
 	border-radius: 16px;
-	overflow: hidden;
+	overflow-x: clip;
+	overflow-y: hidden;
 	background: #fff;
 	min-height: 720px;
 }
 
+.handik-booking-app__booking-embed > *,
+.handik-booking-app__booking-frame-wrap > * {
+	max-width: 100% !important;
+}
+
 .handik-booking-app__booking-embed iframe {
-	width: 100%;
+	display: block;
+	width: 100% !important;
+	max-width: 100% !important;
 	min-height: 720px;
 	border: 0;
 }
 
 .handik-booking-app__booking-frame {
 	display: block;
-	width: 100%;
+	width: 100% !important;
+	max-width: 100% !important;
 	min-height: 720px;
 	border: 0;
 	background: #fff;
@@ -866,6 +884,9 @@ openai-chatkit {
 }
 
 .handik-booking-app__screen-body {
+	width: 100%;
+	max-width: 100%;
+	overflow-x: clip;
 	padding-bottom: calc(132px + env(safe-area-inset-bottom, 0px));
 }
 
