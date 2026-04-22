@@ -57,17 +57,43 @@ class Handik_Booking_App_Auth_Service {
 		$phone = $this->contacts->normalize_phone( $phone );
 		$redirect = $redirect ? esc_url_raw( $redirect ) : home_url( '/' );
 
+		$this->logger->info(
+			'Returning client code requested.',
+			array(
+				'email_present'      => (bool) $email,
+				'phone_present'      => (bool) $phone,
+				'normalized_phone'   => $phone,
+				'redirect_provided'  => (bool) $redirect,
+			)
+		);
+
 		if ( ! $email && ! $phone ) {
+			$this->logger->error( 'Returning client code request rejected: missing email and phone.' );
 			return array( 'error' => (string) $this->settings->get( 'ui_error_phone_or_email_required', __( 'Email or phone is required.', 'handik-booking-app' ) ), 'status' => 400 );
 		}
 
 		$limit = $this->rate_limit( $email ? $email : $phone );
 		if ( is_wp_error( $limit ) ) {
+			$this->logger->error(
+				'Returning client code request rate limited.',
+				array(
+					'email_present'    => (bool) $email,
+					'normalized_phone' => $phone,
+					'error'            => $limit->get_error_message(),
+				)
+			);
 			return array( 'error' => $limit->get_error_message(), 'status' => 429 );
 		}
 
 		$contact = $this->contacts->find_by_email_or_phone( $email, $phone );
 		if ( ! $contact ) {
+			$this->logger->info(
+				'Returning client code request: no matching contact found.',
+				array(
+					'email_present'    => (bool) $email,
+					'normalized_phone' => $phone,
+				)
+			);
 			return array(
 				'success' => true,
 				'message' => __( 'If we found a matching client, a one-time code has been sent.', 'handik-booking-app' ),
@@ -76,6 +102,16 @@ class Handik_Booking_App_Auth_Service {
 
 		$target_email = ! empty( $contact['email'] ) ? sanitize_email( $contact['email'] ) : $email;
 		$target_phone = ! empty( $contact['phone'] ) ? $this->contacts->normalize_phone( $contact['phone'] ) : $phone;
+
+		$this->logger->info(
+			'Returning client code request matched contact.',
+			array(
+				'contact_id'        => (int) $contact['id'],
+				'target_email'      => (bool) $target_email,
+				'target_phone'      => (bool) $target_phone,
+				'normalized_phone'  => $target_phone,
+			)
+		);
 
 		if ( $phone ) {
 			if ( ! $this->twilio_verify_configured() ) {
@@ -92,9 +128,23 @@ class Handik_Booking_App_Auth_Service {
 				);
 			}
 
+			$this->logger->info(
+				'Returning client code request using Twilio Verify SMS.',
+				array(
+					'contact_id'       => (int) $contact['id'],
+					'normalized_phone' => $target_phone,
+				)
+			);
 			return $this->start_twilio_phone_verification( (int) $contact['id'], $target_phone );
 		}
 
+		$this->logger->info(
+			'Returning client code request using email verification.',
+			array(
+				'contact_id'    => (int) $contact['id'],
+				'email_present' => (bool) $target_email,
+			)
+		);
 		$issued = $this->create_token( (int) $contact['id'], $target_email, $target_phone );
 		$this->send_message( $contact, $issued['code'], $issued['token'], $target_email, $target_phone, $redirect );
 
@@ -116,6 +166,18 @@ class Handik_Booking_App_Auth_Service {
 		$phone = $this->contacts->normalize_phone( $phone );
 		$code  = sanitize_text_field( $code );
 		$token = sanitize_text_field( $token );
+
+		$this->logger->info(
+			'Returning client verify requested.',
+			array(
+				'email_present'    => (bool) $email,
+				'phone_present'    => (bool) $phone,
+				'normalized_phone' => $phone,
+				'code_present'     => (bool) $code,
+				'token_present'    => (bool) $token,
+				'twilio_enabled'   => $this->twilio_verify_configured(),
+			)
+		);
 
 		if ( $phone && $this->twilio_verify_configured() ) {
 			$twilio = $this->check_twilio_phone_verification( $phone, $code );
@@ -309,6 +371,13 @@ class Handik_Booking_App_Auth_Service {
 		);
 
 		if ( $email ) {
+			$this->logger->info(
+				'Returning client email verification message sending.',
+				array(
+					'contact_id'    => (int) ( $contact['id'] ?? 0 ),
+					'email_present' => (bool) $email,
+				)
+			);
 			add_filter( 'wp_mail_from', array( $this, 'mail_from' ) );
 			add_filter( 'wp_mail_from_name', array( $this, 'mail_from_name' ) );
 			wp_mail(
@@ -326,6 +395,13 @@ class Handik_Booking_App_Auth_Service {
 			return;
 		}
 
+		$this->logger->info(
+			'Returning client SMS verification delegated to custom hook.',
+			array(
+				'contact_id'       => (int) ( $contact['id'] ?? 0 ),
+				'normalized_phone' => $phone,
+			)
+		);
 		do_action( 'handik_booking_app_send_sms_code', $phone, $code, $magic_link, $contact );
 	}
 
@@ -346,6 +422,15 @@ class Handik_Booking_App_Auth_Service {
 	 * @return array<string, mixed>
 	 */
 	protected function start_twilio_phone_verification( $contact_id, $phone ) {
+		$this->logger->info(
+			'Twilio Verify SMS start requested.',
+			array(
+				'contact_id'       => $contact_id,
+				'normalized_phone' => $phone,
+				'service_sid'      => $this->masked_service_sid(),
+			)
+		);
+
 		$response = $this->twilio_verify_request(
 			'Verifications',
 			array(
@@ -388,6 +473,15 @@ class Handik_Booking_App_Auth_Service {
 	 * @return array<string, mixed>
 	 */
 	protected function check_twilio_phone_verification( $phone, $code ) {
+		$this->logger->info(
+			'Twilio Verify SMS check requested.',
+			array(
+				'normalized_phone' => $phone,
+				'code_present'     => (bool) $code,
+				'service_sid'      => $this->masked_service_sid(),
+			)
+		);
+
 		$response = $this->twilio_verify_request(
 			'VerificationCheck',
 			array(
@@ -434,6 +528,15 @@ class Handik_Booking_App_Auth_Service {
 		$service_sid = trim( (string) $this->settings->get( 'twilio_verify_service_sid', '' ) );
 
 		if ( ! $account_sid || ! $auth_token || ! $service_sid ) {
+			$this->logger->error(
+				'Twilio Verify request skipped: missing configuration.',
+				array(
+					'has_account_sid' => (bool) $account_sid,
+					'has_auth_token'  => (bool) $auth_token,
+					'has_service_sid' => (bool) $service_sid,
+					'resource'        => $resource,
+				)
+			);
 			return array(
 				'error'  => __( 'Twilio Verify is not configured.', 'handik-booking-app' ),
 				'status' => 400,
@@ -441,6 +544,17 @@ class Handik_Booking_App_Auth_Service {
 		}
 
 		$url      = sprintf( 'https://verify.twilio.com/v2/Services/%1$s/%2$s', rawurlencode( $service_sid ), rawurlencode( $resource ) );
+		$this->logger->info(
+			'Twilio Verify HTTP request started.',
+			array(
+				'resource'        => $resource,
+				'service_sid'     => $this->masked_service_sid(),
+				'body_keys'       => array_keys( $body ),
+				'to'              => isset( $body['To'] ) ? $body['To'] : '',
+				'channel'         => isset( $body['Channel'] ) ? $body['Channel'] : '',
+			)
+		);
+
 		$response = wp_remote_post(
 			$url,
 			array(
@@ -454,6 +568,14 @@ class Handik_Booking_App_Auth_Service {
 		);
 
 		if ( is_wp_error( $response ) ) {
+			$this->logger->error(
+				'Twilio Verify HTTP request failed before response.',
+				array(
+					'resource'    => $resource,
+					'service_sid' => $this->masked_service_sid(),
+					'error'       => $response->get_error_message(),
+				)
+			);
 			return array(
 				'error'  => $response->get_error_message(),
 				'status' => 502,
@@ -463,6 +585,19 @@ class Handik_Booking_App_Auth_Service {
 		$status = (int) wp_remote_retrieve_response_code( $response );
 		$body   = json_decode( (string) wp_remote_retrieve_body( $response ), true );
 		$body   = is_array( $body ) ? $body : array();
+
+		$this->logger->info(
+			'Twilio Verify HTTP response received.',
+			array(
+				'resource'        => $resource,
+				'service_sid'     => $this->masked_service_sid(),
+				'status'          => $status,
+				'twilio_status'   => isset( $body['status'] ) ? (string) $body['status'] : '',
+				'twilio_sid'      => isset( $body['sid'] ) ? (string) $body['sid'] : '',
+				'twilio_message'  => isset( $body['message'] ) ? (string) $body['message'] : '',
+				'twilio_code'     => isset( $body['code'] ) ? (string) $body['code'] : '',
+			)
+		);
 
 		if ( $status < 200 || $status >= 300 ) {
 			$message = '';
@@ -478,6 +613,18 @@ class Handik_Booking_App_Auth_Service {
 		}
 
 		return $body;
+	}
+
+	/**
+	 * @return string
+	 */
+	protected function masked_service_sid() {
+		$service_sid = trim( (string) $this->settings->get( 'twilio_verify_service_sid', '' ) );
+		if ( strlen( $service_sid ) <= 8 ) {
+			return $service_sid;
+		}
+
+		return substr( $service_sid, 0, 4 ) . '...' . substr( $service_sid, -4 );
 	}
 
 	/**

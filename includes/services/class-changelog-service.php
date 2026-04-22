@@ -11,6 +11,16 @@ class Handik_Booking_App_Changelog_Service {
 	public function get_entries() {
 		return array(
 			array(
+				'version'      => '2.0.55',
+				'date'         => '2026-04-21',
+				'title'        => 'Add Deep Twilio Verify Diagnostics For Returning Client SMS',
+				'notes'        => array(
+					'Added detailed log entries for returning-client code requests, including whether the contact was found, which delivery channel was selected, and whether Twilio Verify was configured.',
+					'Logged Twilio Verify request start, HTTP response status, Twilio status/SID, and Twilio error fields so SMS delivery issues can be diagnosed directly from the admin Logs screen.',
+					'Added matching verification-check logs so it is visible whether the code check failed before or after reaching Twilio.',
+				),
+			),
+			array(
 				'version'      => '2.0.54',
 				'date'         => '2026-04-21',
 				'title'        => 'Add Twilio Verify For Returning Client Phone Codes',
