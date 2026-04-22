@@ -11,6 +11,15 @@ class Handik_Booking_App_Changelog_Service {
 	public function get_entries() {
 		return array(
 			array(
+				'version'      => '2.0.57',
+				'date'         => '2026-04-21',
+				'title'        => 'Fit Virtual Assistant Into The Mobile Viewport',
+				'notes'        => array(
+					'Added a dedicated assistant screen class so the mobile Virtual assistant step can size itself against the available viewport instead of using the generic screen layout.',
+					'Removed the hard inline ChatKit min-height and tied the hosted chat element to the available assistant host height so the title, intro, chat, fixed header offset, and bottom bar fit together more reliably on phones.',
+				),
+			),
+			array(
 				'version'      => '2.0.56',
 				'date'         => '2026-04-21',
 				'title'        => 'Normalize Step Scroll Position And Remove Horizontal Booking Overflow',

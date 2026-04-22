@@ -497,7 +497,8 @@
 			record.element = document.createElement( CHATKIT_TAG );
 			record.element.style.display = 'block';
 			record.element.style.width = '100%';
-			record.element.style.minHeight = '520px';
+			record.element.style.height = '100%';
+			record.element.style.minHeight = '100%';
 
 			record.element.addEventListener( 'chatkit.ready', function() {
 				record.ready = true;

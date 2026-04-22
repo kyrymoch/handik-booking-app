@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.0.56
+Stable tag: 2.0.57
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, returning-client auth, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,10 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.0.57 =
+* Constrained the mobile `Virtual assistant` step so the title, intro, chat area, fixed header offset, and bottom action bar fit into one viewport more reliably.
+* Removed the hard inline chat min-height and tied the hosted ChatKit element to the available assistant host height on mobile screens.
 
 = 2.0.56 =
 * Added smooth screen-to-screen scroll reset so each new booking step returns to a consistent top anchor with space for a fixed header.
