@@ -109,7 +109,7 @@ class Handik_Booking_App_Settings {
 			'ui_returning_verify_title' => 'Returning client verification',
 			'ui_returning_verify_intro' => 'Enter your email or phone to receive a one-time code.',
 			'ui_task_selection_title'   => 'What do you need help with?',
-			'ui_task_selection_intro'   => 'Choose one or more services so we can route your booking correctly.',
+			'ui_task_selection_intro'   => 'Tap one or more services to select or remove them so we can route your booking correctly.',
 			'ui_project_label'          => 'Complex Project Work',
 			'ui_address_title'          => 'Address details',
 			'ui_address_label'          => 'Address of the job',

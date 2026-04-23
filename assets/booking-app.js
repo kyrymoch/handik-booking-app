@@ -594,7 +594,7 @@
 
 				const rect = target.getBoundingClientRect();
 				const absoluteTop = rect.top + window.pageYOffset;
-				const top = Math.max( 0, absoluteTop - 70 );
+				const top = Math.max( 0, absoluteTop - 80 );
 				window.scrollTo( {
 					top: top,
 					behavior: 'smooth'
@@ -1764,7 +1764,7 @@
 
 		tasksMarkup() {
 			const groups = ( this.bootstrap && this.bootstrap.task_catalog ) || [];
-			return '<p class="handik-booking-app__intro">' + this.escape( config.strings.taskIntro || 'Choose one or more services so we can route your booking correctly.' ) + '</p><div class="handik-task-groups">' +
+			return '<p class="handik-booking-app__intro">' + this.escape( config.strings.taskIntro || 'Tap one or more services to select or remove them so we can route your booking correctly.' ) + '</p><div class="handik-task-groups">' +
 				groups.map( ( group ) => '<div class="handik-task-group"><h3>' + this.escape( group.group ) + '</h3><div class="handik-task-grid">' +
 					group.tasks.map( ( task ) => '<button type="button" class="handik-task ' + ( this.taskSelected( task.id ) ? 'is-selected' : '' ) + '" data-task-id="' + this.escape( task.id ) + '">' + this.escape( task.label ) + '</button>' ).join( '' ) +
 				'</div></div>' ).join( '' ) +
@@ -1788,7 +1788,7 @@
 				? '<div class="handik-photo-list">' + this.state.photos.map( ( photo ) => '<span>' + this.escape( photo.name || photo.url || 'photo' ) + '</span>' ).join( '' ) + '</div>'
 				: '<div class="handik-photo-list is-empty"><span>' + this.escape( config.strings.photosEmpty || 'No photos added yet' ) + '</span></div>';
 			return '<p class="handik-booking-app__intro">' + this.escape( config.strings.photosIntro || 'Photos really help us understand the job faster, but you can continue without them if needed.' ) + '</p>' +
-				'<label class="handik-field"><span>' + this.escape( config.strings.photosLabel || 'Photos' ) + '</span><span class="handik-field__help">' + this.escape( config.strings.photosHelp || 'Add a few clear photos so we can understand the job faster.' ) + '</span><input type="file" id="handik-photo-input" class="handik-photo-input" multiple accept="image/*" /><button type="button" class="handik-photo-dropzone" data-action="choose-photos"><span class="handik-photo-dropzone__icon" aria-hidden="true"></span><strong>' + this.escape( config.strings.photosCta || 'Tap to add photos' ) + '</strong>' + ( this.state.photoUploading ? '<span>' + this.escape( config.strings.uploading || 'Loading...' ) + '</span><span class="handik-inline-spinner" aria-hidden="true"></span>' : '' ) + '</button>' + photosMarkup + '</label>' +
+				'<label class="handik-field"><span>' + this.escape( config.strings.photosLabel || 'Photos' ) + '</span><span class="handik-field__help">' + this.escape( config.strings.photosHelp || 'Add a few clear photos so we can understand the job faster.' ) + '</span><input type="file" id="handik-photo-input" class="handik-photo-input" multiple accept="image/*" /><button type="button" class="handik-photo-dropzone" data-action="choose-photos"><span class="handik-photo-dropzone__icon" aria-hidden="true"></span><span>' + this.escape( config.strings.photosCta || 'Tap to add photos' ) + '</span>' + ( this.state.photoUploading ? '<span>' + this.escape( config.strings.uploading || 'Loading...' ) + '</span><span class="handik-inline-spinner" aria-hidden="true"></span>' : '' ) + '</button>' + photosMarkup + '</label>' +
 				this.footerActions( 'back-photos', 'photos-next', this.escape( config.strings.continue ), this.escape( config.strings.back ), { continueMuted: ! this.stepCanContinue( 'photos' ) } );
 		}
 

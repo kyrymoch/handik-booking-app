@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.0.57
+Stable tag: 2.0.58
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, returning-client auth, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,11 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.0.58 =
+* Updated the built-in service catalog to the latest task list from the attached planning file, including the renamed Electrical, Doors, Carpentry, and Larger-Scale Work entries.
+* Increased the automatic step scroll reset offset from 70px to 80px to better clear fixed headers during screen transitions.
+* Clarified the task-selection intro so it explains that tapping a service toggles it on and off, and removed the bold styling from the Photos `Tap to add photos` call to action.
 
 = 2.0.57 =
 * Constrained the mobile `Virtual assistant` step so the title, intro, chat area, fixed header offset, and bottom action bar fit into one viewport more reliably.

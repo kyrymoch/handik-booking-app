@@ -148,6 +148,36 @@ class Handik_Booking_App_Service_Catalog_Service {
 			'general_other',
 		);
 
+		$previous_default_task_ids = array(
+			'furniture_assembly_reassembly',
+			'mounting_hanging',
+			'furniture_cabinet_repairs',
+			'plumbing_fixtures_repairs',
+			'plumbing_pipework_supply_lines',
+			'appliance_installation_repair',
+			'electrical_installation_repair',
+			'smart_home_installation',
+			'in_wall_concealed_cable_work',
+			'drywall_plaster_repair',
+			'painting_refinishing',
+			'flooring_tile',
+			'sealing_caulking',
+			'door_installation_replacement',
+			'door_adjustments_hardware',
+			'window_installation_replacement',
+			'window_treatment_repair',
+			'weatherproofing',
+			'finish_carpentry',
+			'built_ins',
+			'wood_repairs_reinforcement',
+			'deck_porch',
+			'siding_fences',
+			'yard_landscaping_no_mowing',
+			'concrete_cement_work',
+			'general_handyman_help',
+			'project_large_job',
+		);
+
 		$catalog_task_ids = array();
 		foreach ( $catalog as $group ) {
 			foreach ( $group['tasks'] ?? array() as $task ) {
@@ -160,7 +190,13 @@ class Handik_Booking_App_Service_Catalog_Service {
 		sort( $legacy_task_ids );
 		sort( $catalog_task_ids );
 
-		return $legacy_task_ids === $catalog_task_ids;
+		if ( $legacy_task_ids === $catalog_task_ids ) {
+			return true;
+		}
+
+		sort( $previous_default_task_ids );
+
+		return $previous_default_task_ids === $catalog_task_ids;
 	}
 
 	/**
@@ -180,20 +216,20 @@ class Handik_Booking_App_Service_Catalog_Service {
 						'rate_family'    => 'assembly_basic',
 					),
 					array(
-						'id'             => 'mounting_hanging',
-						'label'          => 'Mounting & Hanging',
-						'description'    => 'Mounting TVs, shelves, mirrors, curtain rods, artwork, and similar wall-mounted items.',
-						'rate_label'     => '$60/hr',
-						'service_family' => 'mounting_hanging',
-						'rate_family'    => 'assembly_basic',
-					),
-					array(
 						'id'             => 'furniture_cabinet_repairs',
 						'label'          => 'Furniture & Cabinet Repairs',
 						'description'    => 'Repairs for cabinets, drawers, hinges, panels, furniture parts, and similar wood-based household items.',
 						'rate_label'     => '$70/hr',
 						'service_family' => 'furniture_cabinet_repair',
 						'rate_family'    => 'repair_standard',
+					),
+					array(
+						'id'             => 'mounting_hanging',
+						'label'          => 'Mounting & Hanging',
+						'description'    => 'Mounting TVs, shelves, mirrors, curtain rods, artwork, and similar wall-mounted items.',
+						'rate_label'     => '$60/hr',
+						'service_family' => 'mounting_hanging',
+						'rate_family'    => 'assembly_basic',
 					),
 				),
 			),
@@ -227,23 +263,23 @@ class Handik_Booking_App_Service_Catalog_Service {
 				),
 			),
 			array(
-				'group' => 'Electrical, Smart Home & Low Voltage',
+				'group' => 'Electrical & Smart Home',
 				'tasks' => array(
 					array(
-						'id'             => 'electrical_installation_repair',
-						'label'          => 'Electrical Installation & Repair',
-						'description'    => 'Minor electrical installation and repair such as fixtures, outlets, switches, and similar non-major electrical work.',
-						'rate_label'     => '$70/hr',
-						'service_family' => 'electrical_service',
-						'rate_family'    => 'repair_standard',
+						'id'             => 'electrical_smart_home_installation',
+						'label'          => 'Electrical & Smart Home Installation',
+						'description'    => 'Light electrical work and smart home device installation such as fixtures, outlets, switches, thermostats, doorbells, cameras, locks, sensors, and similar household upgrades or replacements.',
+						'rate_label'     => '$75/hr',
+						'service_family' => 'electrical_smart_home',
+						'rate_family'    => 'trade_general',
 					),
 					array(
-						'id'             => 'smart_home_installation',
-						'label'          => 'Smart Home Installation',
-						'description'    => 'Installation and setup of smart home devices such as doorbells, thermostats, cameras, locks, and sensors.',
-						'rate_label'     => '$80/hr',
-						'service_family' => 'smart_home_installation',
-						'rate_family'    => 'installation_specialty',
+						'id'             => 'lighting_ceiling_fans',
+						'label'          => 'Lighting & Ceiling Fans',
+						'description'    => 'Installation or replacement of light fixtures, ceiling fans, sconces, pendant lights, and similar common lighting-related household work.',
+						'rate_label'     => '$75/hr',
+						'service_family' => 'lighting_fans',
+						'rate_family'    => 'trade_general',
 					),
 					array(
 						'id'             => 'in_wall_concealed_cable_work',
@@ -275,6 +311,14 @@ class Handik_Booking_App_Service_Catalog_Service {
 						'rate_family'    => 'repair_standard',
 					),
 					array(
+						'id'             => 'sealing_caulking_weatherproofing',
+						'label'          => 'Sealing, Caulking & Weatherproofing',
+						'description'    => 'Caulking, gap sealing, weatherstripping, draft sealing, and similar work to improve insulation, reduce air leakage, and protect joints and openings from moisture or wear.',
+						'rate_label'     => '$75/hr',
+						'service_family' => 'sealing_weatherproofing',
+						'rate_family'    => 'trade_general',
+					),
+					array(
 						'id'             => 'flooring_tile',
 						'label'          => 'Flooring & Tile',
 						'description'    => 'Minor flooring and tile repairs, transitions, grout-related fixes, trim details, and similar finish work.',
@@ -282,58 +326,26 @@ class Handik_Booking_App_Service_Catalog_Service {
 						'service_family' => 'flooring_tile_repair',
 						'rate_family'    => 'trade_general',
 					),
-					array(
-						'id'             => 'sealing_caulking',
-						'label'          => 'Sealing & Caulking',
-						'description'    => 'Removal and replacement of caulk and sealant in kitchens, bathrooms, around trim, fixtures, and similar joints.',
-						'rate_label'     => '$75/hr',
-						'service_family' => 'sealing_caulking',
-						'rate_family'    => 'trade_general',
-					),
 				),
 			),
 			array(
-				'group' => 'Doors, Windows & Weatherproofing',
+				'group' => 'Doors & Windows',
 				'tasks' => array(
 					array(
-						'id'             => 'door_installation_replacement',
-						'label'          => 'Door Installation & Replacement',
-						'description'    => 'Installation or replacement of interior or exterior doors where fitting, alignment, and hardware setup are required.',
+						'id'             => 'door_work_hardware',
+						'label'          => 'Door Work & Hardware',
+						'description'    => 'Door installation, replacement, alignment, hinge work, locks, handles, closers, latches, and similar door-related repairs or hardware adjustments.',
 						'rate_label'     => '$80/hr',
-						'service_family' => 'door_installation',
+						'service_family' => 'door_work',
 						'rate_family'    => 'installation_specialty',
 					),
 					array(
-						'id'             => 'door_adjustments_hardware',
-						'label'          => 'Door Adjustments & Hardware',
-						'description'    => 'Door sticking, alignment, hinge work, locks, handles, closers, latches, and related door hardware fixes.',
-						'rate_label'     => '$75/hr',
-						'service_family' => 'door_hardware_adjustment',
-						'rate_family'    => 'trade_general',
-					),
-					array(
-						'id'             => 'window_installation_replacement',
-						'label'          => 'Window Installation & Replacement',
-						'description'    => 'Installation or replacement of window units and similar more advanced window-related work.',
-						'rate_label'     => '$110/hr',
-						'service_family' => 'window_installation',
-						'rate_family'    => 'precision_specialty',
-					),
-					array(
-						'id'             => 'window_treatment_repair',
-						'label'          => 'Window & Treatment Repair',
-						'description'    => 'Window adjustments, sash or mechanism issues, blinds, shades, curtain hardware, and similar window-area repairs.',
-						'rate_label'     => '$75/hr',
-						'service_family' => 'window_treatment_repair',
-						'rate_family'    => 'trade_general',
-					),
-					array(
-						'id'             => 'weatherproofing',
-						'label'          => 'Weatherproofing',
-						'description'    => 'Draft sealing, weatherstripping, gap sealing, and similar work to improve insulation and reduce air leakage.',
-						'rate_label'     => '$75/hr',
-						'service_family' => 'weatherproofing',
-						'rate_family'    => 'trade_general',
+						'id'             => 'window_treatment_work',
+						'label'          => 'Window & Window Treatment Work',
+						'description'    => 'Window replacement, window adjustments, sash or mechanism issues, blinds, shades, curtain hardware, and similar window or window-treatment work.',
+						'rate_label'     => '$95/hr',
+						'service_family' => 'window_work',
+						'rate_family'    => 'premium_specialty',
 					),
 				),
 			),
@@ -341,28 +353,20 @@ class Handik_Booking_App_Service_Catalog_Service {
 				'group' => 'Carpentry & Woodworking',
 				'tasks' => array(
 					array(
-						'id'             => 'finish_carpentry',
-						'label'          => 'Finish Carpentry',
-						'description'    => 'Trim, casing, baseboards, molding details, and similar interior finish carpentry work.',
+						'id'             => 'finish_carpentry_trim',
+						'label'          => 'Finish Carpentry & Trim Work',
+						'description'    => 'Trim, casing, baseboards, molding details, small finish carpentry, and similar interior woodwork.',
 						'rate_label'     => '$80/hr',
 						'service_family' => 'finish_carpentry',
 						'rate_family'    => 'installation_specialty',
 					),
 					array(
-						'id'             => 'built_ins',
-						'label'          => 'Built-Ins',
-						'description'    => 'Built-in units, integrated storage, custom cabinet-style installations, and similar more advanced interior build work.',
-						'rate_label'     => '$110/hr',
-						'service_family' => 'built_in_installation',
-						'rate_family'    => 'precision_specialty',
-					),
-					array(
-						'id'             => 'wood_repairs_reinforcement',
-						'label'          => 'Wood Repairs & Reinforcement',
-						'description'    => 'Reinforcement and repair of damaged wood components where added strength or rebuild work is needed.',
-						'rate_label'     => '$85/hr',
-						'service_family' => 'wood_reinforcement',
-						'rate_family'    => 'structural_repair',
+						'id'             => 'built_ins_wood_repairs',
+						'label'          => 'Built-Ins & Wood Repairs',
+						'description'    => 'Built-ins, custom woodwork, cabinet-style installations, wood repairs, reinforcement, and similar more involved carpentry work.',
+						'rate_label'     => '$95/hr',
+						'service_family' => 'built_ins_woodwork',
+						'rate_family'    => 'premium_specialty',
 					),
 				),
 			),
@@ -415,10 +419,10 @@ class Handik_Booking_App_Service_Catalog_Service {
 						'rate_family'    => 'general_diagnostic',
 					),
 					array(
-						'id'             => 'project_large_job',
-						'label'          => 'Complex Project Work',
-						'description'    => 'Larger jobs, broader scopes, or project-style work such as multiple rooms, extensive repairs, or more complex installations.',
-						'rate_label'     => 'Custom estimate',
+						'id'             => 'larger_scale_work',
+						'label'          => 'Larger-Scale Work',
+						'description'    => 'Larger-scope, multi-step, or more complex work that typically starts with a consultation and initial assessment before the work itself is scheduled. This may include multiple rooms, broader repairs, custom installations, or project-style work that needs planning first.',
+						'rate_label'     => 'Consultation first',
 						'service_family' => 'project_large_job',
 						'rate_family'    => 'project_custom',
 					),

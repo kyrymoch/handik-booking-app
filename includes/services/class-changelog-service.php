@@ -11,6 +11,16 @@ class Handik_Booking_App_Changelog_Service {
 	public function get_entries() {
 		return array(
 			array(
+				'version'      => '2.0.58',
+				'date'         => '2026-04-22',
+				'title'        => 'Refresh The Default Task Catalog And Tighten Step Copy',
+				'notes'        => array(
+					'Updated the built-in service catalog to the latest attached task list, including the revised Electrical & Smart Home, Doors & Windows, Carpentry & Woodworking, and Larger-Scale Work entries.',
+					'Raised the smooth step-change scroll offset from 70px to 80px so each new screen clears fixed headers more comfortably.',
+					'Clarified the task-selection intro to explain tap-to-select and tap-to-remove behavior, and removed the bold styling from the Photos `Tap to add photos` call to action.',
+				),
+			),
+			array(
 				'version'      => '2.0.57',
 				'date'         => '2026-04-21',
 				'title'        => 'Fit Virtual Assistant Into The Mobile Viewport',

@@ -60,6 +60,11 @@ class Handik_Booking_App_Assets {
 			$assistant_continue = 'Book a time';
 		}
 
+		$task_intro = (string) $this->settings->get( 'ui_task_selection_intro', 'Tap one or more services to select or remove them so we can route your booking correctly.' );
+		if ( '' === trim( $task_intro ) || 'Choose one or more services so we can route your booking correctly.' === trim( $task_intro ) ) {
+			$task_intro = 'Tap one or more services to select or remove them so we can route your booking correctly.';
+		}
+
 		wp_localize_script(
 			'handik-booking-app',
 			'HandikBookingAppConfig',
@@ -98,7 +103,7 @@ class Handik_Booking_App_Assets {
 					'verifyTitle'        => (string) $this->settings->get( 'ui_returning_verify_title', 'Returning client verification' ),
 					'verifyIntro'        => (string) $this->settings->get( 'ui_returning_verify_intro', 'Enter your email or phone to receive a one-time code.' ),
 					'taskTitle'          => (string) $this->settings->get( 'ui_task_selection_title', 'What do you need help with?' ),
-					'taskIntro'          => (string) $this->settings->get( 'ui_task_selection_intro', 'Choose one or more services so we can route your booking correctly.' ),
+					'taskIntro'          => $task_intro,
 					'projectLabel'       => (string) $this->settings->get( 'ui_project_label', 'Complex Project Work' ),
 					'addressTitle'       => (string) $this->settings->get( 'ui_address_title', 'Address details' ),
 					'addressLabel'       => (string) $this->settings->get( 'ui_address_label', 'Address of the job' ),
