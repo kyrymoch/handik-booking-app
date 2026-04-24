@@ -11,6 +11,16 @@ class Handik_Booking_App_Changelog_Service {
 	public function get_entries() {
 		return array(
 			array(
+				'version'      => '2.0.59',
+				'date'         => '2026-04-24',
+				'title'        => 'Align Routing And Cal Booking Prefill With The New Assistant Workflow',
+				'notes'        => array(
+					'Updated fallback routing to match the new workflow schema, including `6_8_hours`, `suggested_duration_hours`, and `pricing_posture`, while routing more by task family and complexity than by raw task count alone.',
+					'Cal.com booking URLs now prefill the multi-duration `duration` parameter when the assistant suggests a duration, and they also carry `suggested_duration_hours` and `pricing_posture` in booking metadata.',
+					'The ChatKit bridge and backend assistant-result sanitizers now preserve the new workflow fields so suggested duration and pricing posture survive storage, routing, and booking handoff.',
+				),
+			),
+			array(
 				'version'      => '2.0.58',
 				'date'         => '2026-04-22',
 				'title'        => 'Refresh The Default Task Catalog And Tighten Step Copy',

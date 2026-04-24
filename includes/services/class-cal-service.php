@@ -58,6 +58,10 @@ class Handik_Booking_App_Cal_Service {
 			return '';
 		}
 		$contact = ! empty( $request['contact_id'] ) ? $this->contacts->get( (int) $request['contact_id'] ) : null;
+		$assistant_result = ! empty( $request['assistant_result'] ) && is_array( $request['assistant_result'] ) ? $request['assistant_result'] : array();
+		$app_state        = ! empty( $request['app_state'] ) && is_array( $request['app_state'] ) ? $request['app_state'] : array();
+		$suggested_duration = ! empty( $assistant_result['suggested_duration_hours'] ) ? (string) $assistant_result['suggested_duration_hours'] : (string) ( $app_state['suggested_duration_hours'] ?? '' );
+		$pricing_posture    = ! empty( $assistant_result['pricing_posture'] ) ? (string) $assistant_result['pricing_posture'] : (string) ( $app_state['pricing_posture'] ?? '' );
 		$params  = array_filter(
 			array(
 				'name'                            => $contact['full_name'] ?? '',
@@ -68,11 +72,18 @@ class Handik_Booking_App_Cal_Service {
 				'metadata[handik_booking_type]'   => (string) $request['booking_type'],
 				'metadata[handik_contact_id]'     => ! empty( $request['contact_id'] ) ? (string) $request['contact_id'] : '',
 				'metadata[handik_client_type]'    => $request['client_type'],
+				'metadata[handik_suggested_duration_hours]' => $suggested_duration,
+				'metadata[handik_pricing_posture]'          => $pricing_posture,
 			),
 			function ( $value ) {
 				return '' !== (string) $value;
 			}
 		);
+
+		$duration_minutes = $this->duration_minutes( $suggested_duration );
+		if ( $duration_minutes > 0 ) {
+			$params['duration'] = (string) $duration_minutes;
+		}
 		$location_address = trim( implode( ', ', array_filter( array( $request['address_full'] ?? '', $request['address_unit'] ?? '' ) ) ) );
 		if ( $location_address ) {
 			$params['location'] = wp_json_encode(
@@ -92,5 +103,21 @@ class Handik_Booking_App_Cal_Service {
 		$url = add_query_arg( $params, $base );
 		$this->job_requests->set_booking_url( $request_id, $url, $request['booking_type'] );
 		return $url;
+	}
+
+	/**
+	 * @param string $suggested_duration Suggested duration.
+	 * @return int
+	 */
+	protected function duration_minutes( $suggested_duration ) {
+		if ( 'consult_1' === $suggested_duration ) {
+			return 60;
+		}
+
+		if ( preg_match( '/^[1-8]$/', (string) $suggested_duration ) ) {
+			return (int) $suggested_duration * 60;
+		}
+
+		return 0;
 	}
 }

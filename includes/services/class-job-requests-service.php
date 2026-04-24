@@ -82,6 +82,10 @@ class Handik_Booking_App_Job_Requests_Service {
 	public function apply_routing( $request_id, array $routing, array $assistant_result = array() ) {
 		global $wpdb;
 		$table = Handik_Booking_App_DB::table( 'job_requests' );
+		$request = $this->get( $request_id );
+		$app_state = ( $request && ! empty( $request['app_state'] ) && is_array( $request['app_state'] ) ) ? $request['app_state'] : array();
+		$app_state['suggested_duration_hours'] = sanitize_text_field( (string) ( $routing['suggested_duration_hours'] ?? $assistant_result['suggested_duration_hours'] ?? '' ) );
+		$app_state['pricing_posture']          = sanitize_key( (string) ( $routing['pricing_posture'] ?? $assistant_result['pricing_posture'] ?? '' ) );
 		$wpdb->update(
 			$table,
 			array(
@@ -95,6 +99,7 @@ class Handik_Booking_App_Job_Requests_Service {
 				'routing_status'        => sanitize_key( $routing['routing_status'] ?? 'pending' ),
 				'unsafe_flag'           => ! empty( $routing['unsafe_flag'] ) ? 1 : 0,
 				'unsafe_reason'         => sanitize_textarea_field( $routing['unsafe_reason'] ?? '' ),
+				'app_state_json'        => wp_json_encode( $app_state ),
 				'assistant_result_json' => wp_json_encode( $assistant_result ),
 			),
 			array( 'id' => $request_id )

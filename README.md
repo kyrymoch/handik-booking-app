@@ -104,7 +104,7 @@ The app runs on one page and moves through these screens:
 
 - `1_2_hours`
 - `3_5_hours`
-- `6_7_hours`
+- `6_8_hours`
 - `project_consult`
 
 ## Local CRM Tables

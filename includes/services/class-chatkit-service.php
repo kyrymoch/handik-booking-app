@@ -409,6 +409,9 @@ class Handik_Booking_App_ChatKit_Service {
 			'draft_request_id'             => (int) $request['id'],
 			'client_type'                  => (string) $request['client_type'],
 			'job_shape'                    => (string) $request['job_shape'],
+			'selected_task_count'          => ! empty( $request['selected_tasks'] ) && is_array( $request['selected_tasks'] ) ? count( $request['selected_tasks'] ) : 0,
+			'selected_tasks_summary'       => ! empty( $request['selected_tasks'] ) && is_array( $request['selected_tasks'] ) ? implode( ', ', array_map( 'sanitize_key', $request['selected_tasks'] ) ) : '',
+			'address_summary'              => (string) ( $request['address_full'] ?? '' ),
 			'is_project'                   => ! empty( $request['is_project'] ),
 			'has_photos'                   => ! empty( $request['photos'] ),
 			'has_actionable_visual_context'=> ! empty( $analysis['has_actionable_visual_context'] ),
@@ -468,17 +471,22 @@ class Handik_Booking_App_ChatKit_Service {
 
 	protected function sanitize_assistant_result( array $result ) {
 		$allowed = array( 'standard_visit', 'extended_visit', 'large_visit', 'project_consultation' );
+		$suggested_duration_allowed = array( '1', '2', '3', '4', '5', '6', '7', '8', 'consult_1' );
+		$pricing_allowed            = array( 'hourly_only', 'hourly_plus_materials', 'consultation_first' );
 		return array(
-			'service_family'    => sanitize_key( $result['service_family'] ?? '' ),
-			'rate_family'       => sanitize_key( $result['rate_family'] ?? '' ),
-			'duration_bucket'   => sanitize_key( $result['duration_bucket'] ?? '' ),
-			'booking_type'      => ! empty( $result['booking_type'] ) && in_array( $result['booking_type'], $allowed, true ) ? $result['booking_type'] : '',
-			'assistant_summary' => sanitize_textarea_field( $result['assistant_summary'] ?? '' ),
-			'estimate_notes'    => sanitize_textarea_field( $result['estimate_notes'] ?? '' ),
-			'enough_information'=> ! empty( $result['enough_information'] ),
-			'unsafe'            => ! empty( $result['unsafe'] ),
-			'unsafe_reason'     => sanitize_textarea_field( $result['unsafe_reason'] ?? '' ),
-			'is_project'        => ! empty( $result['is_project'] ),
+			'service_family'           => sanitize_key( $result['service_family'] ?? '' ),
+			'rate_family'              => sanitize_key( $result['rate_family'] ?? '' ),
+			'duration_bucket'          => sanitize_key( $result['duration_bucket'] ?? '' ),
+			'booking_type'             => ! empty( $result['booking_type'] ) && in_array( $result['booking_type'], $allowed, true ) ? $result['booking_type'] : '',
+			'suggested_duration_hours' => ! empty( $result['suggested_duration_hours'] ) && in_array( (string) $result['suggested_duration_hours'], $suggested_duration_allowed, true ) ? (string) $result['suggested_duration_hours'] : '',
+			'pricing_posture'          => ! empty( $result['pricing_posture'] ) && in_array( (string) $result['pricing_posture'], $pricing_allowed, true ) ? (string) $result['pricing_posture'] : '',
+			'assistant_summary'        => sanitize_textarea_field( $result['assistant_summary'] ?? '' ),
+			'estimate_notes'           => sanitize_textarea_field( $result['estimate_notes'] ?? '' ),
+			'next_message'             => sanitize_textarea_field( $result['next_message'] ?? '' ),
+			'enough_information'       => ! empty( $result['enough_information'] ),
+			'unsafe'                   => ! empty( $result['unsafe'] ),
+			'unsafe_reason'            => sanitize_textarea_field( $result['unsafe_reason'] ?? '' ),
+			'is_project'               => ! empty( $result['is_project'] ),
 		);
 	}
 

@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.0.58
+Stable tag: 2.0.59
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, returning-client auth, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,11 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.0.59 =
+* Updated fallback routing to align with the new workflow schema and Cal.com duration setup, including `6_8_hours`, `suggested_duration_hours`, and `pricing_posture`.
+* Routing now relies more on task type and complexity signals than raw task count, with better defaults for installation, premium specialty, exterior, and consultation-first work.
+* Cal.com booking URLs now carry `duration` plus metadata for `suggested_duration_hours` and `pricing_posture`, and the ChatKit bridge/backend now preserve the new assistant-result fields.
 
 = 2.0.58 =
 * Updated the built-in service catalog to the latest task list from the attached planning file, including the renamed Electrical, Doors, Carpentry, and Larger-Scale Work entries.

@@ -38,11 +38,15 @@
 	function normalizeResult( input ) {
 		const value = input && typeof input === 'object' ? input : {};
 		const allowed = [ 'standard_visit', 'extended_visit', 'large_visit', 'project_consultation' ];
+		const suggestedDurationAllowed = [ '1', '2', '3', '4', '5', '6', '7', '8', 'consult_1' ];
+		const pricingAllowed = [ 'hourly_only', 'hourly_plus_materials', 'consultation_first' ];
 		return {
 			service_family: sanitizeKey( value.service_family ),
 			rate_family: sanitizeKey( value.rate_family ),
 			duration_bucket: sanitizeKey( value.duration_bucket ),
 			booking_type: allowed.includes( value.booking_type ) ? value.booking_type : '',
+			suggested_duration_hours: suggestedDurationAllowed.includes( String( value.suggested_duration_hours || '' ) ) ? String( value.suggested_duration_hours ) : '',
+			pricing_posture: pricingAllowed.includes( String( value.pricing_posture || '' ) ) ? String( value.pricing_posture ) : '',
 			assistant_summary: sanitizeText( value.assistant_summary ),
 			estimate_notes: sanitizeText( value.estimate_notes ),
 			enough_information: Boolean( value.enough_information ),
@@ -83,7 +87,9 @@
 			(
 				Object.prototype.hasOwnProperty.call( value, 'booking_type' ) ||
 				Object.prototype.hasOwnProperty.call( value, 'assistant_summary' ) ||
-				Object.prototype.hasOwnProperty.call( value, 'next_message' )
+				Object.prototype.hasOwnProperty.call( value, 'next_message' ) ||
+				Object.prototype.hasOwnProperty.call( value, 'suggested_duration_hours' ) ||
+				Object.prototype.hasOwnProperty.call( value, 'pricing_posture' )
 			);
 	}
 
