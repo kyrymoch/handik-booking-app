@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.0.61
+Stable tag: 2.1.1
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, returning-client auth, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,11 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.1.1 =
+* Added the `save_assistant_routing_result` ChatKit client tool so the workflow can explicitly persist the full routing payload instead of relying only on ChatKit structured-result events.
+* Expanded assistant-result diagnostics with booking type, duration bucket, suggested duration, pricing posture, and routing persistence logs.
+* Added Cal.com booking URL diagnostics showing the selected event type, suggested duration, converted duration minutes, pricing posture, and final booking URL.
 
 = 2.0.61 =
 * Reordered the booking flow so task choice comes before address details.

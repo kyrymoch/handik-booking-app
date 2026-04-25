@@ -21,14 +21,21 @@ class Handik_Booking_App_Cal_Service {
 	protected $contacts;
 
 	/**
+	 * @var Handik_Booking_App_Logger|null
+	 */
+	protected $logger;
+
+	/**
 	 * @param Handik_Booking_App_Settings             $settings Settings.
 	 * @param Handik_Booking_App_Job_Requests_Service $job_requests Requests.
 	 * @param Handik_Booking_App_Contacts_Service     $contacts Contacts.
+	 * @param Handik_Booking_App_Logger|null          $logger Logger.
 	 */
-	public function __construct( $settings, $job_requests, $contacts ) {
+	public function __construct( $settings, $job_requests, $contacts, $logger = null ) {
 		$this->settings     = $settings;
 		$this->job_requests = $job_requests;
 		$this->contacts     = $contacts;
+		$this->logger       = $logger;
 	}
 
 	/**
@@ -102,6 +109,21 @@ class Handik_Booking_App_Cal_Service {
 		}
 		$url = add_query_arg( $params, $base );
 		$this->job_requests->set_booking_url( $request_id, $url, $request['booking_type'] );
+		if ( $this->logger ) {
+			$this->logger->info(
+				'Cal booking URL built.',
+				array(
+					'request_id'               => $request_id,
+					'booking_type'             => (string) $request['booking_type'],
+					'duration_bucket'          => (string) ( $request['duration_bucket'] ?? '' ),
+					'suggested_duration_hours' => $suggested_duration,
+					'duration_minutes'         => $duration_minutes,
+					'pricing_posture'          => $pricing_posture,
+					'event_url_configured'     => ! empty( $base ),
+					'cal_booking_url'          => $url,
+				)
+			);
+		}
 		return $url;
 	}
 

@@ -217,7 +217,8 @@
 			interactive: false,
 			sessionReadyFired: false,
 			element: null,
-			session: null
+			session: null,
+			lastStructuredPayload: null
 		};
 
 		BRIDGE_CACHE.set( cacheKey, record );
@@ -255,17 +256,36 @@
 			const signature = JSON.stringify( normalized );
 			if ( record.handledSignature === signature ) {
 				log( 'debug', 'Structured result skipped as duplicate.', { source: source || 'unknown' } );
-				return Promise.resolve();
+				return Promise.resolve( record.lastStructuredPayload || {
+					success: true,
+					assistant_result: normalized,
+					routing: normalized
+				} );
 			}
 			record.handledSignature = signature;
-			log( 'info', 'Structured result captured.', { source: source || 'unknown', booking_type: normalized.booking_type, unsafe: normalized.unsafe } );
+			log( 'info', 'Structured result captured.', {
+				source: source || 'unknown',
+				booking_type: normalized.booking_type,
+				duration_bucket: normalized.duration_bucket,
+				suggested_duration_hours: normalized.suggested_duration_hours,
+				pricing_posture: normalized.pricing_posture,
+				unsafe: normalized.unsafe
+			} );
 
 			return requestJson( endpoints.saveAssistantResult, {
 				request_id: record.options.requestId,
 				draft_token: record.options.draftToken,
 				assistant_result: normalized
 			} ).then( function( payload ) {
-				log( 'info', 'Structured result stored.', { source: source || 'unknown', unsafe_flag: payload.unsafe_flag || false } );
+				record.lastStructuredPayload = payload || null;
+				log( 'info', 'Structured result stored.', {
+					source: source || 'unknown',
+					unsafe_flag: payload.unsafe_flag || false,
+					booking_type: payload && payload.routing ? payload.routing.booking_type || '' : '',
+					duration_bucket: payload && payload.routing ? payload.routing.duration_bucket || '' : '',
+					suggested_duration_hours: payload && payload.routing ? payload.routing.suggested_duration_hours || '' : '',
+					booking_url: payload && payload.booking_url ? payload.booking_url : ''
+				} );
 				if ( typeof record.options.onStructuredResult === 'function' ) {
 					record.options.onStructuredResult( normalized, payload );
 				}
@@ -325,7 +345,8 @@
 
 		const handleClientTool = function( toolCall ) {
 			const name = toolCall && toolCall.name ? String( toolCall.name ) : '';
-			const params = toolCall && toolCall.params && 'object' === typeof toolCall.params ? toolCall.params : {};
+			const rawParams = toolCall && toolCall.params && 'object' === typeof toolCall.params ? toolCall.params : ( toolCall && toolCall.arguments && 'object' === typeof toolCall.arguments ? toolCall.arguments : ( toolCall && toolCall.input && 'object' === typeof toolCall.input ? toolCall.input : {} ) );
+			const params = rawParams && rawParams.params && 'object' === typeof rawParams.params ? rawParams.params : rawParams;
 			log( 'info', 'ChatKit client tool invoked.', {
 				name: name,
 				params: params
@@ -375,6 +396,58 @@
 						error: summarizeError( error )
 					} );
 					return fallbackToolResponse( summarizeError( error ) );
+				} );
+			}
+
+			if ( 'save_assistant_routing_result' === name ) {
+				if ( ! endpoints.saveAssistantResult ) {
+					log( 'error', 'ChatKit client tool endpoint missing.', { name: name } );
+					return Promise.resolve( {
+						ok: false,
+						error: 'Assistant result endpoint is not configured.'
+					} );
+				}
+
+				log( 'info', 'ChatKit routing result tool save started.', {
+					name: name,
+					request_id: record.options.requestId
+				} );
+
+				return saveStructuredResult( params, 'client_tool:' + name ).then( function( payload ) {
+					const routing = payload && payload.routing && 'object' === typeof payload.routing ? payload.routing : {};
+					const assistantResult = payload && payload.assistant_result && 'object' === typeof payload.assistant_result ? payload.assistant_result : {};
+					const responsePayload = {
+						ok: true,
+						success: true,
+						assistant_result_saved: true,
+						booking_type: routing.booking_type || assistantResult.booking_type || '',
+						duration_bucket: routing.duration_bucket || assistantResult.duration_bucket || '',
+						suggested_duration_hours: routing.suggested_duration_hours || assistantResult.suggested_duration_hours || '',
+						pricing_posture: routing.pricing_posture || assistantResult.pricing_posture || '',
+						unsafe_flag: !! ( payload && payload.unsafe_flag ),
+						unsafe_reason: payload && payload.unsafe_reason ? String( payload.unsafe_reason ) : '',
+						booking_url_ready: !! ( payload && payload.booking_url ),
+						booking_url: payload && payload.booking_url ? String( payload.booking_url ) : ''
+					};
+					log( 'info', 'ChatKit routing result tool save completed.', {
+						name: name,
+						booking_type: responsePayload.booking_type,
+						duration_bucket: responsePayload.duration_bucket,
+						suggested_duration_hours: responsePayload.suggested_duration_hours,
+						booking_url_ready: responsePayload.booking_url_ready
+					} );
+					return responsePayload;
+				} ).catch( function( error ) {
+					log( 'error', 'ChatKit routing result tool save failed.', {
+						name: name,
+						error: summarizeError( error )
+					} );
+					return {
+						ok: false,
+						success: false,
+						assistant_result_saved: false,
+						error: summarizeError( error )
+					};
 				} );
 			}
 

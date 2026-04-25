@@ -321,6 +321,19 @@ class Handik_Booking_App_ChatKit_Service {
 			return array( 'error' => __( 'Draft request not found.', 'handik-booking-app' ), 'status' => 404 );
 		}
 
+		$this->logger->info(
+			'Assistant result received.',
+			array(
+				'request_id'               => $request_id,
+				'booking_type'             => sanitize_key( (string) ( $assistant_result['booking_type'] ?? '' ) ),
+				'duration_bucket'          => sanitize_key( (string) ( $assistant_result['duration_bucket'] ?? '' ) ),
+				'suggested_duration_hours' => sanitize_text_field( (string) ( $assistant_result['suggested_duration_hours'] ?? '' ) ),
+				'pricing_posture'          => sanitize_key( (string) ( $assistant_result['pricing_posture'] ?? '' ) ),
+				'enough_information'       => ! empty( $assistant_result['enough_information'] ),
+				'has_stored_result'        => ! empty( $request['assistant_result'] ),
+			)
+		);
+
 		$photo_analysis = $this->photo_analysis->analyze_request( $request, false );
 		$assistant      = $this->merge_assistant_result(
 			$this->sanitize_assistant_result( is_array( $request['assistant_result'] ?? null ) ? $request['assistant_result'] : array() ),
@@ -334,6 +347,9 @@ class Handik_Booking_App_ChatKit_Service {
 				'request_id'          => $request_id,
 				'enough_information'  => ! empty( $assistant['enough_information'] ),
 				'booking_type'        => $routing['booking_type'] ?? '',
+				'duration_bucket'     => $routing['duration_bucket'] ?? '',
+				'suggested_duration_hours' => $routing['suggested_duration_hours'] ?? '',
+				'pricing_posture'     => $routing['pricing_posture'] ?? '',
 				'status'              => $routing['status'] ?? '',
 				'routing_status'      => $routing['routing_status'] ?? '',
 				'used_stored_result'  => ! empty( $request['assistant_result'] ),

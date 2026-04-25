@@ -86,7 +86,7 @@ class Handik_Booking_App_Job_Requests_Service {
 		$app_state = ( $request && ! empty( $request['app_state'] ) && is_array( $request['app_state'] ) ) ? $request['app_state'] : array();
 		$app_state['suggested_duration_hours'] = sanitize_text_field( (string) ( $routing['suggested_duration_hours'] ?? $assistant_result['suggested_duration_hours'] ?? '' ) );
 		$app_state['pricing_posture']          = sanitize_key( (string) ( $routing['pricing_posture'] ?? $assistant_result['pricing_posture'] ?? '' ) );
-		$wpdb->update(
+		$updated = $wpdb->update(
 			$table,
 			array(
 				'service_family'        => sanitize_key( $routing['service_family'] ?? '' ),
@@ -103,6 +103,18 @@ class Handik_Booking_App_Job_Requests_Service {
 				'assistant_result_json' => wp_json_encode( $assistant_result ),
 			),
 			array( 'id' => $request_id )
+		);
+
+		$this->logger->info(
+			'Assistant routing persisted.',
+			array(
+				'request_id'               => $request_id,
+				'updated'                  => false !== $updated,
+				'booking_type'             => sanitize_key( $routing['booking_type'] ?? '' ),
+				'duration_bucket'          => sanitize_key( $routing['duration_bucket'] ?? '' ),
+				'suggested_duration_hours' => sanitize_text_field( (string) ( $app_state['suggested_duration_hours'] ?? '' ) ),
+				'pricing_posture'          => sanitize_key( (string) ( $app_state['pricing_posture'] ?? '' ) ),
+			)
 		);
 	}
 

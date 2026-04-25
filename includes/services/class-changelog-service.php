@@ -11,6 +11,16 @@ class Handik_Booking_App_Changelog_Service {
 	public function get_entries() {
 		return array(
 			array(
+				'version'      => '2.1.1',
+				'date'         => '2026-04-25',
+				'title'        => 'Persist Assistant Routing Through An Explicit Client Tool',
+				'notes'        => array(
+					'Added the `save_assistant_routing_result` ChatKit client tool so the workflow can explicitly save service family, booking type, duration bucket, suggested duration, pricing posture, summary, notes, safety state, and next message.',
+					'Expanded assistant-result and routing logs so duration mismatches can be traced through captured result, stored request routing, app state, and Cal.com URL generation.',
+					'Cal.com URL generation now logs the final event type, suggested duration, converted duration minutes, pricing posture, and generated booking URL.',
+				),
+			),
+			array(
 				'version'      => '2.0.61',
 				'date'         => '2026-04-25',
 				'title'        => 'Reorder The Booking Flow And Tighten Step Layout',

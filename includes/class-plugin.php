@@ -59,7 +59,7 @@ class Handik_Booking_App_Plugin {
 		$this->bookings       = new Handik_Booking_App_Bookings_Service( $this->logger, $this->job_requests );
 		$this->auth           = new Handik_Booking_App_Auth_Service( $this->settings, $this->logger, $this->contacts, $this->addresses, $this->job_requests );
 		$this->routing        = new Handik_Booking_App_Routing_Service();
-		$this->cal            = new Handik_Booking_App_Cal_Service( $this->settings, $this->job_requests, $this->contacts );
+		$this->cal            = new Handik_Booking_App_Cal_Service( $this->settings, $this->job_requests, $this->contacts, $this->logger );
 		$this->photo_analysis = new Handik_Booking_App_Photo_Analysis_Service( $this->settings, $this->logger, $this->job_requests );
 		$this->chatkit        = new Handik_Booking_App_ChatKit_Service( $this->settings, $this->logger, $this->job_requests, $this->routing, $this->cal, $this->photo_analysis );
 		$this->updater        = new Handik_Booking_App_Updater_Service( $this->settings, $this->logger );
