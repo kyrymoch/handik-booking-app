@@ -264,13 +264,13 @@
 .handik-booking-app__progress {
 	display: grid;
 	gap: 8px;
-	margin-bottom: 18px;
+	margin-bottom: 0;
 	width: 100%;
 	align-items: center;
 }
 
 .handik-booking-app__progress span {
-	height: 6px;
+	height: 4px;
 	border-radius: 999px;
 	background: var(--handik-progress-track, #dbe3ea);
 }
@@ -296,8 +296,8 @@
 	align-items: start;
 }
 
-.handik-choice-grid--stacked {
-	grid-template-columns: minmax(0, min(100%, 520px));
+.handik-choice-grid--task-paths {
+	grid-template-columns: repeat(3, minmax(180px, 260px));
 }
 
 .handik-choice-wrap {
@@ -327,9 +327,9 @@
 }
 
 .handik-choice--large {
-	min-height: 116px;
+	min-height: 86px;
 	align-content: center;
-	padding: 20px 22px;
+	padding: 12px 14px;
 }
 
 .handik-choice__title {
@@ -600,7 +600,7 @@
 }
 
 .handik-booking-app__assistant-host {
-	min-height: 520px;
+	min-height: 460px;
 	border: 1px solid var(--handik-border, #dbe3ea);
 	border-radius: 16px;
 	overflow: hidden;
@@ -975,7 +975,7 @@ openai-chatkit {
 
 	.handik-booking-app__assistant-host,
 	.handik-chatkit-bridge__loading {
-		min-height: 420px;
+		min-height: 360px;
 	}
 
 	.handik-booking-app__screen--assistant {
@@ -1002,9 +1002,9 @@ openai-chatkit {
 
 	.handik-booking-app__screen--assistant .handik-booking-app__assistant-host,
 	.handik-booking-app__screen--assistant .handik-chatkit-bridge__loading {
-		height: calc(100dvh - 260px - env(safe-area-inset-bottom, 0px));
-		max-height: calc(100dvh - 260px - env(safe-area-inset-bottom, 0px));
-		min-height: calc(100dvh - 260px - env(safe-area-inset-bottom, 0px));
+		height: calc(100dvh - 320px - env(safe-area-inset-bottom, 0px));
+		max-height: calc(100dvh - 320px - env(safe-area-inset-bottom, 0px));
+		min-height: min(360px, calc(100dvh - 320px - env(safe-area-inset-bottom, 0px)));
 	}
 
 	.handik-booking-app__screen--assistant openai-chatkit {

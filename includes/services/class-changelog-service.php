@@ -11,6 +11,16 @@ class Handik_Booking_App_Changelog_Service {
 	public function get_entries() {
 		return array(
 			array(
+				'version'      => '2.0.61',
+				'date'         => '2026-04-25',
+				'title'        => 'Reorder The Booking Flow And Tighten Step Layout',
+				'notes'        => array(
+					'Moved task selection before address details so the flow starts with client type, task type, address, photos, contact details, assistant, and booking.',
+					'Kept the bottom progress strip visible on entry screens without extra action buttons, and reduced the progress strip height.',
+					'Updated the Photos step copy and slightly reduced the Virtual assistant chat height so it does not feel full-screen.',
+				),
+			),
+			array(
 				'version'      => '2.0.60',
 				'date'         => '2026-04-25',
 				'title'        => 'Simplify Client And Task Entry Flow',

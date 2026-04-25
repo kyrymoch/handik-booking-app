@@ -70,6 +70,16 @@ class Handik_Booking_App_Assets {
 			$contact_continue = 'Continue to Assistant';
 		}
 
+		$photos_title = (string) $this->settings->get( 'ui_photos_title', 'Photos of the Work Area' );
+		if ( '' === trim( $photos_title ) || 'Photos' === trim( $photos_title ) ) {
+			$photos_title = 'Photos of the Work Area';
+		}
+
+		$photos_intro = (string) $this->settings->get( 'ui_photos_intro', 'Upload clear photos of the area, item, fixture, wall, or problem you need help with. Photos help the assistant estimate time, materials, and the right booking type.' );
+		if ( '' === trim( $photos_intro ) || in_array( trim( $photos_intro ), array( 'Photos really help us understand the job faster, but you can continue without them if needed.', 'Upload a few clear photos if you have them. We review them before the AI assistant opens.' ), true ) ) {
+			$photos_intro = 'Upload clear photos of the area, item, fixture, wall, or problem you need help with. Photos help the assistant estimate time, materials, and the right booking type.';
+		}
+
 		wp_localize_script(
 			'handik-booking-app',
 			'HandikBookingAppConfig',
@@ -115,8 +125,8 @@ class Handik_Booking_App_Assets {
 					'addressHelp'        => (string) $this->settings->get( 'ui_address_help', '' ),
 					'addressValidHelp'   => (string) $this->settings->get( 'ui_address_valid_help', '' ),
 					'unitLabel'          => (string) $this->settings->get( 'ui_address_unit_label', 'Unit or apartment (optional)' ),
-					'photosTitle'        => (string) $this->settings->get( 'ui_photos_title', 'Photos' ),
-					'photosIntro'        => (string) $this->settings->get( 'ui_photos_intro', 'Upload a few clear photos if you have them. We review them before the AI assistant opens.' ),
+					'photosTitle'        => $photos_title,
+					'photosIntro'        => $photos_intro,
 					'savedAddressLabel'  => (string) $this->settings->get( 'ui_saved_address_label', 'Saved address' ),
 					'savedAddressPlaceholder' => (string) $this->settings->get( 'ui_saved_address_placeholder', 'Choose saved address' ),
 					'photosLabel'        => (string) $this->settings->get( 'ui_photos_label', 'Photos' ),

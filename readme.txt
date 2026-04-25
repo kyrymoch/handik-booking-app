@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.0.60
+Stable tag: 2.0.61
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, returning-client auth, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,11 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.0.61 =
+* Reordered the booking flow so task choice comes before address details.
+* Kept the bottom progress bar visible on the client and task entry screens, while making the progress strip thinner.
+* Updated the Photos step title and subtitle and reduced the Virtual assistant chat height slightly.
 
 = 2.0.60 =
 * Removed the extra client-type Continue step so New client and Returning client immediately advance to the next screen.

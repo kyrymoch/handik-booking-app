@@ -16,6 +16,7 @@ class Handik_Booking_App_Schema {
 			'requestId'          => 0,
 			'draftToken'         => '',
 			'selectedTasks'      => array(),
+			'taskSelectionMode'  => 'overview',
 			'isProject'          => false,
 			'jobShape'           => '',
 			'address'            => array(
