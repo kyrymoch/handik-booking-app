@@ -60,9 +60,14 @@ class Handik_Booking_App_Assets {
 			$assistant_continue = 'Book a time';
 		}
 
-		$task_intro = (string) $this->settings->get( 'ui_task_selection_intro', 'Tap one or more services to select or remove them so we can route your booking correctly.' );
-		if ( '' === trim( $task_intro ) || 'Choose one or more services so we can route your booking correctly.' === trim( $task_intro ) ) {
-			$task_intro = 'Tap one or more services to select or remove them so we can route your booking correctly.';
+		$task_intro = (string) $this->settings->get( 'ui_task_selection_intro', 'Choose the option that best matches your request.' );
+		if ( '' === trim( $task_intro ) || in_array( trim( $task_intro ), array( 'Choose one or more services so we can route your booking correctly.', 'Tap one or more services to select or remove them so we can route your booking correctly.' ), true ) ) {
+			$task_intro = 'Choose the option that best matches your request.';
+		}
+
+		$contact_continue = (string) $this->settings->get( 'ui_contact_continue_button', 'Continue to Assistant' );
+		if ( '' === trim( $contact_continue ) || 'Go to AI estimate' === trim( $contact_continue ) ) {
+			$contact_continue = 'Continue to Assistant';
 		}
 
 		wp_localize_script(
@@ -121,7 +126,7 @@ class Handik_Booking_App_Assets {
 					'assistantTitle'     => (string) $this->settings->get( 'ui_assistant_title', 'Virtual assistant' ),
 					'assistantIntro'     => $assistant_intro,
 					'assistantContinue'  => $assistant_continue,
-					'contactContinue'    => (string) $this->settings->get( 'ui_contact_continue_button', 'Go to AI estimate' ),
+					'contactContinue'    => $contact_continue,
 					'contactIntro'       => (string) $this->settings->get( 'ui_contact_intro', 'This is the last step where you can change the booking details before the AI review starts.' ),
 					'projectNotice'      => (string) $this->settings->get( 'ui_project_notice', 'Project / Large Job means a bigger scope that usually needs a consultation-style visit before the work is scheduled.' ),
 					'contactTitle'       => (string) $this->settings->get( 'ui_contact_title', 'Contact details' ),

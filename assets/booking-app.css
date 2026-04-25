@@ -296,6 +296,10 @@
 	align-items: start;
 }
 
+.handik-choice-grid--stacked {
+	grid-template-columns: minmax(0, min(100%, 520px));
+}
+
 .handik-choice-wrap {
 	position: relative;
 	display: grid;
@@ -320,6 +324,12 @@
 	display: grid;
 	gap: 6px;
 	justify-items: center;
+}
+
+.handik-choice--large {
+	min-height: 116px;
+	align-content: center;
+	padding: 20px 22px;
 }
 
 .handik-choice__title {

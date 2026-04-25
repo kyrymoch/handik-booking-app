@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.0.59
+Stable tag: 2.0.60
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, returning-client auth, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,11 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.0.60 =
+* Removed the extra client-type Continue step so New client and Returning client immediately advance to the next screen.
+* Reworked task selection into three large entry cards: General Handyman Help, Larger-Scale Work, and Choose Specific Tasks.
+* Renamed the contact Continue action to `Continue to Assistant` and verified the Cal.com duration handoff still passes the assistant-suggested duration.
 
 = 2.0.59 =
 * Updated fallback routing to align with the new workflow schema and Cal.com duration setup, including `6_8_hours`, `suggested_duration_hours`, and `pricing_posture`.

@@ -34,6 +34,7 @@
 				requestId: 0,
 				draftToken: '',
 				selectedTasks: [],
+				taskSelectionMode: 'overview',
 				selectedTasksSheetOpen: false,
 				selectedTasksSheetAnimate: false,
 				isProject: false,
@@ -571,6 +572,10 @@
 			return '<div class="handik-choice-wrap"><button data-action="' + this.escape( action ) + '" class="handik-choice ' + ( isSelected ? 'is-selected' : '' ) + '"><span class="handik-choice__title">' + this.escape( label ) + '</span></button></div>';
 		}
 
+		taskPathChoiceMarkup( action, label, description, isSelected ) {
+			return '<div class="handik-choice-wrap"><button data-action="' + this.escape( action ) + '" class="handik-choice handik-choice--large ' + ( isSelected ? 'is-selected' : '' ) + '"><span class="handik-choice__title">' + this.escape( label ) + '</span><span class="handik-choice__hint">' + this.escape( description ) + '</span></button></div>';
+		}
+
 		goTo( step ) {
 			if ( 'booking' === this.state.step && 'booking' !== step ) {
 				this.stopBookingStatusPolling();
@@ -678,12 +683,12 @@
 			const hadItems = this.state.selectedTasks.length > 0;
 			if ( this.taskSelected( id ) ) {
 				this.state.selectedTasks = this.state.selectedTasks.filter( ( taskId ) => taskId !== id );
-				if ( 'project_large_job' === id ) {
+				if ( 'project_large_job' === id || 'larger_scale_work' === id ) {
 					this.state.isProject = false;
 				}
 			} else {
 				this.state.selectedTasks = this.state.selectedTasks.concat( id );
-				if ( 'project_large_job' === id ) {
+				if ( 'project_large_job' === id || 'larger_scale_work' === id ) {
 					this.state.isProject = true;
 				}
 			}
@@ -735,11 +740,11 @@
 					break;
 				case 'choose-new':
 					this.state.clientType = 'new_client';
-					this.render();
+					this.goTo( 'address_details' );
 					break;
 				case 'choose-returning':
 					this.state.clientType = 'returning_client';
-					this.render();
+					this.goTo( 'returning_verify' );
 					break;
 				case 'client-type-next':
 					if ( ! this.state.clientType ) {
@@ -747,6 +752,33 @@
 						return;
 					}
 					this.goTo( 'returning_client' === this.state.clientType ? 'returning_verify' : 'address_details' );
+					break;
+				case 'choose-general-handyman':
+					this.state.selectedTasks = [ 'general_handyman_help' ];
+					this.state.taskSelectionMode = 'overview';
+					this.state.selectedTasksSheetOpen = false;
+					this.state.selectedTasksSheetAnimate = false;
+					this.state.isProject = false;
+					this.state.jobShape = 'single_task';
+					this.goTo( 'photos' );
+					break;
+				case 'choose-larger-scale':
+					this.state.selectedTasks = [ 'larger_scale_work' ];
+					this.state.taskSelectionMode = 'overview';
+					this.state.selectedTasksSheetOpen = false;
+					this.state.selectedTasksSheetAnimate = false;
+					this.state.isProject = true;
+					this.state.jobShape = 'project';
+					this.goTo( 'photos' );
+					break;
+				case 'choose-specific-tasks':
+					this.state.selectedTasks = [];
+					this.state.taskSelectionMode = 'specific';
+					this.state.selectedTasksSheetOpen = false;
+					this.state.selectedTasksSheetAnimate = false;
+					this.state.isProject = false;
+					this.state.jobShape = '';
+					this.render();
 					break;
 				case 'send-code':
 					await this.sendCode();
@@ -814,6 +846,7 @@
 						requestId: 0,
 						draftToken: '',
 						selectedTasks: [],
+						taskSelectionMode: 'overview',
 						selectedTasksSheetOpen: false,
 						selectedTasksSheetAnimate: false,
 						isProject: false,
@@ -850,7 +883,12 @@
 					this.goTo( 'returning_verify' );
 					break;
 				case 'back-tasks':
-					this.goTo( 'address_details' );
+					if ( 'specific' === this.state.taskSelectionMode ) {
+						this.state.taskSelectionMode = 'overview';
+						this.render();
+					} else {
+						this.goTo( 'address_details' );
+					}
 					break;
 				case 'back-address':
 					this.goTo( this.state.clientType === 'returning_client' ? 'returning_verify' : 'client_type' );
@@ -1714,8 +1752,7 @@
 				'<div class="handik-choice-grid">' +
 					this.clientTypeChoiceMarkup( 'new_client', 'choose-new', config.strings.newClientLabel || 'New client' ) +
 					this.clientTypeChoiceMarkup( 'returning_client', 'choose-returning', config.strings.returningClientLabel || 'Returning client' ) +
-						'</div>' +
-						this.footerActions( 'back-start', 'client-type-next', this.escape( config.strings.continue ), '', { continueMuted: ! this.stepCanContinue( 'client_type' ), hideBack: true } )
+						'</div>'
 					);
 				case 'returning_verify':
 					return this.screen(
@@ -1763,8 +1800,18 @@
 		}
 
 		tasksMarkup() {
+			if ( 'specific' !== this.state.taskSelectionMode ) {
+				return '<p class="handik-booking-app__intro">' + this.escape( config.strings.taskIntro || 'Choose the option that best matches your request.' ) + '</p>' +
+					'<div class="handik-choice-grid handik-choice-grid--stacked">' +
+						this.taskPathChoiceMarkup( 'choose-general-handyman', 'General Handyman Help', 'For mixed, unclear, or everyday handyman tasks', this.taskSelected( 'general_handyman_help' ) ) +
+						this.taskPathChoiceMarkup( 'choose-larger-scale', 'Larger-Scale Work', 'For bigger, multi-step, or consultation-first work', this.taskSelected( 'larger_scale_work' ) ) +
+						this.taskPathChoiceMarkup( 'choose-specific-tasks', 'Choose Specific Tasks', 'Browse services by category and select one or more tasks', false ) +
+					'</div>' +
+					this.footerActions( 'back-tasks', 'task-overview-back', '', this.escape( config.strings.back ), { continueMuted: true, hideContinue: true } );
+			}
+
 			const groups = ( this.bootstrap && this.bootstrap.task_catalog ) || [];
-			return '<p class="handik-booking-app__intro">' + this.escape( config.strings.taskIntro || 'Tap one or more services to select or remove them so we can route your booking correctly.' ) + '</p><div class="handik-task-groups">' +
+			return '<p class="handik-booking-app__intro">' + this.escape( 'Tap one or more services to select or remove them.' ) + '</p><div class="handik-task-groups">' +
 				groups.map( ( group ) => '<div class="handik-task-group"><h3>' + this.escape( group.group ) + '</h3><div class="handik-task-grid">' +
 					group.tasks.map( ( task ) => '<button type="button" class="handik-task ' + ( this.taskSelected( task.id ) ? 'is-selected' : '' ) + '" data-task-id="' + this.escape( task.id ) + '">' + this.escape( task.label ) + '</button>' ).join( '' ) +
 				'</div></div>' ).join( '' ) +
@@ -1806,7 +1853,7 @@
 				this.input( 'Email', 'contact.email', 'email', this.isFieldInvalid( 'email' ) ? 'is-invalid' : '', '' ) +
 				this.input( 'Phone', 'contact.phone', 'tel', this.isFieldInvalid( 'phone' ) ? 'is-invalid' : '', '' ) +
 				'</div>' +
-				this.footerActions( 'back-contact', 'contact-next', this.escape( config.strings.contactContinue || 'Go to AI estimate' ), '', { continueMuted: ! this.stepCanContinue( 'contact_details' ) } );
+				this.footerActions( 'back-contact', 'contact-next', this.escape( config.strings.contactContinue || 'Continue to Assistant' ), '', { continueMuted: ! this.stepCanContinue( 'contact_details' ) } );
 		}
 
 		bookingMarkup() {
@@ -1821,7 +1868,8 @@
 			const continueClass = 'handik-btn ' + ( settings.continueMuted ? 'is-pending' : 'is-primary' ) + ' is-continue';
 			const backButton = settings.hideBack ? '' : '<button data-action="' + this.escape( backAction ) + '" class="' + backClass + '"' + ( settings.backMuted ? ' aria-disabled="true"' : '' ) + '>' + backInner + '</button>';
 			const utilityButton = settings.utilityAction ? '<button data-action="' + this.escape( settings.utilityAction ) + '" class="handik-btn is-text">' + this.escape( settings.utilityLabel || '' ) + '</button>' : '';
-			return '<div class="handik-footer-wrap"><div class="handik-footer-actions is-docked' + ( settings.hideBack ? ' is-single' : '' ) + '">' + backButton + '<div class="handik-footer-actions__continue">' + utilityButton + '<button data-action="' + this.escape( continueAction ) + '" class="' + continueClass + '" aria-disabled="' + ( settings.continueMuted ? 'true' : 'false' ) + '">' + continueLabel + '</button></div></div><div class="handik-footer-progress">' + this.progressMarkup() + '</div></div>';
+			const continueButton = settings.hideContinue ? '' : '<div class="handik-footer-actions__continue">' + utilityButton + '<button data-action="' + this.escape( continueAction ) + '" class="' + continueClass + '" aria-disabled="' + ( settings.continueMuted ? 'true' : 'false' ) + '">' + continueLabel + '</button></div>';
+			return '<div class="handik-footer-wrap"><div class="handik-footer-actions is-docked' + ( settings.hideBack || settings.hideContinue ? ' is-single' : '' ) + '">' + backButton + continueButton + '</div><div class="handik-footer-progress">' + this.progressMarkup() + '</div></div>';
 		}
 
 		normalizePhone( value ) {

@@ -11,6 +11,16 @@ class Handik_Booking_App_Changelog_Service {
 	public function get_entries() {
 		return array(
 			array(
+				'version'      => '2.0.60',
+				'date'         => '2026-04-25',
+				'title'        => 'Simplify Client And Task Entry Flow',
+				'notes'        => array(
+					'New client and Returning client now advance immediately without a separate Continue button.',
+					'The task screen now starts with three large choices for General Handyman Help, Larger-Scale Work, or choosing specific tasks by category.',
+					'The contact step button now says Continue to Assistant, and the Cal.com booking URL still carries the assistant suggested duration into multi-duration events.',
+				),
+			),
+			array(
 				'version'      => '2.0.59',
 				'date'         => '2026-04-24',
 				'title'        => 'Align Routing And Cal Booking Prefill With The New Assistant Workflow',
