@@ -35,12 +35,17 @@
 		return String( value || '' ).trim();
 	}
 
+	function sanitizeNumber( value ) {
+		const number = Number( value );
+		return Number.isFinite( number ) && number > 0 ? number : 0;
+	}
+
 	function normalizeResult( input ) {
 		const value = input && typeof input === 'object' ? input : {};
 		const allowed = [ 'standard_visit', 'extended_visit', 'large_visit', 'project_consultation' ];
 		const suggestedDurationAllowed = [ '1', '2', '3', '4', '5', '6', '7', '8', 'consult_1' ];
 		const pricingAllowed = [ 'hourly_only', 'hourly_plus_materials', 'consultation_first' ];
-		return {
+		const result = {
 			service_family: sanitizeKey( value.service_family ),
 			rate_family: sanitizeKey( value.rate_family ),
 			duration_bucket: sanitizeKey( value.duration_bucket ),
@@ -55,6 +60,17 @@
 			is_project: Boolean( value.is_project ),
 			next_message: sanitizeText( value.next_message )
 		};
+		[ 'applied_hourly_rate', 'labor_estimate_low', 'labor_estimate_high', 'materials_estimate_low', 'materials_estimate_high', 'total_estimate_low', 'total_estimate_high' ].forEach( function( key ) {
+			if ( Object.prototype.hasOwnProperty.call( value, key ) ) {
+				result[ key ] = sanitizeNumber( value[ key ] );
+			}
+		} );
+		[ 'materials_notes', 'estimate_disclaimer' ].forEach( function( key ) {
+			if ( Object.prototype.hasOwnProperty.call( value, key ) ) {
+				result[ key ] = sanitizeText( value[ key ] );
+			}
+		} );
+		return result;
 	}
 
 	function tryParseJson( value ) {
@@ -89,7 +105,9 @@
 				Object.prototype.hasOwnProperty.call( value, 'assistant_summary' ) ||
 				Object.prototype.hasOwnProperty.call( value, 'next_message' ) ||
 				Object.prototype.hasOwnProperty.call( value, 'suggested_duration_hours' ) ||
-				Object.prototype.hasOwnProperty.call( value, 'pricing_posture' )
+				Object.prototype.hasOwnProperty.call( value, 'pricing_posture' ) ||
+				Object.prototype.hasOwnProperty.call( value, 'total_estimate_low' ) ||
+				Object.prototype.hasOwnProperty.call( value, 'total_estimate_high' )
 			);
 	}
 
@@ -269,6 +287,9 @@
 				duration_bucket: normalized.duration_bucket,
 				suggested_duration_hours: normalized.suggested_duration_hours,
 				pricing_posture: normalized.pricing_posture,
+				applied_hourly_rate: normalized.applied_hourly_rate,
+				total_estimate_low: normalized.total_estimate_low,
+				total_estimate_high: normalized.total_estimate_high,
 				unsafe: normalized.unsafe
 			} );
 
@@ -343,6 +364,28 @@
 			};
 		};
 
+		const fallbackPricingToolResponse = function( message ) {
+			return {
+				ok: false,
+				has_pricing_context: false,
+				selected_tasks: [],
+				selected_task_count: 0,
+				applied_hourly_rate: 0,
+				applied_rate_source: 'none',
+				suggested_duration_hours: '',
+				duration_low_hours: 0,
+				duration_high_hours: 0,
+				labor_estimate_low: 0,
+				labor_estimate_high: 0,
+				materials_estimate_low: 0,
+				materials_estimate_high: 0,
+				total_estimate_low: 0,
+				total_estimate_high: 0,
+				materials_notes: '',
+				estimate_disclaimer: sanitizeText( message || 'Pricing context unavailable.' )
+			};
+		};
+
 		const handleClientTool = function( toolCall ) {
 			const name = toolCall && toolCall.name ? String( toolCall.name ) : '';
 			const rawParams = toolCall && toolCall.params && 'object' === typeof toolCall.params ? toolCall.params : ( toolCall && toolCall.arguments && 'object' === typeof toolCall.arguments ? toolCall.arguments : ( toolCall && toolCall.input && 'object' === typeof toolCall.input ? toolCall.input : {} ) );
@@ -399,6 +442,49 @@
 				} );
 			}
 
+			if ( 'get_request_pricing_context' === name ) {
+				if ( ! endpoints.requestPricingContext ) {
+					log( 'error', 'ChatKit client tool endpoint missing.', { name: name } );
+					return Promise.resolve( fallbackPricingToolResponse( 'Pricing context endpoint is not configured.' ) );
+				}
+
+				log( 'info', 'ChatKit pricing context tool fetch started.', {
+					name: name,
+					request_id: record.options.requestId
+				} );
+				return requestJson( endpoints.requestPricingContext, {
+					request_id: record.options.requestId,
+					draft_token: record.options.draftToken,
+					tool_params: params
+				} ).then( function( payload ) {
+					log( 'info', 'ChatKit pricing context tool fetch completed.', {
+						name: name,
+						ok: !! payload.success,
+						has_pricing_context: !! payload.has_pricing_context,
+						applied_hourly_rate: payload.applied_hourly_rate || 0,
+						total_estimate_low: payload.total_estimate_low || 0,
+						total_estimate_high: payload.total_estimate_high || 0
+					} );
+					const responsePayload = Object.assign(
+						{
+							ok: true
+						},
+						payload || {}
+					);
+					log( 'info', 'ChatKit pricing context tool returning payload.', {
+						name: name,
+						keys: Object.keys( responsePayload )
+					} );
+					return responsePayload;
+				} ).catch( function( error ) {
+					log( 'error', 'ChatKit pricing context tool failed.', {
+						name: name,
+						error: summarizeError( error )
+					} );
+					return fallbackPricingToolResponse( summarizeError( error ) );
+				} );
+			}
+
 			if ( 'save_assistant_routing_result' === name ) {
 				if ( ! endpoints.saveAssistantResult ) {
 					log( 'error', 'ChatKit client tool endpoint missing.', { name: name } );
@@ -424,6 +510,15 @@
 						duration_bucket: routing.duration_bucket || assistantResult.duration_bucket || '',
 						suggested_duration_hours: routing.suggested_duration_hours || assistantResult.suggested_duration_hours || '',
 						pricing_posture: routing.pricing_posture || assistantResult.pricing_posture || '',
+						applied_hourly_rate: assistantResult.applied_hourly_rate || 0,
+						labor_estimate_low: assistantResult.labor_estimate_low || 0,
+						labor_estimate_high: assistantResult.labor_estimate_high || 0,
+						materials_estimate_low: assistantResult.materials_estimate_low || 0,
+						materials_estimate_high: assistantResult.materials_estimate_high || 0,
+						total_estimate_low: assistantResult.total_estimate_low || 0,
+						total_estimate_high: assistantResult.total_estimate_high || 0,
+						materials_notes: assistantResult.materials_notes || '',
+						estimate_disclaimer: assistantResult.estimate_disclaimer || '',
 						unsafe_flag: !! ( payload && payload.unsafe_flag ),
 						unsafe_reason: payload && payload.unsafe_reason ? String( payload.unsafe_reason ) : '',
 						booking_url_ready: !! ( payload && payload.booking_url ),
@@ -434,6 +529,8 @@
 						booking_type: responsePayload.booking_type,
 						duration_bucket: responsePayload.duration_bucket,
 						suggested_duration_hours: responsePayload.suggested_duration_hours,
+						total_estimate_low: responsePayload.total_estimate_low,
+						total_estimate_high: responsePayload.total_estimate_high,
 						booking_url_ready: responsePayload.booking_url_ready
 					} );
 					return responsePayload;

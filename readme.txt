@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.1.1
+Stable tag: 2.1.2
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, returning-client auth, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,11 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.1.2 =
+* Added the `get_request_pricing_context` ChatKit client tool and WordPress endpoint so the assistant can fetch selected task rates, applied hourly rate, suggested duration, and rough labor/material/total estimates.
+* Added pricing estimate fields to assistant result normalization, backend sanitization, and app state storage.
+* Added pricing-context diagnostics for tracing assistant price answers through ChatKit, WordPress, and saved routing state.
 
 = 2.1.1 =
 * Added the `save_assistant_routing_result` ChatKit client tool so the workflow can explicitly persist the full routing payload instead of relying only on ChatKit structured-result events.

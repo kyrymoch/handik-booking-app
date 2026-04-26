@@ -11,6 +11,16 @@ class Handik_Booking_App_Changelog_Service {
 	public function get_entries() {
 		return array(
 			array(
+				'version'      => '2.1.2',
+				'date'         => '2026-04-25',
+				'title'        => 'Add Pricing Context For Assistant Estimates',
+				'notes'        => array(
+					'Added the `get_request_pricing_context` ChatKit client tool and backend endpoint so the assistant can fetch selected task rates, applied hourly rate, suggested duration, and rough labor/material/total estimate ranges.',
+					'Assistant result normalization, PHP sanitization, and request app state now preserve pricing fields such as labor, materials, total estimate, materials notes, and the estimate disclaimer.',
+					'Added pricing-context logs so estimate answers can be traced through ChatKit tool fetch, WordPress pricing calculation, saved assistant result, and persisted routing state.',
+				),
+			),
+			array(
 				'version'      => '2.1.1',
 				'date'         => '2026-04-25',
 				'title'        => 'Persist Assistant Routing Through An Explicit Client Tool',

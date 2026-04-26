@@ -260,6 +260,44 @@ class Handik_Booking_App_ChatKit_Service {
 	}
 
 	/**
+	 * @param int    $request_id Request ID.
+	 * @param string $draft_token Token.
+	 * @return array<string, mixed>
+	 */
+	public function request_pricing_context( $request_id, $draft_token ) {
+		if ( ! $this->job_requests->verify_draft_token( $request_id, $draft_token ) ) {
+			return array( 'error' => __( 'Invalid draft token.', 'handik-booking-app' ), 'status' => 403 );
+		}
+
+		$request = $this->job_requests->get( $request_id );
+		if ( ! $request ) {
+			return array( 'error' => __( 'Draft request not found.', 'handik-booking-app' ), 'status' => 404 );
+		}
+
+		$payload = $this->build_pricing_context_payload( $request );
+		$this->logger->info(
+			'Pricing context requested for ChatKit client tool.',
+			array(
+				'request_id'               => $request_id,
+				'selected_task_count'      => $payload['selected_task_count'],
+				'applied_hourly_rate'      => $payload['applied_hourly_rate'],
+				'suggested_duration_hours' => $payload['suggested_duration_hours'],
+				'labor_estimate_low'       => $payload['labor_estimate_low'],
+				'labor_estimate_high'      => $payload['labor_estimate_high'],
+				'total_estimate_low'       => $payload['total_estimate_low'],
+				'total_estimate_high'      => $payload['total_estimate_high'],
+			)
+		);
+
+		return array_merge(
+			array(
+				'success' => true,
+			),
+			$payload
+		);
+	}
+
+	/**
 	 * @param mixed $payload Parsed payload.
 	 * @return string
 	 */
@@ -329,6 +367,9 @@ class Handik_Booking_App_ChatKit_Service {
 				'duration_bucket'          => sanitize_key( (string) ( $assistant_result['duration_bucket'] ?? '' ) ),
 				'suggested_duration_hours' => sanitize_text_field( (string) ( $assistant_result['suggested_duration_hours'] ?? '' ) ),
 				'pricing_posture'          => sanitize_key( (string) ( $assistant_result['pricing_posture'] ?? '' ) ),
+				'applied_hourly_rate'      => max( 0, (float) ( $assistant_result['applied_hourly_rate'] ?? 0 ) ),
+				'total_estimate_low'       => max( 0, (float) ( $assistant_result['total_estimate_low'] ?? 0 ) ),
+				'total_estimate_high'      => max( 0, (float) ( $assistant_result['total_estimate_high'] ?? 0 ) ),
 				'enough_information'       => ! empty( $assistant_result['enough_information'] ),
 				'has_stored_result'        => ! empty( $request['assistant_result'] ),
 			)
@@ -350,6 +391,9 @@ class Handik_Booking_App_ChatKit_Service {
 				'duration_bucket'     => $routing['duration_bucket'] ?? '',
 				'suggested_duration_hours' => $routing['suggested_duration_hours'] ?? '',
 				'pricing_posture'     => $routing['pricing_posture'] ?? '',
+				'applied_hourly_rate' => $assistant['applied_hourly_rate'] ?? 0,
+				'total_estimate_low'  => $assistant['total_estimate_low'] ?? 0,
+				'total_estimate_high' => $assistant['total_estimate_high'] ?? 0,
 				'status'              => $routing['status'] ?? '',
 				'routing_status'      => $routing['routing_status'] ?? '',
 				'used_stored_result'  => ! empty( $request['assistant_result'] ),
@@ -421,6 +465,7 @@ class Handik_Booking_App_ChatKit_Service {
 
 	protected function state_variables( array $request ) {
 		$analysis = $this->photo_analysis->cached_analysis( $request );
+		$app_state = ! empty( $request['app_state'] ) && is_array( $request['app_state'] ) ? $request['app_state'] : array();
 		return array(
 			'draft_request_id'             => (int) $request['id'],
 			'client_type'                  => (string) $request['client_type'],
@@ -435,6 +480,15 @@ class Handik_Booking_App_ChatKit_Service {
 			'visible_tasks_summary'        => (string) ( $analysis['visible_tasks_summary'] ?? '' ),
 			'safety_summary'               => (string) ( $analysis['safety_summary'] ?? '' ),
 			'visual_estimate_notes'        => (string) ( $analysis['visual_estimate_notes'] ?? '' ),
+			'suggested_duration_hours'     => (string) ( $app_state['suggested_duration_hours'] ?? '' ),
+			'pricing_posture'              => (string) ( $app_state['pricing_posture'] ?? '' ),
+			'applied_hourly_rate'          => (float) ( $app_state['applied_hourly_rate'] ?? 0 ),
+			'labor_estimate_low'           => (float) ( $app_state['labor_estimate_low'] ?? 0 ),
+			'labor_estimate_high'          => (float) ( $app_state['labor_estimate_high'] ?? 0 ),
+			'materials_estimate_low'       => (float) ( $app_state['materials_estimate_low'] ?? 0 ),
+			'materials_estimate_high'      => (float) ( $app_state['materials_estimate_high'] ?? 0 ),
+			'total_estimate_low'           => (float) ( $app_state['total_estimate_low'] ?? 0 ),
+			'total_estimate_high'          => (float) ( $app_state['total_estimate_high'] ?? 0 ),
 		);
 	}
 
@@ -485,11 +539,278 @@ class Handik_Booking_App_ChatKit_Service {
 		);
 	}
 
+	/**
+	 * @param array<string, mixed> $request Request.
+	 * @return array<string, mixed>
+	 */
+	protected function build_pricing_context_payload( array $request ) {
+		$assistant = ! empty( $request['assistant_result'] ) && is_array( $request['assistant_result'] ) ? $request['assistant_result'] : array();
+		$app_state = ! empty( $request['app_state'] ) && is_array( $request['app_state'] ) ? $request['app_state'] : array();
+		$tasks     = $this->selected_task_details( ! empty( $request['selected_tasks'] ) && is_array( $request['selected_tasks'] ) ? $request['selected_tasks'] : array() );
+
+		$service_family = sanitize_key( (string) ( $assistant['service_family'] ?? $request['service_family'] ?? '' ) );
+		$rate_family    = sanitize_key( (string) ( $assistant['rate_family'] ?? $request['rate_family'] ?? '' ) );
+		if ( ! $service_family && ! empty( $tasks[0]['service_family'] ) ) {
+			$service_family = sanitize_key( (string) $tasks[0]['service_family'] );
+		}
+		if ( ! $rate_family && ! empty( $tasks[0]['rate_family'] ) ) {
+			$rate_family = sanitize_key( (string) $tasks[0]['rate_family'] );
+		}
+
+		$applied_rate = $this->applied_hourly_rate( $tasks, $rate_family );
+		$duration     = $this->resolve_duration_range( $request, $assistant, $app_state );
+		$materials    = $this->material_estimate_range( $service_family, $rate_family );
+
+		$labor_low  = $applied_rate['rate'] > 0 ? $this->round_estimate_low( $applied_rate['rate'] * $duration['low'] ) : 0;
+		$labor_high = $applied_rate['rate'] > 0 ? $this->round_estimate_high( $applied_rate['rate'] * $duration['high'] ) : 0;
+
+		if ( 'project_custom' === $rate_family || 'consultation_first' === (string) ( $assistant['pricing_posture'] ?? $app_state['pricing_posture'] ?? '' ) ) {
+			$materials['notes'] = 'This looks consultation-first. Materials and final work cost should be estimated after the initial assessment.';
+		}
+
+		return array(
+			'request_id'                 => (int) $request['id'],
+			'has_pricing_context'        => ! empty( $tasks ) || $applied_rate['rate'] > 0 || ! empty( $duration['source'] ),
+			'selected_tasks'             => $tasks,
+			'selected_task_count'        => count( $tasks ),
+			'service_family'             => $service_family,
+			'rate_family'                => $rate_family,
+			'booking_type'               => sanitize_key( (string) ( $assistant['booking_type'] ?? $request['booking_type'] ?? '' ) ),
+			'duration_bucket'            => sanitize_key( (string) ( $assistant['duration_bucket'] ?? $request['duration_bucket'] ?? '' ) ),
+			'pricing_posture'            => sanitize_key( (string) ( $assistant['pricing_posture'] ?? $app_state['pricing_posture'] ?? '' ) ),
+			'applied_hourly_rate'        => $applied_rate['rate'],
+			'applied_rate_source'        => $applied_rate['source'],
+			'suggested_duration_hours'   => $duration['suggested_duration_hours'],
+			'duration_low_hours'         => $duration['low'],
+			'duration_high_hours'        => $duration['high'],
+			'labor_estimate_low'         => $labor_low,
+			'labor_estimate_high'        => $labor_high,
+			'materials_estimate_low'     => $materials['low'],
+			'materials_estimate_high'    => $materials['high'],
+			'total_estimate_low'         => $labor_low + $materials['low'],
+			'total_estimate_high'        => $labor_high + $materials['high'],
+			'materials_notes'            => sanitize_textarea_field( $materials['notes'] ),
+			'estimate_disclaimer'        => __( 'This is a rough planning estimate. Final cost may change after on-site review, actual conditions, and materials needed.', 'handik-booking-app' ),
+		);
+	}
+
+	/**
+	 * @param array<int, mixed> $selected_tasks Selected task IDs.
+	 * @return array<int, array<string, mixed>>
+	 */
+	protected function selected_task_details( array $selected_tasks ) {
+		$details = array();
+		$catalog = ( function_exists( 'handik_booking_app' ) && ! empty( handik_booking_app()->service_catalog ) ) ? handik_booking_app()->service_catalog : null;
+
+		foreach ( $selected_tasks as $task_id ) {
+			$task_id = sanitize_key( is_array( $task_id ) ? (string) ( $task_id['id'] ?? '' ) : (string) $task_id );
+			if ( ! $task_id ) {
+				continue;
+			}
+
+			$task = $catalog && method_exists( $catalog, 'find_task' ) ? $catalog->find_task( $task_id ) : null;
+			if ( ! is_array( $task ) ) {
+				$task = array(
+					'id'             => $task_id,
+					'label'          => ucwords( str_replace( '_', ' ', $task_id ) ),
+					'description'    => '',
+					'rate_label'     => '',
+					'service_family' => '',
+					'rate_family'    => '',
+				);
+			}
+
+			$details[] = array(
+				'id'             => sanitize_key( (string) ( $task['id'] ?? $task_id ) ),
+				'label'          => sanitize_text_field( (string) ( $task['label'] ?? '' ) ),
+				'description'    => sanitize_textarea_field( (string) ( $task['description'] ?? '' ) ),
+				'rate_label'     => sanitize_text_field( (string) ( $task['rate_label'] ?? '' ) ),
+				'hourly_rate'    => $this->parse_hourly_rate( (string) ( $task['rate_label'] ?? '' ) ),
+				'service_family' => sanitize_key( (string) ( $task['service_family'] ?? '' ) ),
+				'rate_family'    => sanitize_key( (string) ( $task['rate_family'] ?? '' ) ),
+			);
+		}
+
+		return $details;
+	}
+
+	/**
+	 * @param string $rate_label Rate label.
+	 * @return float
+	 */
+	protected function parse_hourly_rate( $rate_label ) {
+		if ( preg_match( '/([0-9]+(?:\.[0-9]+)?)/', (string) $rate_label, $matches ) ) {
+			return max( 0, (float) $matches[1] );
+		}
+		return 0;
+	}
+
+	/**
+	 * @param array<int, array<string, mixed>> $tasks Tasks.
+	 * @param string                          $rate_family Rate family.
+	 * @return array<string, mixed>
+	 */
+	protected function applied_hourly_rate( array $tasks, $rate_family ) {
+		$rates = array_values(
+			array_filter(
+				array_map(
+					function( $task ) {
+						return ! empty( $task['hourly_rate'] ) ? (float) $task['hourly_rate'] : 0;
+					},
+					$tasks
+				)
+			)
+		);
+
+		if ( 1 === count( $rates ) ) {
+			return array( 'rate' => $rates[0], 'source' => 'selected_task' );
+		}
+		if ( count( $rates ) > 1 ) {
+			return array( 'rate' => max( $rates ), 'source' => 'highest_selected_task' );
+		}
+
+		$fallbacks = array(
+			'assembly_basic'         => 60,
+			'repair_standard'        => 70,
+			'trade_general'          => 75,
+			'installation_specialty' => 80,
+			'structural_repair'      => 85,
+			'premium_specialty'      => 95,
+			'exterior_premium'       => 100,
+			'precision_specialty'    => 110,
+			'general_diagnostic'     => 80,
+		);
+
+		$rate_family = sanitize_key( (string) $rate_family );
+		if ( isset( $fallbacks[ $rate_family ] ) ) {
+			return array( 'rate' => (float) $fallbacks[ $rate_family ], 'source' => 'rate_family_fallback' );
+		}
+
+		return array( 'rate' => 0, 'source' => 'none' );
+	}
+
+	/**
+	 * @param array<string, mixed> $request Request.
+	 * @param array<string, mixed> $assistant Assistant result.
+	 * @param array<string, mixed> $app_state App state.
+	 * @return array<string, mixed>
+	 */
+	protected function resolve_duration_range( array $request, array $assistant, array $app_state ) {
+		$suggested = sanitize_text_field( (string) ( $assistant['suggested_duration_hours'] ?? $app_state['suggested_duration_hours'] ?? '' ) );
+		$bucket    = sanitize_key( (string) ( $assistant['duration_bucket'] ?? $request['duration_bucket'] ?? '' ) );
+		$booking   = sanitize_key( (string) ( $assistant['booking_type'] ?? $request['booking_type'] ?? '' ) );
+
+		if ( in_array( $suggested, array( '1', '2', '3', '4', '5', '6', '7', '8' ), true ) ) {
+			$hours = (float) $suggested;
+			return array( 'suggested_duration_hours' => $suggested, 'low' => $hours, 'high' => $hours, 'source' => 'suggested_duration_hours' );
+		}
+		if ( 'consult_1' === $suggested ) {
+			return array( 'suggested_duration_hours' => $suggested, 'low' => 1.0, 'high' => 1.0, 'source' => 'suggested_duration_hours' );
+		}
+
+		$buckets = array(
+			'1_2_hours'       => array( 1.0, 2.0, '1_2' ),
+			'3_5_hours'       => array( 3.0, 5.0, '3_5' ),
+			'6_8_hours'       => array( 6.0, 8.0, '6_8' ),
+			'6_7_hours'       => array( 6.0, 7.0, '6_7' ),
+			'project_consult' => array( 1.0, 1.0, 'consult_1' ),
+		);
+
+		if ( isset( $buckets[ $bucket ] ) ) {
+			return array(
+				'suggested_duration_hours' => $buckets[ $bucket ][2],
+				'low'                      => $buckets[ $bucket ][0],
+				'high'                     => $buckets[ $bucket ][1],
+				'source'                   => 'duration_bucket',
+			);
+		}
+
+		$booking_defaults = array(
+			'standard_visit'       => array( 1.0, 2.0, '1_2' ),
+			'extended_visit'       => array( 3.0, 5.0, '3_5' ),
+			'large_visit'          => array( 6.0, 8.0, '6_8' ),
+			'project_consultation' => array( 1.0, 1.0, 'consult_1' ),
+		);
+
+		if ( isset( $booking_defaults[ $booking ] ) ) {
+			return array(
+				'suggested_duration_hours' => $booking_defaults[ $booking ][2],
+				'low'                      => $booking_defaults[ $booking ][0],
+				'high'                     => $booking_defaults[ $booking ][1],
+				'source'                   => 'booking_type',
+			);
+		}
+
+		return array( 'suggested_duration_hours' => '', 'low' => 1.0, 'high' => 2.0, 'source' => '' );
+	}
+
+	/**
+	 * @param string $service_family Service family.
+	 * @param string $rate_family Rate family.
+	 * @return array<string, mixed>
+	 */
+	protected function material_estimate_range( $service_family, $rate_family ) {
+		$rate_family = sanitize_key( (string) $rate_family );
+		$service_family = sanitize_key( (string) $service_family );
+		$ranges = array(
+			'assembly_basic'         => array( 0, 40, 'Usually low material cost unless anchors, brackets, or replacement hardware are needed.' ),
+			'repair_standard'        => array( 10, 75, 'Common small repair materials may include fasteners, adhesive, patching supplies, or replacement parts.' ),
+			'trade_general'          => array( 20, 120, 'Materials vary by fixture, connection parts, trim, sealant, or small replacement components.' ),
+			'installation_specialty' => array( 30, 180, 'Materials may include hardware, trim, anchors, fasteners, connectors, or finishing supplies.' ),
+			'premium_specialty'      => array( 50, 300, 'Specialty work can need more parts, fittings, access materials, or job-specific supplies.' ),
+			'exterior_premium'       => array( 75, 450, 'Exterior repairs can vary widely depending on replacement sections, boards, hardware, and weatherproofing materials.' ),
+			'general_diagnostic'     => array( 0, 100, 'Materials depend on what the mixed handyman task requires after review.' ),
+			'project_custom'         => array( 0, 0, 'Consultation-first work needs a separate material estimate after scope review.' ),
+		);
+		$overrides = array(
+			'plumbing_fixture_repair' => array( 25, 180, 'Possible materials include supply lines, shutoff valves, drains, sealant, cartridges, trim, or fixture-specific parts.' ),
+			'plumbing_pipework'       => array( 75, 350, 'Pipework may need fittings, pipe, valves, supports, access materials, or specialty connection parts.' ),
+			'electrical_smart_home'   => array( 25, 180, 'Materials may include boxes, plates, connectors, anchors, low-voltage parts, or device-specific hardware.' ),
+			'lighting_fans'           => array( 25, 160, 'Materials may include mounting hardware, electrical connectors, brackets, boxes, or fixture-specific parts.' ),
+			'concealed_cable_work'    => array( 50, 250, 'Hidden cable work may need cable, plates, low-voltage brackets, fishing tools, conduit, or wall repair supplies.' ),
+			'wall_surface_repair'     => array( 20, 150, 'Materials may include drywall compound, mesh, tape, texture, primer, or patch panels.' ),
+			'painting_refinishing'    => array( 30, 200, 'Materials may include paint, primer, tape, rollers, brushes, masking, and prep supplies.' ),
+			'sealing_weatherproofing' => array( 15, 120, 'Materials may include caulk, sealant, backer rod, weatherstripping, or cleaning/prep supplies.' ),
+			'flooring_tile_repair'    => array( 30, 220, 'Materials may include grout, thinset, trim, transitions, adhesive, or replacement pieces.' ),
+			'door_work'               => array( 40, 250, 'Materials may include hinges, locksets, strike plates, trim, shims, fasteners, or weatherstripping.' ),
+			'window_work'             => array( 50, 350, 'Materials may include balances, hardware, sealant, trim, blinds/shades hardware, or window-specific parts.' ),
+			'finish_carpentry'        => array( 40, 250, 'Materials may include trim, molding, fasteners, adhesive, caulk, filler, and finishing supplies.' ),
+			'built_ins_woodwork'      => array( 75, 400, 'Woodwork materials vary based on boards, panels, hardware, fasteners, finish, and reinforcement needs.' ),
+			'deck_porch_repair'       => array( 60, 350, 'Materials may include boards, rails, fasteners, brackets, trim, stain, or exterior-rated hardware.' ),
+			'siding_fence_repair'     => array( 75, 450, 'Materials may include replacement sections, boards, panels, fasteners, brackets, or exterior sealants.' ),
+			'yard_landscaping'        => array( 0, 120, 'Materials may include bags, edging, mulch, soil, plants, stakes, or cleanup supplies if requested.' ),
+			'concrete_cement'         => array( 75, 400, 'Materials may include cement mix, form boards, reinforcement, patching products, sealers, or finishing supplies.' ),
+		);
+
+		$selected = isset( $overrides[ $service_family ] ) ? $overrides[ $service_family ] : ( $ranges[ $rate_family ] ?? array( 0, 100, 'Materials depend on the exact scope and what is found on-site.' ) );
+		return array(
+			'low'   => $this->round_estimate_low( $selected[0] ),
+			'high'  => $this->round_estimate_high( $selected[1] ),
+			'notes' => $selected[2],
+		);
+	}
+
+	/**
+	 * @param float|int $value Value.
+	 * @return int
+	 */
+	protected function round_estimate_low( $value ) {
+		return (int) ( floor( max( 0, (float) $value ) / 5 ) * 5 );
+	}
+
+	/**
+	 * @param float|int $value Value.
+	 * @return int
+	 */
+	protected function round_estimate_high( $value ) {
+		return (int) ( ceil( max( 0, (float) $value ) / 5 ) * 5 );
+	}
+
 	protected function sanitize_assistant_result( array $result ) {
 		$allowed = array( 'standard_visit', 'extended_visit', 'large_visit', 'project_consultation' );
 		$suggested_duration_allowed = array( '1', '2', '3', '4', '5', '6', '7', '8', 'consult_1' );
 		$pricing_allowed            = array( 'hourly_only', 'hourly_plus_materials', 'consultation_first' );
-		return array(
+		$sanitized = array(
 			'service_family'           => sanitize_key( $result['service_family'] ?? '' ),
 			'rate_family'              => sanitize_key( $result['rate_family'] ?? '' ),
 			'duration_bucket'          => sanitize_key( $result['duration_bucket'] ?? '' ),
@@ -504,6 +825,20 @@ class Handik_Booking_App_ChatKit_Service {
 			'unsafe_reason'            => sanitize_textarea_field( $result['unsafe_reason'] ?? '' ),
 			'is_project'               => ! empty( $result['is_project'] ),
 		);
+
+		foreach ( array( 'applied_hourly_rate', 'labor_estimate_low', 'labor_estimate_high', 'materials_estimate_low', 'materials_estimate_high', 'total_estimate_low', 'total_estimate_high' ) as $pricing_key ) {
+			if ( array_key_exists( $pricing_key, $result ) ) {
+				$sanitized[ $pricing_key ] = max( 0, (float) $result[ $pricing_key ] );
+			}
+		}
+
+		foreach ( array( 'materials_notes', 'estimate_disclaimer' ) as $pricing_text_key ) {
+			if ( array_key_exists( $pricing_text_key, $result ) ) {
+				$sanitized[ $pricing_text_key ] = sanitize_textarea_field( $result[ $pricing_text_key ] );
+			}
+		}
+
+		return $sanitized;
 	}
 
 	/**

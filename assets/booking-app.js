@@ -1661,6 +1661,7 @@
 					endpoints: {
 						createSession: config.restBase + 'chatkit-session',
 						requestPhotoContext: config.restBase + 'request-photo-context',
+						requestPricingContext: config.restBase + 'request-pricing-context',
 						saveAssistantResult: config.restBase + 'assistant-result',
 						associateThread: config.restBase + 'chatkit-thread',
 						clientLog: config.restBase + 'client-log'

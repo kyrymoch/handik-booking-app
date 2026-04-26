@@ -86,6 +86,11 @@ class Handik_Booking_App_Job_Requests_Service {
 		$app_state = ( $request && ! empty( $request['app_state'] ) && is_array( $request['app_state'] ) ) ? $request['app_state'] : array();
 		$app_state['suggested_duration_hours'] = sanitize_text_field( (string) ( $routing['suggested_duration_hours'] ?? $assistant_result['suggested_duration_hours'] ?? '' ) );
 		$app_state['pricing_posture']          = sanitize_key( (string) ( $routing['pricing_posture'] ?? $assistant_result['pricing_posture'] ?? '' ) );
+		foreach ( array( 'applied_hourly_rate', 'labor_estimate_low', 'labor_estimate_high', 'materials_estimate_low', 'materials_estimate_high', 'total_estimate_low', 'total_estimate_high' ) as $pricing_key ) {
+			$app_state[ $pricing_key ] = max( 0, (float) ( $assistant_result[ $pricing_key ] ?? $app_state[ $pricing_key ] ?? 0 ) );
+		}
+		$app_state['materials_notes']     = sanitize_textarea_field( (string) ( $assistant_result['materials_notes'] ?? $app_state['materials_notes'] ?? '' ) );
+		$app_state['estimate_disclaimer'] = sanitize_textarea_field( (string) ( $assistant_result['estimate_disclaimer'] ?? $app_state['estimate_disclaimer'] ?? '' ) );
 		$updated = $wpdb->update(
 			$table,
 			array(
@@ -114,6 +119,9 @@ class Handik_Booking_App_Job_Requests_Service {
 				'duration_bucket'          => sanitize_key( $routing['duration_bucket'] ?? '' ),
 				'suggested_duration_hours' => sanitize_text_field( (string) ( $app_state['suggested_duration_hours'] ?? '' ) ),
 				'pricing_posture'          => sanitize_key( (string) ( $app_state['pricing_posture'] ?? '' ) ),
+				'applied_hourly_rate'      => $app_state['applied_hourly_rate'] ?? 0,
+				'total_estimate_low'       => $app_state['total_estimate_low'] ?? 0,
+				'total_estimate_high'      => $app_state['total_estimate_high'] ?? 0,
 			)
 		);
 	}
@@ -353,6 +361,17 @@ class Handik_Booking_App_Job_Requests_Service {
 			'visible_tasks_summary' => ! empty( $row['app_state']['visible_tasks_summary'] ) ? (string) $row['app_state']['visible_tasks_summary'] : '',
 			'safety_summary'      => ! empty( $row['app_state']['safety_summary'] ) ? (string) $row['app_state']['safety_summary'] : '',
 			'visual_estimate_notes' => ! empty( $row['app_state']['visual_estimate_notes'] ) ? (string) $row['app_state']['visual_estimate_notes'] : '',
+			'suggested_duration_hours' => ! empty( $row['app_state']['suggested_duration_hours'] ) ? (string) $row['app_state']['suggested_duration_hours'] : '',
+			'pricing_posture'     => ! empty( $row['app_state']['pricing_posture'] ) ? (string) $row['app_state']['pricing_posture'] : '',
+			'applied_hourly_rate' => ! empty( $row['app_state']['applied_hourly_rate'] ) ? (float) $row['app_state']['applied_hourly_rate'] : 0,
+			'labor_estimate_low'  => ! empty( $row['app_state']['labor_estimate_low'] ) ? (float) $row['app_state']['labor_estimate_low'] : 0,
+			'labor_estimate_high' => ! empty( $row['app_state']['labor_estimate_high'] ) ? (float) $row['app_state']['labor_estimate_high'] : 0,
+			'materials_estimate_low' => ! empty( $row['app_state']['materials_estimate_low'] ) ? (float) $row['app_state']['materials_estimate_low'] : 0,
+			'materials_estimate_high' => ! empty( $row['app_state']['materials_estimate_high'] ) ? (float) $row['app_state']['materials_estimate_high'] : 0,
+			'total_estimate_low'  => ! empty( $row['app_state']['total_estimate_low'] ) ? (float) $row['app_state']['total_estimate_low'] : 0,
+			'total_estimate_high' => ! empty( $row['app_state']['total_estimate_high'] ) ? (float) $row['app_state']['total_estimate_high'] : 0,
+			'materials_notes'     => ! empty( $row['app_state']['materials_notes'] ) ? (string) $row['app_state']['materials_notes'] : '',
+			'estimate_disclaimer' => ! empty( $row['app_state']['estimate_disclaimer'] ) ? (string) $row['app_state']['estimate_disclaimer'] : '',
 			'assistant_summary'   => $row['assistant_summary'],
 			'chat_thread_id'      => $row['chat_thread_id'],
 		);
