@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.1.2
+Stable tag: 2.1.3
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, returning-client auth, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,12 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.1.3 =
+* Added visible pricing hints to the three task-path cards on the `What do you need help with?` screen.
+* Hid the separately promoted General Handyman Help and Larger-Scale Work services from the specific task browser.
+* Changed the Selected tasks sheet to slide in first, then bounce two seconds later, and removed the assistant-ready info toast.
+* Reduced Virtual assistant wait time by mounting ChatKit immediately while photo analysis warms in the background, and reduced bridge-side debug logging/network chatter.
 
 = 2.1.2 =
 * Added the `get_request_pricing_context` ChatKit client tool and WordPress endpoint so the assistant can fetch selected task rates, applied hourly rate, suggested duration, and rough labor/material/total estimates.

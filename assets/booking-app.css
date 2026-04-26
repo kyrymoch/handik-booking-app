@@ -342,6 +342,19 @@
 	color: var(--handik-muted-text, #64748b);
 }
 
+.handik-choice__price {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	margin-top: 2px;
+	padding: 3px 9px;
+	border-radius: 999px;
+	background: color-mix(in srgb, var(--handik-accent, #283618) 10%, #ffffff);
+	color: var(--handik-accent, #283618);
+	font-size: 0.78rem;
+	font-weight: 700;
+}
+
 .handik-choice:hover,
 .handik-task:hover {
 	border-color: color-mix(in srgb, var(--handik-accent, #0f766e) 50%, #dbe3ea);
@@ -1199,6 +1212,17 @@ openai-chatkit {
 	}
 }
 
+@keyframes handik-selected-sheet-slide-up {
+	from {
+		opacity: 0;
+		transform: translateY(110%);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
+
 .handik-task-groups {
 	padding-bottom: 220px;
 }
@@ -1230,7 +1254,9 @@ openai-chatkit {
 }
 
 .handik-selected-sheet.is-bouncing {
-	animation: handik-selected-sheet-bounce 0.62s cubic-bezier(0.2, 0.9, 0.22, 1.15) 0.003s;
+	animation:
+		handik-selected-sheet-slide-up 0.3s cubic-bezier(0.2, 0.9, 0.2, 1) both,
+		handik-selected-sheet-bounce 0.72s cubic-bezier(0.2, 0.9, 0.22, 1.15) 2s;
 }
 
 .handik-selected-sheet__toggle {

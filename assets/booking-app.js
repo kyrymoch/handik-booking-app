@@ -416,6 +416,9 @@
 		}
 
 		setAssistantNotice( message, isError ) {
+			if ( ! isError ) {
+				return;
+			}
 			const next = String( message || '' ) + '|' + ( isError ? '1' : '0' );
 			if ( ! message || this.state.lastAssistantNotice === next ) {
 				return;
@@ -572,8 +575,8 @@
 			return '<div class="handik-choice-wrap"><button data-action="' + this.escape( action ) + '" class="handik-choice ' + ( isSelected ? 'is-selected' : '' ) + '"><span class="handik-choice__title">' + this.escape( label ) + '</span></button></div>';
 		}
 
-		taskPathChoiceMarkup( action, label, description, isSelected ) {
-			return '<div class="handik-choice-wrap"><button data-action="' + this.escape( action ) + '" class="handik-choice handik-choice--large ' + ( isSelected ? 'is-selected' : '' ) + '"><span class="handik-choice__title">' + this.escape( label ) + '</span><span class="handik-choice__hint">' + this.escape( description ) + '</span></button></div>';
+		taskPathChoiceMarkup( action, label, description, price, isSelected ) {
+			return '<div class="handik-choice-wrap"><button data-action="' + this.escape( action ) + '" class="handik-choice handik-choice--large ' + ( isSelected ? 'is-selected' : '' ) + '"><span class="handik-choice__title">' + this.escape( label ) + '</span><span class="handik-choice__hint">' + this.escape( description ) + '</span><span class="handik-choice__price">' + this.escape( price ) + '</span></button></div>';
 		}
 
 		goTo( step ) {
@@ -1137,21 +1140,13 @@
 				return this.assistantPreparationPromise;
 			}
 
-			const shouldWarmBeforeMount = ! this.assistantBridge && Array.isArray( this.state.photos ) && this.state.photos.length;
 			this.assistantPreparationPromise = ( async() => {
-				if ( shouldWarmBeforeMount ) {
-					try {
-						this.pendingAssistantContextAnalysis = await this.withTimeout( this.warmPhotoAnalysis(), 12000, 'Assistant photo analysis preparation' );
-					} catch ( error ) {
-						this.logClient( 'debug', 'Assistant preparation warmup failed.', {
-							request_id: this.state.requestId,
-							error: error && error.message ? error.message : 'unknown'
-						} );
-					}
-				}
-
 				if ( 'assistant' === this.state.step ) {
 					this.mountAssistant();
+				}
+
+				if ( Array.isArray( this.state.photos ) && this.state.photos.length ) {
+					this.warmPhotoAnalysis();
 				}
 			} )().finally( () => {
 				this.assistantPreparationPromise = null;
@@ -1213,7 +1208,7 @@
 				this.state.requestId = draft.request_id;
 				this.state.draftToken = draft.draft_token;
 				if ( this.state.photos.length ) {
-					this.pendingAssistantContextAnalysis = await this.warmPhotoAnalysis();
+					this.warmPhotoAnalysis();
 				}
 				this.state.loading = false;
 				this.goTo( 'assistant' );
@@ -1604,7 +1599,6 @@
 				this.state.loading = false;
 				this.setAssistantContinueBusy( false );
 				this.setAssistantNotice( error.message || 'We could not save the assistant step yet.', true );
-				this.notify( 'error', 'Assistant step issue', error.message || 'We could not save the assistant step yet.' );
 			}
 		}
 
@@ -1700,7 +1694,6 @@
 							this.goTo( 'unsafe' );
 							return;
 						}
-						this.setAssistantNotice( config.strings.assistantReadyNotice || 'The virtual assistant has enough information. Continue when you are ready.', false );
 					},
 					onError: ( error ) => {
 						this.setAssistantPreparingState( false );
@@ -1730,7 +1723,7 @@
 			if ( this.state.selectedTasksSheetAnimate ) {
 				window.setTimeout( () => {
 					this.state.selectedTasksSheetAnimate = false;
-				}, 0 );
+				}, 2900 );
 			}
 			if ( 'assistant' === this.state.step ) {
 				window.setTimeout( () => this.prepareAssistantStep(), 0 );
@@ -1807,14 +1800,19 @@
 			if ( 'specific' !== this.state.taskSelectionMode ) {
 				return '<p class="handik-booking-app__intro">' + this.escape( config.strings.taskIntro || 'Choose the option that best matches your request.' ) + '</p>' +
 					'<div class="handik-choice-grid handik-choice-grid--task-paths">' +
-						this.taskPathChoiceMarkup( 'choose-general-handyman', 'General Handyman Help', 'For mixed, unclear, or everyday handyman tasks', this.taskSelected( 'general_handyman_help' ) ) +
-						this.taskPathChoiceMarkup( 'choose-larger-scale', 'Larger-Scale Work', 'For bigger, multi-step, or consultation-first work', this.taskSelected( 'larger_scale_work' ) ) +
-						this.taskPathChoiceMarkup( 'choose-specific-tasks', 'Choose Specific Tasks', 'Browse services by category and select one or more tasks', false ) +
+						this.taskPathChoiceMarkup( 'choose-general-handyman', 'General Handyman Help', 'For mixed, unclear, or everyday handyman tasks', '$80/hr', this.taskSelected( 'general_handyman_help' ) ) +
+						this.taskPathChoiceMarkup( 'choose-larger-scale', 'Larger-Scale Work', 'For bigger, multi-step, or consultation-first work', 'Consultation first', this.taskSelected( 'larger_scale_work' ) ) +
+						this.taskPathChoiceMarkup( 'choose-specific-tasks', 'Choose Specific Tasks', 'Browse services by category and select one or more tasks', 'Price depends on task', false ) +
 					'</div>' +
 					this.footerActions( '', '', '', '', { hideBack: true, hideContinue: true } );
 			}
 
-			const groups = ( this.bootstrap && this.bootstrap.task_catalog ) || [];
+			const hiddenSpecificTaskIds = [ 'general_handyman_help', 'larger_scale_work' ];
+			const groups = ( ( this.bootstrap && this.bootstrap.task_catalog ) || [] ).map( ( group ) => {
+				return Object.assign( {}, group, {
+					tasks: ( group.tasks || [] ).filter( ( task ) => ! hiddenSpecificTaskIds.includes( task.id ) )
+				} );
+			} ).filter( ( group ) => group.tasks.length );
 			return '<p class="handik-booking-app__intro">' + this.escape( 'Tap one or more services to select or remove them.' ) + '</p><div class="handik-task-groups">' +
 				groups.map( ( group ) => '<div class="handik-task-group"><h3>' + this.escape( group.group ) + '</h3><div class="handik-task-grid">' +
 					group.tasks.map( ( task ) => '<button type="button" class="handik-task ' + ( this.taskSelected( task.id ) ? 'is-selected' : '' ) + '" data-task-id="' + this.escape( task.id ) + '">' + this.escape( task.label ) + '</button>' ).join( '' ) +

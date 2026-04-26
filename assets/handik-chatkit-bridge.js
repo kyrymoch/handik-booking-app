@@ -264,7 +264,7 @@
 
 			emitStatus( payload.message, payload.context );
 
-			if ( endpoints.clientLog ) {
+			if ( endpoints.clientLog && 'debug' !== payload.level ) {
 				requestJson( endpoints.clientLog, payload ).catch( function() {} );
 			}
 		};
@@ -636,7 +636,7 @@
 			if ( 'function' === typeof record.element.setOptions ) {
 				record.element.setOptions( nextOptions );
 			}
-			log( 'info', 'ChatKit options applied.', {
+			log( 'debug', 'ChatKit options applied.', {
 				has_on_client_tool: 'function' === typeof nextOptions.onClientTool,
 				has_element_on_client_tool: 'function' === typeof record.element.onClientTool
 			} );
@@ -761,10 +761,6 @@
 			options.container.appendChild( record.element );
 			applyOptions();
 			log( 'info', 'ChatKit mounted into container.' );
-
-			window.requestAnimationFrame( function() {
-				applyOptions();
-			} );
 
 			record.readyTimer = window.setTimeout( function() {
 				if ( ! record.ready && ! record.interactive ) {

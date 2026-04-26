@@ -11,6 +11,17 @@ class Handik_Booking_App_Changelog_Service {
 	public function get_entries() {
 		return array(
 			array(
+				'version'      => '2.1.3',
+				'date'         => '2026-04-26',
+				'title'        => 'Tighten Task Choice UX And Speed Up Assistant Mount',
+				'notes'        => array(
+					'Added pricing hints to General Handyman Help, Larger-Scale Work, and Choose Specific Tasks on the task-path screen.',
+					'Removed the separately promoted General Handyman Help and Larger-Scale Work entries from the full specific-task browser.',
+					'Changed the Selected tasks sheet so it slides in immediately and performs its attention bounce two seconds later.',
+					'Removed the assistant-ready info toast and sped up the Virtual assistant step by mounting ChatKit immediately while photo analysis warms in the background.',
+				),
+			),
+			array(
 				'version'      => '2.1.2',
 				'date'         => '2026-04-25',
 				'title'        => 'Add Pricing Context For Assistant Estimates',
