@@ -1170,6 +1170,18 @@
 				case 'back-contact':
 					this.goTo( 'photos' );
 					break;
+				case 'back-assistant':
+					this.goTo( 'contact_details' );
+					break;
+				case 'back-booking':
+					this.goTo( 'assistant' );
+					break;
+				case 'choose-task-option':
+					this.showStepWarning( 'task_selection', 'Choose one of the options above to continue.' );
+					break;
+				case 'choose-time-placeholder':
+					this.notify( 'info', '', 'Choose a time in the calendar above.', 4200 );
+					break;
 				case 'toggle-project':
 					break;
 				case 'toggle-selected-tasks':
@@ -2157,7 +2169,7 @@
 						this.taskPathChoiceMarkup( 'choose-larger-scale', 'Larger-Scale Work', 'For bigger, multi-step, or consultation-first work', 'Consultation first', this.taskSelected( 'larger_scale_work' ) ) +
 						this.taskPathChoiceMarkup( 'choose-specific-tasks', 'Choose Specific Tasks', 'Browse services by category and select one or more tasks', 'Price depends on task', false ) +
 					'</div>' +
-					this.footerActions( 'back-client', '', '', 'Back to client type', { hideContinue: true } );
+					this.footerActions( 'back-client', 'choose-task-option', 'Choose option', '', { continueMuted: true } );
 			}
 
 			const hiddenSpecificTaskIds = [ 'general_handyman_help', 'larger_scale_work' ];
@@ -2170,7 +2182,7 @@
 				groups.map( ( group ) => '<div class="handik-task-group"><h3>' + this.escape( group.group ) + '</h3><div class="handik-task-grid">' +
 					group.tasks.map( ( task ) => '<button type="button" class="handik-task ' + ( this.taskSelected( task.id ) ? 'is-selected' : '' ) + '" data-task-id="' + this.escape( task.id ) + '">' + this.escape( task.label ) + '</button>' ).join( '' ) +
 				'</div></div>' ).join( '' ) +
-				this.footerActions( 'back-tasks', 'tasks-next', this.escape( config.strings.continue ), 'Back to task type', { continueMuted: ! this.stepCanContinue( 'task_selection' ) } ) +
+				this.footerActions( 'back-tasks', 'tasks-next', this.escape( config.strings.continue ), '', { continueMuted: ! this.stepCanContinue( 'task_selection' ) } ) +
 				this.selectedTasksSheetMarkup() +
 			'</div>';
 		}
@@ -2213,7 +2225,7 @@
 
 		assistantMarkup() {
 			const skeleton = '<div class="handik-skeleton handik-skeleton--assistant" aria-hidden="true"><div class="handik-skeleton__bar"></div><div class="handik-skeleton__bar handik-skeleton__bar--short"></div><div class="handik-skeleton__bar"></div></div>';
-			return '<p class="handik-booking-app__intro">' + this.escape( config.strings.assistantIntro || 'This AI assistant helps you understand rough cost, timing, materials, and what to expect, while helping us collect the details needed to prepare for the job properly.' ) + '</p><div class="handik-assistant-layout"><div class="handik-assistant-panel"><div class="handik-booking-app__assistant-host">' + skeleton + '</div>' + this.footerActions( '', 'assistant-next', this.escape( config.strings.assistantContinue || 'Book a time' ), '', { continueMuted: false, hideBack: true } ) + '</div></div>';
+			return '<p class="handik-booking-app__intro">' + this.escape( config.strings.assistantIntro || 'This AI assistant helps you understand rough cost, timing, materials, and what to expect, while helping us collect the details needed to prepare for the job properly.' ) + '</p><div class="handik-assistant-layout"><div class="handik-assistant-panel"><div class="handik-booking-app__assistant-host">' + skeleton + '</div>' + this.footerActions( 'back-assistant', 'assistant-next', this.escape( config.strings.assistantContinue || 'Book a time' ), '', { continueMuted: false } ) + '</div></div>';
 		}
 
 		contactMarkup() {
@@ -2235,12 +2247,13 @@
 				'<div class="handik-skeleton__grid">' +
 				Array.from( { length: 9 } ).map( () => '<div class="handik-skeleton__cell"></div>' ).join( '' ) +
 				'</div></div>';
-			return '<div class="handik-booking-app__booking-embed">' + skeleton + '</div>';
+			return '<div class="handik-booking-app__booking-embed">' + skeleton + '</div>' +
+				this.footerActions( 'back-booking', 'choose-time-placeholder', 'Choose time', '', { continueMuted: true } );
 		}
 
 		footerActions( backAction, continueAction, continueLabel, backLabel, options ) {
 			const settings = options || {};
-			const backText = backLabel || this.escape( config.strings.back );
+			const backText = this.escape( 'Back' );
 			const backClass = ( settings.backIsUtility ? 'handik-btn is-secondary' : 'handik-btn is-secondary is-back' ) + ( settings.backMuted ? ' is-disabled' : '' );
 			const backInner = settings.backIsUtility ? '<span class="handik-btn__label">' + backText + '</span>' : '<span class="handik-btn__icon" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false" aria-hidden="true"><path d="M19 11H7.83l4.88-4.88L11.29 4.7 4 12l7.29 7.3 1.42-1.42L7.83 13H19v-2z"></path></svg></span><span class="handik-btn__label">' + backText + '</span>';
 			const continueClass = 'handik-btn ' + ( settings.continueMuted ? 'is-pending' : 'is-primary' ) + ' is-continue';

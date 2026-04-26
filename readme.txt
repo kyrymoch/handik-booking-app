@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.1.3.12
+Stable tag: 2.1.3.13
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, returning-client auth, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,11 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.1.3.13 =
+* Standardized the bottom action bar so every screen after the first shows a consistent `Back` button and right-side action.
+* Added `Choose option` guidance on the task-type screen and a `Choose time` action on the final calendar screen.
+* Restored back navigation from the Virtual assistant step to Contact details.
 
 = 2.1.3.12 =
 * Added bottom navigation from the task-type screen back to client type, and from the specific-task browser back to task type.
