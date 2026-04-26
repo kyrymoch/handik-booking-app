@@ -22,8 +22,17 @@ jobs:
           rsync -av ./ dist/handik-booking-app/ \
             --exclude '.git' \
             --exclude '.github' \
+            --exclude '.editorconfig' \
+            --exclude '.eslintrc.json' \
+            --exclude '.gitignore' \
+            --exclude '.prettierignore' \
+            --exclude '.prettierrc.json' \
+            --exclude 'composer.json' \
             --exclude 'dist' \
             --exclude 'node_modules' \
+            --exclude 'package.json' \
+            --exclude 'phpcs.xml.dist' \
+            --exclude 'phpstan.neon.dist' \
             --exclude 'tests' \
             --exclude '.DS_Store'
           cd dist

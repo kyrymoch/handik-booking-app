@@ -426,7 +426,10 @@
 				remaining: duration || 3200,
 				startedAt: 0,
 				progress: 1,
-				meta: Array.isArray( settings.meta ) ? settings.meta : []
+				meta: Array.isArray( settings.meta ) ? settings.meta : [],
+				action: 'function' === typeof settings.action ? settings.action : null,
+				actionId: settings.actionId || '',
+				actionLabel: settings.actionLabel || ''
 			};
 			this.state.notifications = this.state.notifications.concat( item ).slice( -4 );
 			this.renderNotifications();
