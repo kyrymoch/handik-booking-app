@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.1.3
+Stable tag: 2.1.3.11
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, returning-client auth, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,19 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.1.3.11 =
+* Hardened the REST surface: Cal.com webhook now fails closed when no shared secret is configured, `/client-log` is rate limited (60 entries/min/IP) and trims oversized payloads, and every front-end fetch now sends the WordPress REST nonce.
+* Added per-field `autocomplete` and `inputmode` hints (name, email, phone, street address, one-time code) so mobile browsers can autofill correctly and show the right keyboard.
+* Phone input now applies the display format as the user types while preserving caret position; submission still uses the canonical normalized number.
+* Added local draft persistence: in-progress bookings are stored in `localStorage` (24-hour TTL, plugin-version pinned) and restored on reload, then cleared automatically once the booking is confirmed or the flow is restarted.
+* Browser back/forward now navigates between booking steps via the History API instead of dropping out of the app.
+* Focus moves to the new step heading on every navigation, toasts/validation errors expose `role="status"` / `role="alert"`, and animations honor `prefers-reduced-motion`.
+* Photos can now be removed individually, the upload control shows the 10 MB limit, and the saved-address area shows an empty state when a returning client has no saved addresses.
+* Cal.com booking embed and the assistant chat now render skeleton placeholders, and the booking embed shows an "open in a new tab" fallback if it does not load within 15 seconds.
+* GET requests to the REST API retry with exponential backoff (1 s, 2 s, 4 s) on transient network or 5xx failures; POST requests still execute exactly once.
+* Added a standardized `Handik_Booking_App_Api_Response` helper, fixed the dashboard "Recent requests/bookings" cards to use cheap COUNT queries, and memoized the service catalog parser.
+* Added scaffolding for code-quality tooling: `.gitignore`, `composer.json` (PHPCS + PHPStan), `package.json` (ESLint + Prettier), `.editorconfig`, and a CI workflow that runs lint and static analysis on every PR.
 
 = 2.1.3 =
 * Added visible pricing hints to the three task-path cards on the `What do you need help with?` screen.

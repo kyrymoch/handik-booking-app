@@ -4,6 +4,24 @@
 	const config = window.HandikBookingAppConfig || {};
 	const GOOGLE_SCRIPT_ID = 'handik-google-maps-places';
 	const CAL_EMBED_SCRIPT_ID = 'handik-cal-embed-script';
+	const DRAFT_STORAGE_KEY = 'handik_booking_app_draft_v1';
+	const DRAFT_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours.
+	const CAL_EMBED_TIMEOUT_MS = 15000;
+	const PERSISTED_STATE_FIELDS = [
+		'step',
+		'clientType',
+		'requestId',
+		'draftToken',
+		'selectedTasks',
+		'taskSelectionMode',
+		'isProject',
+		'jobShape',
+		'address',
+		'photos',
+		'shortDescription',
+		'contact',
+		'appSessionKey'
+	];
 
 	class HandikBookingApp {
 		constructor( root ) {
@@ -67,15 +85,182 @@
 
 		async init() {
 			this.renderLoading();
+			this.restoreDraftFromStorage();
+			this.attachHistoryListener();
 			try {
 				this.bootstrap = await this.api( 'app/bootstrap', {}, 'GET' );
 				if ( this.bootstrap.verified_profile ) {
 					this.state.verifiedProfile = this.bootstrap.verified_profile;
 				}
 				this.render();
+				this.replaceHistoryState( this.state.step );
+				this.focusStepHeading();
 			} catch ( error ) {
-				this.root.innerHTML = '<div class="handik-booking-app__shell"><div class="handik-booking-app__alert is-error">' + this.escape( error.message ) + '</div></div>';
+				this.root.innerHTML = '<div class="handik-booking-app__shell"><div class="handik-booking-app__alert is-error" role="alert">' + this.escape( error.message ) + '</div></div>';
 			}
+		}
+
+		focusStepHeading() {
+			window.requestAnimationFrame( () => {
+				const heading = this.root.querySelector( '.handik-booking-app__screen-header h2' );
+				if ( ! heading ) {
+					return;
+				}
+				heading.setAttribute( 'tabindex', '-1' );
+				try {
+					heading.focus( { preventScroll: true } );
+				} catch ( e ) {
+					heading.focus();
+				}
+			} );
+		}
+
+		// --- Browser history ---
+
+		attachHistoryListener() {
+			if ( this._popstateBound ) {
+				return;
+			}
+			this._popstateBound = true;
+			window.addEventListener( 'popstate', ( event ) => {
+				const data = event && event.state ? event.state : null;
+				if ( ! data || ! data.handikBookingApp || data.instanceId !== this.instanceId ) {
+					return;
+				}
+				if ( ! data.step || data.step === this.state.step ) {
+					return;
+				}
+				this._navigatingFromHistory = true;
+				this.goTo( data.step );
+				this._navigatingFromHistory = false;
+			} );
+		}
+
+		replaceHistoryState( step ) {
+			if ( ! window.history || 'function' !== typeof window.history.replaceState ) {
+				return;
+			}
+			try {
+				window.history.replaceState(
+					{ handikBookingApp: true, instanceId: this.instanceId, step: step },
+					'',
+					window.location.href
+				);
+			} catch ( e ) {
+				// SecurityError on file:// or some restricted iframes — fail silently.
+			}
+		}
+
+		pushHistoryState( step ) {
+			if ( this._navigatingFromHistory ) {
+				return;
+			}
+			if ( ! window.history || 'function' !== typeof window.history.pushState ) {
+				return;
+			}
+			try {
+				window.history.pushState(
+					{ handikBookingApp: true, instanceId: this.instanceId, step: step },
+					'',
+					window.location.href
+				);
+			} catch ( e ) {
+				// Ignore — history is best-effort.
+			}
+		}
+
+		// --- Draft persistence (localStorage) ---
+
+		saveDraftToStorage() {
+			if ( ! window.localStorage ) {
+				return;
+			}
+			// Don't persist after a successful booking (we clear via clearDraftStorage there).
+			const persisted = {};
+			PERSISTED_STATE_FIELDS.forEach( ( key ) => {
+				if ( Object.prototype.hasOwnProperty.call( this.state, key ) ) {
+					persisted[ key ] = this.state[ key ];
+				}
+			} );
+			const envelope = {
+				version: config.version || '0',
+				savedAt: Date.now(),
+				state: persisted
+			};
+			try {
+				window.localStorage.setItem( DRAFT_STORAGE_KEY, JSON.stringify( envelope ) );
+			} catch ( e ) {
+				// Quota exceeded or storage disabled — nothing we can do.
+			}
+		}
+
+		restoreDraftFromStorage() {
+			if ( ! window.localStorage ) {
+				return;
+			}
+			let raw;
+			try {
+				raw = window.localStorage.getItem( DRAFT_STORAGE_KEY );
+			} catch ( e ) {
+				return;
+			}
+			if ( ! raw ) {
+				return;
+			}
+			let envelope;
+			try {
+				envelope = JSON.parse( raw );
+			} catch ( e ) {
+				this.clearDraftStorage();
+				return;
+			}
+			if ( ! envelope || 'object' !== typeof envelope || ! envelope.state ) {
+				this.clearDraftStorage();
+				return;
+			}
+			// Invalidate on plugin upgrades.
+			if ( config.version && envelope.version !== config.version ) {
+				this.clearDraftStorage();
+				return;
+			}
+			// TTL check.
+			if ( ! envelope.savedAt || Date.now() - envelope.savedAt > DRAFT_TTL_MS ) {
+				this.clearDraftStorage();
+				return;
+			}
+			// Don't restore if already on the terminal booking screen — user may
+			// have closed the tab right after success and we don't want to
+			// re-show stale draft.
+			if ( 'booking' === envelope.state.step && envelope.state.bookingStatus === 'booked' ) {
+				this.clearDraftStorage();
+				return;
+			}
+			PERSISTED_STATE_FIELDS.forEach( ( key ) => {
+				if ( Object.prototype.hasOwnProperty.call( envelope.state, key ) ) {
+					this.state[ key ] = envelope.state[ key ];
+				}
+			} );
+		}
+
+		clearDraftStorage() {
+			if ( ! window.localStorage ) {
+				return;
+			}
+			try {
+				window.localStorage.removeItem( DRAFT_STORAGE_KEY );
+			} catch ( e ) {
+				// no-op
+			}
+		}
+
+		_scheduleDraftSave() {
+			if ( this._draftSaveTimer ) {
+				window.clearTimeout( this._draftSaveTimer );
+			}
+			this._draftSaveTimer = window.setTimeout( () => {
+				this._draftSaveTimer = null;
+				this.saveDraftToStorage();
+			}, 500 );
 		}
 
 		renderLoading() {
@@ -131,14 +316,49 @@
 				options.body = JSON.stringify( data || {} );
 			}
 
-			const response = await window.fetch( config.restBase + path, options );
-			const payload = await response.json().catch( function() {
-				return {};
-			} );
-			if ( ! response.ok ) {
-				throw new Error( payload.message || payload.error || 'Request failed' );
+			// Only retry idempotent GETs. POSTs (booking-capture, verify, etc.) MUST NOT
+			// be retried automatically — that would risk double-booking or duplicate codes.
+			const shouldRetry = 'GET' === options.method && ! formData;
+			const maxAttempts = shouldRetry ? 3 : 1;
+			const backoffs = [ 1000, 2000, 4000 ];
+			let lastError = null;
+
+			for ( let attempt = 0; attempt < maxAttempts; attempt++ ) {
+				try {
+					const response = await window.fetch( config.restBase + path, options );
+					const payload = await response.json().catch( function() {
+						return {};
+					} );
+					if ( ! response.ok ) {
+						const error = new Error( payload.message || payload.error || 'Request failed' );
+						error.status = response.status;
+						// 5xx are worth retrying; 4xx (auth, validation) are not.
+						if ( shouldRetry && response.status >= 500 && attempt < maxAttempts - 1 ) {
+							lastError = error;
+							await this._sleep( backoffs[ attempt ] || 4000 );
+							continue;
+						}
+						throw error;
+					}
+					return payload;
+				} catch ( error ) {
+					lastError = error;
+					// Non-network error already thrown above; if we got here from fetch()
+					// rejection, that's a network error and is retryable.
+					const isNetworkError = ! error.status;
+					if ( shouldRetry && isNetworkError && attempt < maxAttempts - 1 ) {
+						await this._sleep( backoffs[ attempt ] || 4000 );
+						continue;
+					}
+					throw error;
+				}
 			}
-			return payload;
+
+			throw lastError || new Error( 'Request failed' );
+		}
+
+		_sleep( ms ) {
+			return new Promise( ( resolve ) => window.setTimeout( resolve, ms ) );
 		}
 
 		withTimeout( promise, timeoutMs, label ) {
@@ -346,8 +566,14 @@
 			const progressStart = Math.max( 0, Math.min( 1, item.progress || duration / Math.max( duration, item.duration || 3200 ) ) );
 			const titleMarkup = item.title ? '<strong>' + this.escape( item.title ) + '</strong>' : '';
 			const messageMarkup = item.message ? '<span>' + this.escape( item.message ) + '</span>' : '';
+			const isError = 'error' === item.type;
+			const ariaRole = isError ? 'alert' : 'status';
+			const ariaLive = isError ? 'assertive' : 'polite';
+			const retryMarkup = item.actionLabel && item.actionId
+				? '<button type="button" class="handik-toast__action" data-notification-action="' + this.escape( item.id ) + '">' + this.escape( item.actionLabel ) + '</button>'
+				: '';
 
-			return '<div class="' + classes + '" style="--handik-toast-duration:' + duration + 'ms;--handik-toast-progress-start:' + progressStart + ';" data-notification-id="' + this.escape( item.id ) + '">' +
+			return '<div class="' + classes + '" role="' + ariaRole + '" aria-live="' + ariaLive + '" style="--handik-toast-duration:' + duration + 'ms;--handik-toast-progress-start:' + progressStart + ';" data-notification-id="' + this.escape( item.id ) + '">' +
 					'<div class="handik-toast__icon" aria-hidden="true">' + this.notificationIcon( item.type ) + '</div>' +
 					'<div class="handik-toast__content">' +
 						this.renderNotificationMeta( item ) +
@@ -355,6 +581,7 @@
 							titleMarkup +
 							messageMarkup +
 						'</div>' +
+						retryMarkup +
 					'</div>' +
 					this.renderNotificationClose( item ) +
 				'</div>';
@@ -394,6 +621,21 @@
 
 			root.querySelectorAll( '[data-notification-dismiss]' ).forEach( ( button ) => {
 				button.addEventListener( 'click', () => this.dismissNotification( button.getAttribute( 'data-notification-dismiss' ) ) );
+			} );
+
+			root.querySelectorAll( '[data-notification-action]' ).forEach( ( button ) => {
+				button.addEventListener( 'click', () => {
+					const id = button.getAttribute( 'data-notification-action' );
+					const item = this.state.notifications.find( ( entry ) => entry.id === id );
+					if ( item && 'function' === typeof item.action ) {
+						this.dismissNotification( id );
+						try {
+							item.action();
+						} catch ( e ) {
+							// Swallow — caller is responsible for surfacing further errors.
+						}
+					}
+				} );
 			} );
 		}
 
@@ -588,11 +830,18 @@
 				this.stopBookingStatusPolling();
 			}
 
+			const previousStep = this.state.step;
 			this.state.step = step;
 			this.state.footerHint = '';
 			this.state.footerHintError = false;
 			this.render();
 			this.scrollStepIntoView();
+			this.focusStepHeading();
+
+			if ( previousStep !== step ) {
+				this.pushHistoryState( step );
+			}
+			this.saveDraftToStorage();
 		}
 
 		scrollStepIntoView() {
@@ -739,7 +988,7 @@
 			'</div>';
 		}
 
-		async handleAction( action ) {
+		async handleAction( action, button ) {
 			this.clearFooterHint();
 			switch ( action ) {
 				case 'start':
@@ -837,8 +1086,23 @@
 						}
 					}
 					break;
+				case 'remove-photo':
+					{
+						const photoId = button ? button.getAttribute( 'data-photo-id' ) : '';
+						if ( ! photoId ) {
+							break;
+						}
+						this.state.photos = ( this.state.photos || [] ).filter( ( photo, index ) => {
+							const candidateId = String( photo.id || photo.attachment_id || photo.url || ( 'photo-' + index ) );
+							return candidateId !== String( photoId );
+						} );
+						this.render();
+						this.saveDraftToStorage();
+					}
+					break;
 				case 'restart':
 					this.stopBookingStatusPolling();
+					this.clearDraftStorage();
 					if ( window.HandikChatKitBridge && typeof window.HandikChatKitBridge.reset === 'function' && this.state.requestId ) {
 						window.HandikChatKitBridge.reset( 'request_' + String( this.state.requestId ) );
 					}
@@ -1274,6 +1538,10 @@
 		}
 
 		stopBookingStatusPolling() {
+			if ( this.calEmbedTimeoutTimer ) {
+				window.clearTimeout( this.calEmbedTimeoutTimer );
+				this.calEmbedTimeoutTimer = null;
+			}
 			if ( this.bookingStatusTimer ) {
 				window.clearInterval( this.bookingStatusTimer );
 				this.bookingStatusTimer = null;
@@ -1447,6 +1715,8 @@
 				this.state.bookingStatus = payload.status || 'booked';
 				this.state.bookingStatusMessage = '';
 				this.stopBookingStatusPolling();
+				// Booking confirmed — clear the local draft so a future visit starts fresh.
+				this.clearDraftStorage();
 			} catch ( error ) {
 				this.setBookingStatusMessage( error.message || 'We could not save the booking yet.', true );
 			}
@@ -1465,6 +1735,32 @@
 			}
 
 			const mountKey = String( this.state.requestId ) + '|' + this.state.bookingUrl;
+
+			// Show a fallback notice if the embed hasn't reported ready in 15s. We render
+			// the notice ABOVE the embed area so a slow-but-eventually-loading iframe still
+			// works — we don't replace the container.
+			if ( this.calEmbedTimeoutTimer ) {
+				window.clearTimeout( this.calEmbedTimeoutTimer );
+			}
+			this.calEmbedTimeoutTimer = window.setTimeout( () => {
+				if ( this.calEmbedMountKey === mountKey ) {
+					return;
+				}
+				if ( container.querySelector( '.handik-booking-app__booking-fallback' ) ) {
+					return;
+				}
+				const fallback = document.createElement( 'div' );
+				fallback.className = 'handik-booking-app__booking-fallback';
+				fallback.setAttribute( 'role', 'status' );
+				fallback.innerHTML = '<p>' + this.escape( 'The booking calendar is taking longer than usual.' ) + '</p>' +
+					'<p>' + this.escape( 'If it does not appear, please email or call us — your details are saved.' ) + '</p>' +
+					'<a class="handik-btn is-secondary" target="_blank" rel="noopener" href="' + this.escape( this.state.bookingUrl ) + '">' + this.escape( 'Open calendar in a new tab' ) + '</a>';
+				container.insertBefore( fallback, container.firstChild );
+				this.logClient( 'warn', 'Cal embed slow-load fallback shown.', {
+					request_id: this.state.requestId,
+					booking_url: this.state.bookingUrl
+				} );
+			}, CAL_EMBED_TIMEOUT_MS );
 			this.logClient( 'info', 'Mounting Cal embed.', {
 				request_id: this.state.requestId,
 				booking_url: this.state.bookingUrl,
@@ -1548,6 +1844,10 @@
 					namespace: this.calEmbedNamespace,
 				} );
 				this.calEmbedMountKey = mountKey;
+				if ( this.calEmbedTimeoutTimer ) {
+					window.clearTimeout( this.calEmbedTimeoutTimer );
+					this.calEmbedTimeoutTimer = null;
+				}
 			} ).catch( ( error ) => {
 				container.innerHTML = '<div class="handik-booking-app__booking-frame-wrap"><iframe class="handik-booking-app__booking-frame" src="' + this.escape( this.state.bookingUrl ) + '" title="Cal.com booking calendar" loading="lazy" referrerpolicy="strict-origin-when-cross-origin" allow="fullscreen"></iframe></div>';
 				this.logClient( 'error', 'Cal embed mount failed, using iframe fallback.', {
@@ -1793,7 +2093,58 @@
 
 		input( label, model, type, modifier, helpText ) {
 			const value = this.getByPath( model ) || '';
-			return '<label class="handik-field ' + this.escape( modifier || '' ) + '"><span>' + this.escape( label ) + '</span><input type="' + this.escape( type || 'text' ) + '" data-model="' + this.escape( model ) + '" value="' + this.escape( value ) + '" /></label>' + ( helpText ? '<span class="handik-field__help">' + this.escape( helpText ) + '</span>' : '' );
+			const attrs = this.inputAttrsForModel( model, type );
+			return '<label class="handik-field ' + this.escape( modifier || '' ) + '"><span>' + this.escape( label ) + '</span><input type="' + this.escape( type || 'text' ) + '" data-model="' + this.escape( model ) + '" value="' + this.escape( value ) + '"' + attrs + ' /></label>' + ( helpText ? '<span class="handik-field__help">' + this.escape( helpText ) + '</span>' : '' );
+		}
+
+		inputAttrsForModel( model, type ) {
+			// Pair every contact field with the right autofill / mobile keyboard hints.
+			// Server normalizes phone via Handik_Booking_App_Contacts_Service::normalize_phone,
+			// so any display formatting here is purely cosmetic — submission stays canonical.
+			const attrs = {};
+			switch ( model ) {
+				case 'contact.full_name':
+					attrs.autocomplete = 'name';
+					attrs.autocapitalize = 'words';
+					attrs.spellcheck = 'false';
+					break;
+				case 'contact.first_name':
+					attrs.autocomplete = 'given-name';
+					attrs.autocapitalize = 'words';
+					break;
+				case 'contact.last_name':
+					attrs.autocomplete = 'family-name';
+					attrs.autocapitalize = 'words';
+					break;
+				case 'contact.email':
+					attrs.autocomplete = 'email';
+					attrs.inputmode = 'email';
+					attrs.autocapitalize = 'off';
+					attrs.spellcheck = 'false';
+					break;
+				case 'contact.phone':
+					attrs.autocomplete = 'tel';
+					attrs.inputmode = 'tel';
+					break;
+				case 'verificationCode':
+					attrs.autocomplete = 'one-time-code';
+					attrs.inputmode = 'numeric';
+					break;
+				default:
+					if ( 'email' === type ) {
+						attrs.autocomplete = 'email';
+						attrs.inputmode = 'email';
+					} else if ( 'tel' === type ) {
+						attrs.autocomplete = 'tel';
+						attrs.inputmode = 'tel';
+					}
+			}
+
+			let out = '';
+			Object.keys( attrs ).forEach( ( key ) => {
+				out += ' ' + key + '="' + this.escape( attrs[ key ] ) + '"';
+			} );
+			return out;
 		}
 
 		getByPath( path ) {
@@ -1828,25 +2179,43 @@
 
 		addressMarkup() {
 			const addressOptions = this.state.verifiedProfile && Array.isArray( this.state.verifiedProfile.addresses ) ? this.state.verifiedProfile.addresses : [];
+			const isReturningProfile = !! ( this.state.verifiedProfile && this.state.verifiedProfile.contact );
+			let savedAddressMarkup = '';
+			if ( addressOptions.length ) {
+				savedAddressMarkup = '<label class="handik-field"><span>' + this.escape( config.strings.savedAddressLabel || 'Saved address' ) + '</span><select id="handik-saved-address" autocomplete="off"><option value="">' + this.escape( config.strings.savedAddressPlaceholder || 'Choose saved address' ) + '</option>' + addressOptions.map( ( item ) => '<option value="' + item.id + '">' + this.escape( item.address_full ) + '</option>' ).join( '' ) + '</select></label>';
+			} else if ( isReturningProfile ) {
+				savedAddressMarkup = '<p class="handik-field__help handik-field__help--empty" role="status">' + this.escape( 'No saved addresses yet — enter the address below.' ) + '</p>';
+			}
+
 			return (
-				( addressOptions.length ? '<label class="handik-field"><span>' + this.escape( config.strings.savedAddressLabel || 'Saved address' ) + '</span><select id="handik-saved-address"><option value="">' + this.escape( config.strings.savedAddressPlaceholder || 'Choose saved address' ) + '</option>' + addressOptions.map( ( item ) => '<option value="' + item.id + '">' + this.escape( item.address_full ) + '</option>' ).join( '' ) + '</select></label>' : '' ) +
-				'<label class="handik-field handik-field--address' + ( this.state.address.is_valid || ! this.state.address.address_full ? '' : ' is-invalid' ) + '"><span>' + this.escape( config.strings.addressLabel || 'Address of the job' ) + '</span><input id="handik-job-address" type="text" data-model="address.address_full" placeholder="' + this.escape( config.strings.addressPlaceholder || 'Start typing the address of the job' ) + '" value="' + this.escape( this.state.address.address_full || '' ) + '" /></label>' +
-				'<label class="handik-field"><span>' + this.escape( config.strings.unitLabel || 'Unit or apartment (optional)' ) + '</span><input type="text" data-model="address.address_unit" value="' + this.escape( this.state.address.address_unit || '' ) + '" /></label>' +
+				savedAddressMarkup +
+				'<label class="handik-field handik-field--address' + ( this.state.address.is_valid || ! this.state.address.address_full ? '' : ' is-invalid' ) + '"><span>' + this.escape( config.strings.addressLabel || 'Address of the job' ) + '</span><input id="handik-job-address" type="text" data-model="address.address_full" autocomplete="street-address" placeholder="' + this.escape( config.strings.addressPlaceholder || 'Start typing the address of the job' ) + '" value="' + this.escape( this.state.address.address_full || '' ) + '" />' +
+					( this.state.address.address_full && ! this.state.address.is_valid ? '<span class="handik-field__error" role="alert">' + this.escape( ( config.strings.errors && config.strings.errors.addressRequired ) || 'Choose a valid address from the suggestions to continue.' ) + '</span>' : '' ) +
+				'</label>' +
+				'<label class="handik-field"><span>' + this.escape( config.strings.unitLabel || 'Unit or apartment (optional)' ) + '</span><input type="text" data-model="address.address_unit" autocomplete="address-line2" value="' + this.escape( this.state.address.address_unit || '' ) + '" /></label>' +
 				this.footerActions( 'back-address', 'address-next', this.escape( config.strings.continue ), '', { continueMuted: ! this.stepCanContinue( 'address_details' ) } )
 			);
 		}
 
 		photosMarkup() {
+			const ctaLabel = ( config.strings.photosCta || 'Tap to add photos' ) + ' (up to 10 MB each)';
 			const photosMarkup = this.state.photos.length
-				? '<div class="handik-photo-list">' + this.state.photos.map( ( photo ) => '<span>' + this.escape( photo.name || photo.url || 'photo' ) + '</span>' ).join( '' ) + '</div>'
+				? '<ul class="handik-photo-list">' + this.state.photos.map( ( photo, index ) => {
+					const photoId = photo.id || photo.attachment_id || photo.url || ( 'photo-' + index );
+					const photoName = photo.name || photo.url || 'photo';
+					return '<li class="handik-photo-list__item"><span class="handik-photo-list__name">' + this.escape( photoName ) + '</span>' +
+						'<button type="button" class="handik-photo-list__remove" data-action="remove-photo" data-photo-id="' + this.escape( String( photoId ) ) + '" aria-label="' + this.escape( 'Remove ' + photoName ) + '">&times;</button>' +
+						'</li>';
+				} ).join( '' ) + '</ul>'
 				: '<div class="handik-photo-list is-empty"><span>' + this.escape( config.strings.photosEmpty || 'No photos added yet' ) + '</span></div>';
 			return '<p class="handik-booking-app__intro">' + this.escape( config.strings.photosIntro || 'Photos really help us understand the job faster, but you can continue without them if needed.' ) + '</p>' +
-				'<label class="handik-field"><span>' + this.escape( config.strings.photosLabel || 'Photos' ) + '</span><span class="handik-field__help">' + this.escape( config.strings.photosHelp || 'Add a few clear photos so we can understand the job faster.' ) + '</span><input type="file" id="handik-photo-input" class="handik-photo-input" multiple accept="image/*" /><button type="button" class="handik-photo-dropzone" data-action="choose-photos"><span class="handik-photo-dropzone__icon" aria-hidden="true"></span><span>' + this.escape( config.strings.photosCta || 'Tap to add photos' ) + '</span>' + ( this.state.photoUploading ? '<span>' + this.escape( config.strings.uploading || 'Loading...' ) + '</span><span class="handik-inline-spinner" aria-hidden="true"></span>' : '' ) + '</button>' + photosMarkup + '</label>' +
+				'<label class="handik-field"><span>' + this.escape( config.strings.photosLabel || 'Photos' ) + '</span><span class="handik-field__help">' + this.escape( config.strings.photosHelp || 'Add a few clear photos so we can understand the job faster.' ) + '</span><input type="file" id="handik-photo-input" class="handik-photo-input" multiple accept="image/*" /><button type="button" class="handik-photo-dropzone" data-action="choose-photos"><span class="handik-photo-dropzone__icon" aria-hidden="true"></span><span>' + this.escape( ctaLabel ) + '</span>' + ( this.state.photoUploading ? '<span>' + this.escape( config.strings.uploading || 'Loading...' ) + '</span><span class="handik-inline-spinner" aria-hidden="true"></span>' : '' ) + '</button>' + photosMarkup + '</label>' +
 				this.footerActions( 'back-photos', 'photos-next', this.escape( config.strings.continue ), this.escape( config.strings.back ), { continueMuted: ! this.stepCanContinue( 'photos' ) } );
 		}
 
 		assistantMarkup() {
-			return '<p class="handik-booking-app__intro">' + this.escape( config.strings.assistantIntro || 'This AI assistant helps you understand rough cost, timing, materials, and what to expect, while helping us collect the details needed to prepare for the job properly.' ) + '</p><div class="handik-assistant-layout"><div class="handik-assistant-panel"><div class="handik-booking-app__assistant-host"></div>' + this.footerActions( '', 'assistant-next', this.escape( config.strings.assistantContinue || 'Book a time' ), '', { continueMuted: false, hideBack: true } ) + '</div></div>';
+			const skeleton = '<div class="handik-skeleton handik-skeleton--assistant" aria-hidden="true"><div class="handik-skeleton__bar"></div><div class="handik-skeleton__bar handik-skeleton__bar--short"></div><div class="handik-skeleton__bar"></div></div>';
+			return '<p class="handik-booking-app__intro">' + this.escape( config.strings.assistantIntro || 'This AI assistant helps you understand rough cost, timing, materials, and what to expect, while helping us collect the details needed to prepare for the job properly.' ) + '</p><div class="handik-assistant-layout"><div class="handik-assistant-panel"><div class="handik-booking-app__assistant-host">' + skeleton + '</div>' + this.footerActions( '', 'assistant-next', this.escape( config.strings.assistantContinue || 'Book a time' ), '', { continueMuted: false, hideBack: true } ) + '</div></div>';
 		}
 
 		contactMarkup() {
@@ -1863,7 +2232,12 @@
 		}
 
 		bookingMarkup() {
-			return '<div class="handik-booking-app__booking-embed"></div>';
+			const skeleton = '<div class="handik-skeleton handik-skeleton--calendar" aria-hidden="true">' +
+				'<div class="handik-skeleton__bar handik-skeleton__bar--header"></div>' +
+				'<div class="handik-skeleton__grid">' +
+				Array.from( { length: 9 } ).map( () => '<div class="handik-skeleton__cell"></div>' ).join( '' ) +
+				'</div></div>';
+			return '<div class="handik-booking-app__booking-embed">' + skeleton + '</div>';
 		}
 
 		footerActions( backAction, continueAction, continueLabel, backLabel, options ) {
@@ -1997,7 +2371,7 @@
 			this.root.querySelectorAll( '[data-action]' ).forEach( ( button ) => {
 				button.addEventListener( 'click', ( event ) => {
 					event.preventDefault();
-					this.handleAction( button.getAttribute( 'data-action' ) );
+					this.handleAction( button.getAttribute( 'data-action' ), button );
 				} );
 			} );
 
@@ -2016,8 +2390,33 @@
 						this.state.touched.full_name = true;
 					}
 					if ( 'contact.phone' === model ) {
-						value = String( value || '' ).replace( /[^0-9+\s()-]/g, '' );
-						input.value = value;
+						// Sanitize allowed characters first.
+						const allowed = String( value || '' ).replace( /[^0-9+\s()-]/g, '' );
+						// Apply mask while preserving caret position based on digit count.
+						const selectionStart = input.selectionStart || allowed.length;
+						const digitsBefore = allowed.slice( 0, selectionStart ).replace( /\D/g, '' ).length;
+						const formatted = this.formatPhoneDisplay( allowed );
+						input.value = formatted;
+						let caret = formatted.length;
+						let seen = 0;
+						for ( let i = 0; i < formatted.length; i++ ) {
+							if ( /\d/.test( formatted[ i ] ) ) {
+								seen++;
+							}
+							if ( seen >= digitsBefore ) {
+								caret = i + 1;
+								break;
+							}
+						}
+						if ( ! digitsBefore ) {
+							caret = formatted.startsWith( '+' ) ? 1 : 0;
+						}
+						try {
+							input.setSelectionRange( caret, caret );
+						} catch ( e ) {
+							// Some inputs (number, email) reject setSelectionRange — ignore.
+						}
+						value = formatted;
 						this.state.touched.phone = true;
 					}
 					if ( 'contact.email' === model ) {
@@ -2030,13 +2429,24 @@
 					this.setByPath( model, value );
 					this.refreshFieldValidation( model, input );
 					this.refreshCurrentStepActions();
+					this._scheduleDraftSave();
 				} );
-				if ( 'contact.phone' === input.getAttribute( 'data-model' ) ) {
+
+				const model = input.getAttribute( 'data-model' );
+				if ( 'contact.phone' === model ) {
 					input.addEventListener( 'blur', () => {
+						// On blur we still re-apply the mask in case the user pasted raw digits.
 						const normalized = this.formatPhoneDisplay( input.value );
 						this.state.contact.phone = normalized;
 						input.value = normalized;
 						this.state.touched.phone = true;
+						this.refreshFieldValidation( model, input );
+					} );
+				}
+				if ( 'contact.email' === model ) {
+					input.addEventListener( 'blur', () => {
+						this.state.touched.email = true;
+						this.refreshFieldValidation( model, input );
 					} );
 				}
 			} );

@@ -1329,3 +1329,173 @@ openai-chatkit {
 		border-radius: 16px 16px 0 0;
 	}
 }
+
+/* --- Photo list: per-item delete button -------------------------------- */
+.handik-photo-list {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	margin: 8px 0 0;
+	padding: 0;
+	list-style: none;
+}
+.handik-photo-list__item {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 10px;
+	padding: 8px 10px;
+	background: rgba(15, 23, 42, 0.04);
+	border: 1px solid var(--handik-border, #dbe3ea);
+	border-radius: 10px;
+	font-size: 0.9rem;
+}
+.handik-photo-list__name {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	flex: 1 1 auto;
+}
+.handik-photo-list__remove {
+	flex: 0 0 auto;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 28px;
+	height: 28px;
+	min-width: 28px;
+	border: none;
+	background: transparent;
+	color: var(--handik-muted-text, #64748b);
+	font-size: 1.4rem;
+	line-height: 1;
+	cursor: pointer;
+	border-radius: 50%;
+	transition: background 0.15s ease, color 0.15s ease;
+}
+.handik-photo-list__remove:hover,
+.handik-photo-list__remove:focus-visible {
+	background: rgba(220, 38, 38, 0.12);
+	color: #b91c1c;
+	outline: none;
+}
+
+/* --- Inline field error -------------------------------------------------- */
+.handik-field__error {
+	display: block;
+	margin-top: 4px;
+	color: #b91c1c;
+	font-size: 0.85rem;
+	line-height: 1.3;
+}
+.handik-field__help--empty {
+	color: var(--handik-muted-text, #64748b);
+	font-style: italic;
+}
+
+/* --- Toast retry button ------------------------------------------------- */
+.handik-toast__action {
+	margin-top: 6px;
+	background: transparent;
+	border: 1px solid currentColor;
+	color: inherit;
+	border-radius: 999px;
+	padding: 4px 12px;
+	font-size: 0.85rem;
+	cursor: pointer;
+	align-self: flex-start;
+}
+.handik-toast__action:hover,
+.handik-toast__action:focus-visible {
+	background: rgba(15, 23, 42, 0.08);
+	outline: none;
+}
+
+/* --- Skeleton loaders --------------------------------------------------- */
+.handik-skeleton {
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+	padding: 20px;
+}
+.handik-skeleton__bar {
+	height: 14px;
+	border-radius: 6px;
+	background: linear-gradient(
+		90deg,
+		rgba(15, 23, 42, 0.06) 0%,
+		rgba(15, 23, 42, 0.12) 50%,
+		rgba(15, 23, 42, 0.06) 100%
+	);
+	background-size: 200% 100%;
+	animation: handik-skeleton-shimmer 1.4s linear infinite;
+}
+.handik-skeleton__bar--short {
+	width: 60%;
+}
+.handik-skeleton__bar--header {
+	height: 22px;
+	width: 40%;
+	margin-bottom: 8px;
+}
+.handik-skeleton__grid {
+	display: grid;
+	grid-template-columns: repeat(3, 1fr);
+	gap: 10px;
+}
+.handik-skeleton__cell {
+	aspect-ratio: 1 / 1;
+	border-radius: 10px;
+	background: linear-gradient(
+		90deg,
+		rgba(15, 23, 42, 0.06) 0%,
+		rgba(15, 23, 42, 0.12) 50%,
+		rgba(15, 23, 42, 0.06) 100%
+	);
+	background-size: 200% 100%;
+	animation: handik-skeleton-shimmer 1.4s linear infinite;
+}
+.handik-skeleton--calendar {
+	min-height: 360px;
+}
+.handik-skeleton--assistant {
+	min-height: 260px;
+}
+@keyframes handik-skeleton-shimmer {
+	0% { background-position: 200% 0; }
+	100% { background-position: -200% 0; }
+}
+
+/* --- Cal.com slow-load fallback ----------------------------------------- */
+.handik-booking-app__booking-fallback {
+	margin: 0 0 12px;
+	padding: 14px 16px;
+	border: 1px solid var(--handik-border, #dbe3ea);
+	border-radius: 12px;
+	background: #fffbeb;
+	color: #92400e;
+	font-size: 0.92rem;
+}
+.handik-booking-app__booking-fallback p {
+	margin: 0 0 6px;
+}
+.handik-booking-app__booking-fallback .handik-btn {
+	margin-top: 6px;
+}
+
+/* --- Reduced-motion: respect user preference ---------------------------- */
+@media (prefers-reduced-motion: reduce) {
+	*,
+	*::before,
+	*::after {
+		animation-duration: 0.001ms !important;
+		animation-iteration-count: 1 !important;
+		transition-duration: 0.001ms !important;
+		scroll-behavior: auto !important;
+	}
+	.handik-skeleton__bar,
+	.handik-skeleton__cell {
+		animation: none;
+		background: rgba(15, 23, 42, 0.08);
+	}
+}
