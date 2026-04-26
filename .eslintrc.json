@@ -1,0 +1,23 @@
+{
+  "root": true,
+  "extends": ["plugin:@wordpress/eslint-plugin/recommended-with-formatting"],
+  "env": {
+    "browser": true,
+    "es2021": true
+  },
+  "parserOptions": {
+    "ecmaVersion": 2021,
+    "sourceType": "script"
+  },
+  "globals": {
+    "HandikBookingAppConfig": "readonly",
+    "HandikChatKitBridge": "writable",
+    "Cal": "readonly",
+    "google": "readonly"
+  },
+  "rules": {
+    "no-console": ["warn", { "allow": ["warn", "error"] }],
+    "no-unused-vars": ["warn", { "argsIgnorePattern": "^_" }]
+  },
+  "ignorePatterns": ["lib/**", "node_modules/**", "vendor/**", "build/**"]
+}

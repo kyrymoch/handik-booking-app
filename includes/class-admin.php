@@ -111,8 +111,8 @@ class Handik_Booking_App_Admin {
 		<div class="handik-admin-cards">
 			<div class="handik-admin-card"><strong><?php echo esc_html( HANDIK_BOOKING_APP_VERSION ); ?></strong><span><?php esc_html_e( 'Current plugin version', 'handik-booking-app' ); ?></span></div>
 			<div class="handik-admin-card"><strong><?php echo esc_html( (string) get_option( Handik_Booking_App_Migrations::OPTION_NAME, '0.0.0' ) ); ?></strong><span><?php esc_html_e( 'DB schema version', 'handik-booking-app' ); ?></span></div>
-			<div class="handik-admin-card"><strong><?php echo esc_html( count( $this->job_requests->list_recent( 100 ) ) ); ?></strong><span><?php esc_html_e( 'Recent requests sample', 'handik-booking-app' ); ?></span></div>
-			<div class="handik-admin-card"><strong><?php echo esc_html( count( $this->bookings->list_recent( 100 ) ) ); ?></strong><span><?php esc_html_e( 'Recent bookings sample', 'handik-booking-app' ); ?></span></div>
+			<div class="handik-admin-card"><strong><?php echo esc_html( (string) $this->job_requests->count_all() ); ?></strong><span><?php esc_html_e( 'Total job requests', 'handik-booking-app' ); ?></span></div>
+			<div class="handik-admin-card"><strong><?php echo esc_html( (string) $this->bookings->count_all() ); ?></strong><span><?php esc_html_e( 'Total bookings', 'handik-booking-app' ); ?></span></div>
 		</div>
 		<h2><?php esc_html_e( 'Latest release notes', 'handik-booking-app' ); ?></h2>
 		<?php $entry = $this->changelog->get_entries()[0]; ?>

@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  php-lint:
+    name: PHP CodeSniffer + PHPStan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '7.4'
+          coverage: none
+          tools: composer:v2
+
+      - name: Cache Composer
+        uses: actions/cache@v4
+        with:
+          path: ~/.composer/cache
+          key: composer-${{ runner.os }}-${{ hashFiles('composer.json') }}
+          restore-keys: composer-${{ runner.os }}-
+
+      - name: Install Composer deps
+        run: composer install --prefer-dist --no-progress --no-interaction
+
+      - name: Run PHPCS
+        run: ./vendor/bin/phpcs
+
+      - name: Run PHPStan
+        # Soft-fail until the existing codebase is brought up to level 5; remove
+        # `continue-on-error` once the baseline is clean.
+        continue-on-error: true
+        run: ./vendor/bin/phpstan analyse --no-progress
+
+  js-lint:
+    name: ESLint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install npm deps
+        run: npm install --no-audit --no-fund --no-progress
+
+      - name: Run ESLint
+        # Soft-fail until existing code is cleaned up.
+        continue-on-error: true
+        run: npm run lint:js

@@ -8,12 +8,17 @@
 	const BRIDGE_CACHE = new Map();
 
 	function requestJson( url, data ) {
+		const headers = {
+			'Content-Type': 'application/json'
+		};
+		const config = window.HandikBookingAppConfig;
+		if ( config && config.restNonce ) {
+			headers['X-WP-Nonce'] = config.restNonce;
+		}
 		return window.fetch( url, {
 			method: 'POST',
 			credentials: 'same-origin',
-			headers: {
-				'Content-Type': 'application/json'
-			},
+			headers: headers,
 			body: JSON.stringify( data || {} )
 		} ).then( function( response ) {
 			return response.json().catch( function() {
@@ -742,6 +747,12 @@
 			} );
 
 			record.element.addEventListener( 'message', function( event ) {
+				// This is a CustomEvent fired by the same-origin <openai-chatkit> web component,
+				// not a cross-origin window.postMessage. Still, guard against synthetic events
+				// dispatched by other scripts on the page by verifying the source target.
+				if ( event && event.target !== record.element ) {
+					return;
+				}
 				const detail = event && event.detail ? event.detail : {};
 				markChatActive( 'message' );
 				log( 'debug', 'ChatKit message event.', {

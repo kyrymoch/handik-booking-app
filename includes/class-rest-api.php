@@ -133,13 +133,27 @@ class Handik_Booking_App_REST_API {
 	}
 
 	public function client_log( WP_REST_Request $request ) {
-		$plugin = handik_booking_app();
+		if ( ! $this->client_log_rate_limit_ok( $request ) ) {
+			return new WP_Error(
+				'handik_booking_app_rate_limited',
+				__( 'Too many log entries from this client. Try again shortly.', 'handik-booking-app' ),
+				array( 'status' => 429 )
+			);
+		}
+
+		$plugin  = handik_booking_app();
 		$level   = sanitize_key( (string) $request->get_param( 'level' ) );
 		$message = sanitize_text_field( (string) $request->get_param( 'message' ) );
+		$message = function_exists( 'mb_substr' ) ? mb_substr( $message, 0, 500 ) : substr( $message, 0, 500 );
 		$context = (array) $request->get_param( 'context' );
 
 		if ( ! $message ) {
 			return $this->respond( array( 'error' => __( 'Log message is required.', 'handik-booking-app' ), 'status' => 400 ) );
+		}
+
+		// Cap context payload to keep wp_options small under load.
+		if ( count( $context ) > 32 ) {
+			$context = array_slice( $context, 0, 32, true );
 		}
 
 		switch ( $level ) {
@@ -154,6 +168,35 @@ class Handik_Booking_App_REST_API {
 		}
 
 		return rest_ensure_response( array( 'success' => true ) );
+	}
+
+	/**
+	 * Sliding-window rate limit for /client-log: at most 60 entries per IP per minute.
+	 *
+	 * @param WP_REST_Request $request Request.
+	 * @return bool
+	 */
+	protected function client_log_rate_limit_ok( WP_REST_Request $request ) {
+		$ip = '';
+		foreach ( array( 'HTTP_CF_CONNECTING_IP', 'HTTP_X_FORWARDED_FOR', 'REMOTE_ADDR' ) as $key ) {
+			if ( ! empty( $_SERVER[ $key ] ) ) {
+				$candidate = sanitize_text_field( wp_unslash( (string) $_SERVER[ $key ] ) );
+				$candidate = trim( explode( ',', $candidate )[0] );
+				if ( $candidate ) {
+					$ip = $candidate;
+					break;
+				}
+			}
+		}
+
+		$bucket  = 'handik_clog_' . md5( $ip ?: 'unknown' );
+		$count   = (int) get_transient( $bucket );
+		$limit   = (int) apply_filters( 'handik_booking_app_client_log_rate_limit', 60 );
+		if ( $count >= $limit ) {
+			return false;
+		}
+		set_transient( $bucket, $count + 1, MINUTE_IN_SECONDS );
+		return true;
 	}
 
 	public function booking_url( WP_REST_Request $request ) {
@@ -181,9 +224,6 @@ class Handik_Booking_App_REST_API {
 	 * @return WP_REST_Response|WP_Error
 	 */
 	protected function respond( array $result ) {
-		if ( ! empty( $result['error'] ) ) {
-			return new WP_Error( 'handik_booking_app_error', $result['error'], array( 'status' => absint( $result['status'] ?? 400 ) ) );
-		}
-		return rest_ensure_response( $result );
+		return Handik_Booking_App_Api_Response::from_array( $result );
 	}
 }

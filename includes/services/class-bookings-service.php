@@ -76,6 +76,17 @@ class Handik_Booking_App_Bookings_Service {
 	}
 
 	/**
+	 * Cheap COUNT for dashboard widgets — avoids fetching full rows just to count them.
+	 *
+	 * @return int
+	 */
+	public function count_all() {
+		global $wpdb;
+		$table = Handik_Booking_App_DB::table( 'bookings' );
+		return (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$table}" );
+	}
+
+	/**
 	 * @param int $booking_id Booking ID.
 	 * @return array<string, mixed>|null
 	 */

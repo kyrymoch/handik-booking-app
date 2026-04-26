@@ -130,7 +130,10 @@ class Handik_Booking_App_Webhook_Service {
 	protected function verify_signature( WP_REST_Request $request, $raw_body ) {
 		$secret = trim( (string) $this->settings->get( 'cal_webhook_secret', '' ) );
 		if ( ! $secret ) {
-			return true;
+			// Fail closed: webhook requires a configured shared secret. Set
+			// `cal_webhook_secret` (or HANDIK_BOOKING_APP_CAL_WEBHOOK_SECRET) before
+			// pointing Cal.com at this endpoint — otherwise anyone could forge bookings.
+			return false;
 		}
 		$secret_header = $request->get_header( 'x-cal-secret-key' );
 		if ( $secret_header && hash_equals( $secret, $secret_header ) ) {

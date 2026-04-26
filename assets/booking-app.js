@@ -120,6 +120,10 @@
 				headers: {}
 			};
 
+			if ( config.restNonce ) {
+				options.headers['X-WP-Nonce'] = config.restNonce;
+			}
+
 			if ( formData ) {
 				options.body = formData;
 			} else if ( 'GET' !== options.method ) {

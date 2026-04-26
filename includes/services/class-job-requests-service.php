@@ -249,6 +249,17 @@ class Handik_Booking_App_Job_Requests_Service {
 	}
 
 	/**
+	 * Cheap COUNT for dashboard widgets — avoids fetching full rows just to count them.
+	 *
+	 * @return int
+	 */
+	public function count_all() {
+		global $wpdb;
+		$table = Handik_Booking_App_DB::table( 'job_requests' );
+		return (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$table}" );
+	}
+
+	/**
 	 * @param int $contact_id Contact ID.
 	 * @param int $limit Limit.
 	 * @return array<int, array<string, mixed>>

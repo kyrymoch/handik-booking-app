@@ -1,0 +1,20 @@
+parameters:
+    level: 5
+    paths:
+        - handik-booking-app.php
+        - includes
+        - widgets
+        - views
+    excludePaths:
+        - lib/*
+        - vendor/*
+        - node_modules/*
+    bootstrapFiles:
+        - %currentWorkingDirectory%/handik-booking-app.php
+    treatPhpDocTypesAsCertain: false
+    ignoreErrors:
+        # WordPress hooks intentionally accept mixed callbacks.
+        - '#Cannot access offset .* on mixed#'
+
+includes:
+    - vendor/szepeviktor/phpstan-wordpress/extension.neon

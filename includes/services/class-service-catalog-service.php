@@ -11,28 +11,49 @@ class Handik_Booking_App_Service_Catalog_Service {
 	protected $settings;
 
 	/**
+	 * Request-scope cache of the parsed catalog.
+	 *
+	 * @var array<int, array<string, mixed>>|null
+	 */
+	protected $catalog_cache = null;
+
+	/**
 	 * @param Handik_Booking_App_Settings $settings Settings.
 	 */
 	public function __construct( $settings ) {
 		$this->settings = $settings;
+		add_action( 'handik_booking_app_settings_updated', array( $this, 'flush_cache' ) );
 	}
 
 	/**
 	 * @return array<int, array<string, mixed>>
 	 */
 	public function get_catalog() {
+		if ( null !== $this->catalog_cache ) {
+			return $this->catalog_cache;
+		}
+
 		$stored = $this->settings->get( 'service_catalog_json', '' );
 		if ( is_string( $stored ) && '' !== trim( $stored ) ) {
 			$decoded = json_decode( $stored, true );
 			if ( is_array( $decoded ) ) {
 				$catalog = $this->sanitize_catalog( $decoded );
 				if ( ! $this->looks_like_legacy_catalog( $catalog ) ) {
-					return $catalog;
+					$this->catalog_cache = $catalog;
+					return $this->catalog_cache;
 				}
 			}
 		}
 
-		return $this->default_catalog();
+		$this->catalog_cache = $this->default_catalog();
+		return $this->catalog_cache;
+	}
+
+	/**
+	 * Drop the in-memory cache. Call after settings updates that touch the catalog.
+	 */
+	public function flush_cache() {
+		$this->catalog_cache = null;
 	}
 
 	/**

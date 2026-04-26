@@ -1,0 +1,16 @@
+{
+  "name": "handik-booking-app",
+  "version": "2.1.3",
+  "private": true,
+  "description": "Tooling (lint/format) for the Handik Booking App WordPress plugin.",
+  "scripts": {
+    "lint:js": "eslint \"assets/**/*.js\"",
+    "lint:js:fix": "eslint \"assets/**/*.js\" --fix",
+    "format": "prettier --write \"assets/**/*.{js,css}\""
+  },
+  "devDependencies": {
+    "eslint": "^8.57.0",
+    "@wordpress/eslint-plugin": "^21.0.0",
+    "prettier": "^3.3.3"
+  }
+}

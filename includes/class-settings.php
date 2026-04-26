@@ -198,6 +198,16 @@ class Handik_Booking_App_Settings {
 		$sanitized      = $this->sanitize_settings( $input );
 		$this->settings = array_merge( $current, $sanitized );
 		update_option( HANDIK_BOOKING_APP_OPTION, $this->settings, false );
+
+		/**
+		 * Fires after plugin settings have been persisted.
+		 *
+		 * Services that memoize derived data (e.g. service catalog) should listen
+		 * to this action and flush their request-scope caches.
+		 *
+		 * @param array<string, mixed> $sanitized The sanitized fields that were applied.
+		 */
+		do_action( 'handik_booking_app_settings_updated', $sanitized );
 	}
 
 	/**

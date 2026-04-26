@@ -35,6 +35,7 @@ class Handik_Booking_App_Loader {
 			'includes/class-assets.php',
 			'includes/class-frontend-app.php',
 			'includes/class-shortcode.php',
+			'includes/class-api-response.php',
 			'includes/class-rest-api.php',
 			'includes/class-admin.php',
 			'includes/class-widget-registry.php',
