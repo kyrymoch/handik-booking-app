@@ -106,12 +106,7 @@
 				if ( ! heading ) {
 					return;
 				}
-				heading.setAttribute( 'tabindex', '-1' );
-				try {
-					heading.focus( { preventScroll: true } );
-				} catch ( e ) {
-					heading.focus();
-				}
+				heading.removeAttribute( 'tabindex' );
 			} );
 		}
 
@@ -2162,7 +2157,7 @@
 						this.taskPathChoiceMarkup( 'choose-larger-scale', 'Larger-Scale Work', 'For bigger, multi-step, or consultation-first work', 'Consultation first', this.taskSelected( 'larger_scale_work' ) ) +
 						this.taskPathChoiceMarkup( 'choose-specific-tasks', 'Choose Specific Tasks', 'Browse services by category and select one or more tasks', 'Price depends on task', false ) +
 					'</div>' +
-					this.footerActions( '', '', '', '', { hideBack: true, hideContinue: true } );
+					this.footerActions( 'back-client', '', '', 'Back to client type', { hideContinue: true } );
 			}
 
 			const hiddenSpecificTaskIds = [ 'general_handyman_help', 'larger_scale_work' ];
@@ -2175,7 +2170,7 @@
 				groups.map( ( group ) => '<div class="handik-task-group"><h3>' + this.escape( group.group ) + '</h3><div class="handik-task-grid">' +
 					group.tasks.map( ( task ) => '<button type="button" class="handik-task ' + ( this.taskSelected( task.id ) ? 'is-selected' : '' ) + '" data-task-id="' + this.escape( task.id ) + '">' + this.escape( task.label ) + '</button>' ).join( '' ) +
 				'</div></div>' ).join( '' ) +
-				this.footerActions( '', 'tasks-next', this.escape( config.strings.continue ), '', { continueMuted: ! this.stepCanContinue( 'task_selection' ), hideBack: true } ) +
+				this.footerActions( 'back-tasks', 'tasks-next', this.escape( config.strings.continue ), 'Back to task type', { continueMuted: ! this.stepCanContinue( 'task_selection' ) } ) +
 				this.selectedTasksSheetMarkup() +
 			'</div>';
 		}
