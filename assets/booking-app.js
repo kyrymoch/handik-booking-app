@@ -763,35 +763,15 @@
 			if ( digits.length > 10 && '1' === digits.charAt( 0 ) ) {
 				digits = digits.slice( 1 );
 			}
-			return digits.slice( 0, 10 );
+			return digits;
 		}
 
 		formatPhoneDisplay( value ) {
-			const digits = this.phoneDigits( value );
-			if ( ! digits ) {
-				return '';
-			}
-
-			const parts = [];
-			if ( digits.length > 0 ) {
-				parts.push( digits.slice( 0, Math.min( 3, digits.length ) ) );
-			}
-			if ( digits.length > 3 ) {
-				parts.push( digits.slice( 3, Math.min( 6, digits.length ) ) );
-			}
-			if ( digits.length > 6 ) {
-				parts.push( digits.slice( 6, Math.min( 8, digits.length ) ) );
-			}
-			if ( digits.length > 8 ) {
-				parts.push( digits.slice( 8, Math.min( 10, digits.length ) ) );
-			}
-
-			return '+1 ' + parts.join( ' ' );
+			return String( value || '' );
 		}
 
 		phoneApiValue( value ) {
-			const digits = this.phoneDigits( value );
-			return 10 === digits.length ? '+1' + digits : '';
+			return String( value || '' ).trim();
 		}
 
 		validatePhone( value ) {
@@ -825,7 +805,7 @@
 				return errors.invalidEmail || 'Check this step. Enter a valid email address before continuing.';
 			}
 			if ( ! validation.phone ) {
-				return errors.invalidPhone || 'Check this step. Enter a phone number in the format +1 123 456 78 90.';
+				return errors.invalidPhone || 'Check this step. Enter a valid 10-digit US phone number.';
 			}
 			return errors.nameEmailRequired || 'Check this step. Name, email, and phone are required before you can continue.';
 		}
@@ -1275,7 +1255,7 @@
 			const contact = this.state.verifiedProfile.contact;
 			this.state.contact.full_name = contact.full_name || this.state.contact.full_name;
 			this.state.contact.email = contact.email || this.state.contact.email;
-			this.state.contact.phone = contact.phone ? this.formatPhoneDisplay( contact.phone ) : this.state.contact.phone;
+			this.state.contact.phone = contact.phone ? String( contact.phone ) : this.state.contact.phone;
 			if ( Array.isArray( this.state.verifiedProfile.addresses ) && this.state.verifiedProfile.addresses.length ) {
 				const primary = this.state.verifiedProfile.addresses[0];
 				this.state.address = {
@@ -1503,7 +1483,6 @@
 				this.setFooterHint( this.contactValidationMessage(), true );
 				return;
 			}
-			this.state.contact.phone = this.formatPhoneDisplay( this.state.contact.phone );
 			try {
 				this.state.loading = true;
 				this.render();
@@ -2219,8 +2198,7 @@
 
 		inputAttrsForModel( model, type ) {
 			// Pair every contact field with the right autofill / mobile keyboard hints.
-			// Server normalizes phone via Handik_Booking_App_Contacts_Service::normalize_phone,
-			// so any display formatting here is purely cosmetic — submission stays canonical.
+			// Server normalizes phone via Handik_Booking_App_Contacts_Service::normalize_phone.
 			const attrs = {};
 			switch ( model ) {
 				case 'contact.full_name':
@@ -2532,12 +2510,10 @@
 						this.state.touched.full_name = true;
 					}
 					if ( 'contact.phone' === model ) {
-						// Sanitize allowed characters first.
 						const allowed = String( value || '' ).replace( /[^0-9+\s()-]/g, '' );
-						// Apply mask while preserving caret position based on digit count.
 						const selectionStart = input.selectionStart || allowed.length;
 						const digitsBefore = allowed.slice( 0, selectionStart ).replace( /\D/g, '' ).length;
-						const formatted = this.formatPhoneDisplay( allowed );
+						const formatted = allowed;
 						input.value = formatted;
 						let caret = formatted.length;
 						let seen = 0;
@@ -2551,7 +2527,7 @@
 							}
 						}
 						if ( ! digitsBefore ) {
-							caret = formatted.startsWith( '+' ) ? 1 : 0;
+							caret = input.selectionStart || formatted.length;
 						}
 						try {
 							input.setSelectionRange( caret, caret );
@@ -2577,10 +2553,6 @@
 				const model = input.getAttribute( 'data-model' );
 				if ( 'contact.phone' === model ) {
 					input.addEventListener( 'blur', () => {
-						// On blur we still re-apply the mask in case the user pasted raw digits.
-						const normalized = this.formatPhoneDisplay( input.value );
-						this.state.contact.phone = normalized;
-						input.value = normalized;
 						this.state.touched.phone = true;
 						this.refreshFieldValidation( model, input );
 					} );

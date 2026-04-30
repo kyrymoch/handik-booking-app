@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.1.3.16
+Stable tag: 2.1.3.17
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, returning-client auth, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,9 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.1.3.17 =
+* Stopped frontend phone masking and `+1` rewriting on Contact details and Returning client verification; raw phone input is now sent to the backend for normalization.
 
 = 2.1.3.16 =
 * Disabled native browser, Safari, keyboard, and password-manager autofill hints on the job address fields so Google Places remains the only address suggestion source.
