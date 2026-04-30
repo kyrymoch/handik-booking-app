@@ -67,6 +67,7 @@
 				touched: { full_name: false, email: false, phone: false },
 				verificationCode: '',
 				bookingUrl: '',
+				bookingUrlLocked: false,
 				bookingStatus: '',
 				bookingStatusMessage: '',
 				unsafeReason: '',
@@ -1130,6 +1131,7 @@
 						contact: { first_name: '', last_name: '', full_name: '', email: '', phone: '' },
 						verificationCode: '',
 						bookingUrl: '',
+						bookingUrlLocked: false,
 						bookingStatus: '',
 						bookingStatusMessage: '',
 						unsafeReason: '',
@@ -1558,6 +1560,47 @@
 			}
 		}
 
+		setBookingUrl( bookingUrl, source, allowReplace ) {
+			const nextUrl = String( bookingUrl || '' ).trim();
+			if ( ! nextUrl ) {
+				return false;
+			}
+
+			if ( this.state.bookingUrl && this.state.bookingUrl !== nextUrl && this.state.bookingUrlLocked && ! allowReplace ) {
+				this.logClient( 'warn', 'Ignored changed Cal booking URL after a valid URL was already chosen.', {
+					request_id: this.state.requestId,
+					source: source || '',
+					current_booking_url: this.state.bookingUrl,
+					incoming_booking_url: nextUrl
+				} );
+				return false;
+			}
+
+			this.state.bookingUrl = nextUrl;
+			this.state.bookingUrlLocked = true;
+			return true;
+		}
+
+		mergeAssistantResult() {
+			const merged = {};
+			Array.from( arguments ).forEach( ( source ) => {
+				if ( ! source || 'object' !== typeof source ) {
+					return;
+				}
+				Object.keys( source ).forEach( ( key ) => {
+					const value = source[ key ];
+					if ( null === value || undefined === value ) {
+						return;
+					}
+					if ( 'string' === typeof value && '' === value.trim() && Object.prototype.hasOwnProperty.call( merged, key ) ) {
+						return;
+					}
+					merged[ key ] = value;
+				} );
+			} );
+			return merged;
+		}
+
 		setBookingStatusMessage( message, isError ) {
 			this.state.bookingStatusMessage = message || '';
 			const card = this.root.querySelector( '.handik-booking-app__booking-status' );
@@ -1745,6 +1788,13 @@
 			}
 
 			const mountKey = String( this.state.requestId ) + '|' + this.state.bookingUrl;
+			if ( this.calEmbedMountKey === mountKey ) {
+				this.logClient( 'debug', 'Skipped Cal embed remount for unchanged booking URL.', {
+					request_id: this.state.requestId,
+					mount_key: mountKey
+				} );
+				return;
+			}
 
 			// Show a fallback notice if the embed hasn't reported ready in 15s. We render
 			// the notice ABOVE the embed area so a slow-but-eventually-loading iframe still
@@ -1891,7 +1941,10 @@
 					assistant_result: assistantPayload
 				} );
 
-				this.state.assistantResult = Object.assign( {}, payload.assistant_result || {}, payload.routing || {}, this.state.assistantResult || {} );
+				this.state.assistantResult = this.mergeAssistantResult( this.state.assistantResult, payload.assistant_result, payload.routing );
+				if ( payload && payload.booking_url ) {
+					this.setBookingUrl( payload.booking_url, 'assistant-result' );
+				}
 				this.state.loading = false;
 				this.setAssistantContinueBusy( false );
 
@@ -1901,11 +1954,13 @@
 					return;
 				}
 
-				const booking = await this.api( 'booking-url', {
-					request_id: this.state.requestId,
-					draft_token: this.state.draftToken
-				} );
-				this.state.bookingUrl = booking.booking_url;
+				if ( ! this.state.bookingUrl ) {
+					const booking = await this.api( 'booking-url', {
+						request_id: this.state.requestId,
+						draft_token: this.state.draftToken
+					} );
+					this.setBookingUrl( booking.booking_url, 'booking-url' );
+				}
 				this.state.bookingStatus = 'booking_pending';
 				this.state.bookingStatusMessage = '';
 				this.goTo( 'booking' );
@@ -2000,7 +2055,10 @@
 						this.state.assistantUserMessageSent = true;
 					},
 					onComplete: ( normalized, payload ) => {
-						this.state.assistantResult = Object.assign( {}, payload && payload.routing ? payload.routing : {}, normalized );
+						this.state.assistantResult = this.mergeAssistantResult( this.state.assistantResult, normalized, payload && payload.routing ? payload.routing : {} );
+						if ( payload && payload.booking_url ) {
+							this.setBookingUrl( payload.booking_url, 'chatkit-complete' );
+						}
 						this.state.assistantUserMessageSent = true;
 						this.setAssistantContinueBusy( false );
 						if ( payload && payload.unsafe_flag ) {
@@ -2247,7 +2305,10 @@
 				'<div class="handik-skeleton__grid">' +
 				Array.from( { length: 9 } ).map( () => '<div class="handik-skeleton__cell"></div>' ).join( '' ) +
 				'</div></div>';
-			return '<div class="handik-booking-app__booking-embed">' + skeleton + '</div>' +
+			const fallback = this.state.bookingUrl
+				? '<div class="handik-booking-app__booking-direct"><a class="handik-btn is-secondary" target="_blank" rel="noopener" href="' + this.escape( this.state.bookingUrl ) + '">' + this.escape( 'Having trouble? Open booking page directly' ) + '</a></div>'
+				: '';
+			return '<div class="handik-booking-app__booking-embed">' + skeleton + '</div>' + fallback +
 				this.footerActions( 'back-booking', 'choose-time-placeholder', 'Choose time', '', { continueMuted: true } );
 		}
 

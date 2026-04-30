@@ -59,6 +59,19 @@ class Handik_Booking_App_Cal_Service {
 		if ( ! $request || empty( $request['booking_type'] ) ) {
 			return '';
 		}
+		if ( ! empty( $request['cal_booking_url'] ) ) {
+			if ( $this->logger ) {
+				$this->logger->info(
+					'Reusing existing Cal booking URL.',
+					array(
+						'request_id'      => $request_id,
+						'booking_type'    => (string) $request['booking_type'],
+						'cal_booking_url' => (string) $request['cal_booking_url'],
+					)
+				);
+			}
+			return (string) $request['cal_booking_url'];
+		}
 		$map     = $this->event_map();
 		$base    = $map[ $request['booking_type'] ] ?? '';
 		if ( ! $base ) {
@@ -74,7 +87,7 @@ class Handik_Booking_App_Cal_Service {
 				'name'                            => $contact['full_name'] ?? '',
 				'email'                           => $contact['email'] ?? '',
 				'phone'                           => $contact['phone'] ?? '',
-				'notes'                           => $request['assistant_summary'] ?: $request['short_description'],
+				'notes'                           => sprintf( 'Handik request #%d. Details, photos, and assistant notes are saved in the admin dashboard.', (int) $request_id ),
 				'metadata[handik_job_request_id]' => (string) $request_id,
 				'metadata[handik_booking_type]'   => (string) $request['booking_type'],
 				'metadata[handik_contact_id]'     => ! empty( $request['contact_id'] ) ? (string) $request['contact_id'] : '',

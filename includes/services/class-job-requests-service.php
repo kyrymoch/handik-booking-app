@@ -84,8 +84,10 @@ class Handik_Booking_App_Job_Requests_Service {
 		$table = Handik_Booking_App_DB::table( 'job_requests' );
 		$request = $this->get( $request_id );
 		$app_state = ( $request && ! empty( $request['app_state'] ) && is_array( $request['app_state'] ) ) ? $request['app_state'] : array();
-		$app_state['suggested_duration_hours'] = sanitize_text_field( (string) ( $routing['suggested_duration_hours'] ?? $assistant_result['suggested_duration_hours'] ?? '' ) );
-		$app_state['pricing_posture']          = sanitize_key( (string) ( $routing['pricing_posture'] ?? $assistant_result['pricing_posture'] ?? '' ) );
+		$existing_assistant = ( $request && ! empty( $request['assistant_result'] ) && is_array( $request['assistant_result'] ) ) ? $request['assistant_result'] : array();
+		$assistant_result   = $this->merge_non_empty( $existing_assistant, $assistant_result );
+		$app_state['suggested_duration_hours'] = sanitize_text_field( (string) ( $routing['suggested_duration_hours'] ?? $assistant_result['suggested_duration_hours'] ?? $app_state['suggested_duration_hours'] ?? '' ) );
+		$app_state['pricing_posture']          = sanitize_key( (string) ( $routing['pricing_posture'] ?? $assistant_result['pricing_posture'] ?? $app_state['pricing_posture'] ?? '' ) );
 		foreach ( array( 'applied_hourly_rate', 'labor_estimate_low', 'labor_estimate_high', 'materials_estimate_low', 'materials_estimate_high', 'total_estimate_low', 'total_estimate_high' ) as $pricing_key ) {
 			$app_state[ $pricing_key ] = max( 0, (float) ( $assistant_result[ $pricing_key ] ?? $app_state[ $pricing_key ] ?? 0 ) );
 		}
@@ -94,14 +96,14 @@ class Handik_Booking_App_Job_Requests_Service {
 		$updated = $wpdb->update(
 			$table,
 			array(
-				'service_family'        => sanitize_key( $routing['service_family'] ?? '' ),
-				'rate_family'           => sanitize_key( $routing['rate_family'] ?? '' ),
-				'duration_bucket'       => sanitize_key( $routing['duration_bucket'] ?? '' ),
-				'booking_type'          => sanitize_key( $routing['booking_type'] ?? '' ),
-				'assistant_summary'     => sanitize_textarea_field( $routing['assistant_summary'] ?? '' ),
-				'estimate_notes'        => sanitize_textarea_field( $routing['estimate_notes'] ?? '' ),
-				'status'                => sanitize_key( $routing['status'] ?? 'draft' ),
-				'routing_status'        => sanitize_key( $routing['routing_status'] ?? 'pending' ),
+				'service_family'        => sanitize_key( $routing['service_family'] ?? $request['service_family'] ?? '' ),
+				'rate_family'           => sanitize_key( $routing['rate_family'] ?? $request['rate_family'] ?? '' ),
+				'duration_bucket'       => sanitize_key( $routing['duration_bucket'] ?? $request['duration_bucket'] ?? '' ),
+				'booking_type'          => sanitize_key( $routing['booking_type'] ?? $request['booking_type'] ?? '' ),
+				'assistant_summary'     => sanitize_textarea_field( $routing['assistant_summary'] ?? $request['assistant_summary'] ?? '' ),
+				'estimate_notes'        => sanitize_textarea_field( $routing['estimate_notes'] ?? $request['estimate_notes'] ?? '' ),
+				'status'                => sanitize_key( $routing['status'] ?? $request['status'] ?? 'draft' ),
+				'routing_status'        => sanitize_key( $routing['routing_status'] ?? $request['routing_status'] ?? 'pending' ),
 				'unsafe_flag'           => ! empty( $routing['unsafe_flag'] ) ? 1 : 0,
 				'unsafe_reason'         => sanitize_textarea_field( $routing['unsafe_reason'] ?? '' ),
 				'app_state_json'        => wp_json_encode( $app_state ),
@@ -413,6 +415,31 @@ class Handik_Booking_App_Job_Requests_Service {
 		);
 
 		return $this->get( $request_id );
+	}
+
+	/**
+	 * @param array<string, mixed> $base Base.
+	 * @param array<string, mixed> $incoming Incoming.
+	 * @return array<string, mixed>
+	 */
+	protected function merge_non_empty( array $base, array $incoming ) {
+		$merged = $base;
+		foreach ( $incoming as $key => $value ) {
+			if ( is_bool( $value ) ) {
+				$merged[ $key ] = ! empty( $merged[ $key ] ) || $value;
+				continue;
+			}
+			if ( is_array( $value ) ) {
+				if ( ! empty( $value ) ) {
+					$merged[ $key ] = $value;
+				}
+				continue;
+			}
+			if ( '' !== trim( (string) $value ) ) {
+				$merged[ $key ] = $value;
+			}
+		}
+		return $merged;
 	}
 
 	/**

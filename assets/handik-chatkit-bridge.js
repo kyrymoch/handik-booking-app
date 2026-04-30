@@ -499,6 +499,20 @@
 					} );
 				}
 
+				if ( ! looksLikeStructuredResult( params ) || ! params.booking_type || ! params.duration_bucket || ! params.suggested_duration_hours ) {
+					log( 'error', 'ChatKit routing result tool received empty or incomplete payload.', {
+						name: name,
+						request_id: record.options.requestId,
+						keys: params && 'object' === typeof params ? Object.keys( params ) : []
+					} );
+					return Promise.resolve( {
+						ok: false,
+						success: false,
+						assistant_result_saved: false,
+						error: 'save_assistant_routing_result requires the full routing payload.'
+					} );
+				}
+
 				log( 'info', 'ChatKit routing result tool save started.', {
 					name: name,
 					request_id: record.options.requestId

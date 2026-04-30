@@ -244,6 +244,10 @@ class Handik_Booking_App_Controller {
 		if ( ! $request ) {
 			return array( 'error' => __( 'Draft request not found.', 'handik-booking-app' ), 'status' => 404 );
 		}
+		if ( ! empty( $request['cal_booking_url'] ) ) {
+			$this->job_requests->mark_booking_pending( $request_id );
+			return array( 'success' => true, 'booking_url' => esc_url_raw( $request['cal_booking_url'] ), 'booking_url_locked' => true );
+		}
 		if ( empty( $request['booking_type'] ) ) {
 			$routing = $this->routing->route( $request );
 			$this->job_requests->apply_routing( $request_id, $routing, array() );

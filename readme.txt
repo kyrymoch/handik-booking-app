@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.1.3.13
+Stable tag: 2.1.3.14
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, returning-client auth, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,12 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.1.3.14 =
+* Locked in the first valid assistant-generated Cal booking URL so later fallback routing cannot switch the customer to a different event type.
+* Prevented empty or incomplete `save_assistant_routing_result` tool calls from overwriting valid stored routing.
+* Skipped repeated Cal embed remounts for the same URL and added a direct mobile fallback link on the booking step.
+* Shortened Cal.com notes so full photo analysis and assistant details stay in the WordPress admin dashboard.
 
 = 2.1.3.13 =
 * Standardized the bottom action bar so every screen after the first shows a consistent `Back` button and right-side action.

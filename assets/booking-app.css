@@ -736,6 +736,17 @@ openai-chatkit {
 	background: #fff;
 }
 
+.handik-booking-app__booking-direct {
+	display: flex;
+	justify-content: center;
+	margin: 12px 0 0;
+}
+
+.handik-booking-app__booking-direct .handik-btn {
+	width: min(100%, 420px);
+	text-align: center;
+}
+
 .handik-booking-app__notifications {
 	position: fixed;
 	right: 18px;

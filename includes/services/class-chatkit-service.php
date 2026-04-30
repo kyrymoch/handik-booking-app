@@ -375,9 +375,45 @@ class Handik_Booking_App_ChatKit_Service {
 			)
 		);
 
+		$stored_assistant   = $this->sanitize_assistant_result( is_array( $request['assistant_result'] ?? null ) ? $request['assistant_result'] : array() );
+		$incoming_assistant = $this->sanitize_assistant_result( $assistant_result );
+		$request_app_state  = ! empty( $request['app_state'] ) && is_array( $request['app_state'] ) ? $request['app_state'] : array();
+		$incoming_differs_from_locked_url = ! empty( $request['cal_booking_url'] ) && $this->request_has_complete_routing( $request ) && $this->has_complete_routing_payload( $incoming_assistant ) && (
+			(string) $incoming_assistant['booking_type'] !== (string) ( $request['booking_type'] ?? '' ) ||
+			(string) $incoming_assistant['duration_bucket'] !== (string) ( $request['duration_bucket'] ?? '' ) ||
+			(string) $incoming_assistant['suggested_duration_hours'] !== (string) ( $request_app_state['suggested_duration_hours'] ?? '' )
+		);
+		if ( ( ! $this->has_complete_routing_payload( $incoming_assistant ) || $incoming_differs_from_locked_url ) && ( $this->has_complete_routing_payload( $stored_assistant ) || $this->request_has_complete_routing( $request ) ) ) {
+			$booking_url = ! empty( $request['cal_booking_url'] ) ? (string) $request['cal_booking_url'] : $this->cal->build_booking_url( $request_id );
+			$this->logger->info(
+				'Ignored assistant result to preserve existing routing.',
+				array(
+					'request_id'                    => $request_id,
+					'reason'                        => $incoming_differs_from_locked_url ? 'locked_booking_url_mismatch' : 'incomplete_payload',
+					'incoming_booking_type'         => sanitize_key( (string) ( $incoming_assistant['booking_type'] ?? '' ) ),
+					'incoming_duration_bucket'      => sanitize_key( (string) ( $incoming_assistant['duration_bucket'] ?? '' ) ),
+					'incoming_suggested_duration'   => sanitize_text_field( (string) ( $incoming_assistant['suggested_duration_hours'] ?? '' ) ),
+					'preserved_booking_type'        => sanitize_key( (string) ( $request['booking_type'] ?? $stored_assistant['booking_type'] ?? '' ) ),
+					'preserved_duration_bucket'     => sanitize_key( (string) ( $request['duration_bucket'] ?? $stored_assistant['duration_bucket'] ?? '' ) ),
+					'preserved_suggested_duration'  => sanitize_text_field( (string) ( $request_app_state['suggested_duration_hours'] ?? $stored_assistant['suggested_duration_hours'] ?? '' ) ),
+					'has_preserved_booking_url'     => ! empty( $booking_url ),
+				)
+			);
+
+			return array(
+				'success'          => true,
+				'assistant_result' => $stored_assistant,
+				'routing'          => $this->routing_from_request( $request, $stored_assistant ),
+				'booking_url'      => $booking_url,
+				'photo_analysis'   => ! empty( $request_app_state['photo_analysis'] ) && is_array( $request_app_state['photo_analysis'] ) ? $request_app_state['photo_analysis'] : array(),
+				'unsafe_flag'      => ! empty( $request['unsafe_flag'] ),
+				'unsafe_reason'    => $request['unsafe_reason'] ?? '',
+			);
+		}
+
 		$photo_analysis = $this->photo_analysis->analyze_request( $request, false );
 		$assistant      = $this->merge_assistant_result(
-			$this->sanitize_assistant_result( is_array( $request['assistant_result'] ?? null ) ? $request['assistant_result'] : array() ),
+			$stored_assistant,
 			$this->sanitize_assistant_result( $this->inject_photo_analysis_into_result( $assistant_result, $photo_analysis ) )
 		);
 		$routing   = $this->routing->route( $request, $assistant );
@@ -905,5 +941,45 @@ class Handik_Booking_App_ChatKit_Service {
 		}
 
 		return $merged;
+	}
+
+	/**
+	 * @param array<string, mixed> $result Assistant payload.
+	 * @return bool
+	 */
+	protected function has_complete_routing_payload( array $result ) {
+		return ! empty( $result['booking_type'] ) && ! empty( $result['duration_bucket'] ) && ! empty( $result['suggested_duration_hours'] );
+	}
+
+	/**
+	 * @param array<string, mixed> $request Request.
+	 * @return bool
+	 */
+	protected function request_has_complete_routing( array $request ) {
+		$app_state = ! empty( $request['app_state'] ) && is_array( $request['app_state'] ) ? $request['app_state'] : array();
+		return ! empty( $request['booking_type'] ) && ! empty( $request['duration_bucket'] ) && ! empty( $app_state['suggested_duration_hours'] );
+	}
+
+	/**
+	 * @param array<string, mixed> $request Request.
+	 * @param array<string, mixed> $assistant Assistant payload.
+	 * @return array<string, mixed>
+	 */
+	protected function routing_from_request( array $request, array $assistant ) {
+		$app_state = ! empty( $request['app_state'] ) && is_array( $request['app_state'] ) ? $request['app_state'] : array();
+		return array(
+			'service_family'           => sanitize_key( (string) ( $request['service_family'] ?? $assistant['service_family'] ?? '' ) ),
+			'rate_family'              => sanitize_key( (string) ( $request['rate_family'] ?? $assistant['rate_family'] ?? '' ) ),
+			'duration_bucket'          => sanitize_key( (string) ( $request['duration_bucket'] ?? $assistant['duration_bucket'] ?? '' ) ),
+			'booking_type'             => sanitize_key( (string) ( $request['booking_type'] ?? $assistant['booking_type'] ?? '' ) ),
+			'suggested_duration_hours' => sanitize_text_field( (string) ( $app_state['suggested_duration_hours'] ?? $assistant['suggested_duration_hours'] ?? '' ) ),
+			'pricing_posture'          => sanitize_key( (string) ( $app_state['pricing_posture'] ?? $assistant['pricing_posture'] ?? '' ) ),
+			'assistant_summary'        => sanitize_textarea_field( (string) ( $request['assistant_summary'] ?? $assistant['assistant_summary'] ?? '' ) ),
+			'estimate_notes'           => sanitize_textarea_field( (string) ( $request['estimate_notes'] ?? $assistant['estimate_notes'] ?? '' ) ),
+			'status'                   => sanitize_key( (string) ( $request['status'] ?? 'ready_for_booking' ) ),
+			'routing_status'           => sanitize_key( (string) ( $request['routing_status'] ?? 'complete' ) ),
+			'unsafe_flag'              => ! empty( $request['unsafe_flag'] ) ? 1 : 0,
+			'unsafe_reason'            => sanitize_textarea_field( (string) ( $request['unsafe_reason'] ?? '' ) ),
+		);
 	}
 }
