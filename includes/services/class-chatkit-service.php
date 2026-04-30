@@ -383,6 +383,33 @@ class Handik_Booking_App_ChatKit_Service {
 			(string) $incoming_assistant['duration_bucket'] !== (string) ( $request['duration_bucket'] ?? '' ) ||
 			(string) $incoming_assistant['suggested_duration_hours'] !== (string) ( $request_app_state['suggested_duration_hours'] ?? '' )
 		);
+		if ( ! $this->has_complete_routing_payload( $incoming_assistant ) && ! $this->has_complete_routing_payload( $stored_assistant ) && ! $this->request_has_complete_routing( $request ) ) {
+			$this->logger->info(
+				'Assistant result ignored because routing is not complete yet.',
+				array(
+					'request_id'                  => $request_id,
+					'incoming_booking_type'       => sanitize_key( (string) ( $incoming_assistant['booking_type'] ?? '' ) ),
+					'incoming_duration_bucket'    => sanitize_key( (string) ( $incoming_assistant['duration_bucket'] ?? '' ) ),
+					'incoming_suggested_duration' => sanitize_text_field( (string) ( $incoming_assistant['suggested_duration_hours'] ?? '' ) ),
+					'has_stored_result'           => false,
+				)
+			);
+
+			return array(
+				'success'                => true,
+				'assistant_result_saved' => false,
+				'booking_url_ready'      => false,
+				'assistant_result'       => $stored_assistant,
+				'routing'                => array(
+					'status'         => 'needs_more_info',
+					'routing_status' => 'awaiting_assistant',
+				),
+				'booking_url'            => '',
+				'photo_analysis'         => ! empty( $request_app_state['photo_analysis'] ) && is_array( $request_app_state['photo_analysis'] ) ? $request_app_state['photo_analysis'] : array(),
+				'unsafe_flag'            => ! empty( $request['unsafe_flag'] ),
+				'unsafe_reason'          => $request['unsafe_reason'] ?? '',
+			);
+		}
 		if ( ( ! $this->has_complete_routing_payload( $incoming_assistant ) || $incoming_differs_from_locked_url ) && ( $this->has_complete_routing_payload( $stored_assistant ) || $this->request_has_complete_routing( $request ) ) ) {
 			$booking_url = ! empty( $request['cal_booking_url'] ) ? (string) $request['cal_booking_url'] : $this->cal->build_booking_url( $request_id );
 			$this->logger->info(
@@ -401,13 +428,15 @@ class Handik_Booking_App_ChatKit_Service {
 			);
 
 			return array(
-				'success'          => true,
-				'assistant_result' => $stored_assistant,
-				'routing'          => $this->routing_from_request( $request, $stored_assistant ),
-				'booking_url'      => $booking_url,
-				'photo_analysis'   => ! empty( $request_app_state['photo_analysis'] ) && is_array( $request_app_state['photo_analysis'] ) ? $request_app_state['photo_analysis'] : array(),
-				'unsafe_flag'      => ! empty( $request['unsafe_flag'] ),
-				'unsafe_reason'    => $request['unsafe_reason'] ?? '',
+				'success'                => true,
+				'assistant_result_saved' => true,
+				'booking_url_ready'      => ! empty( $booking_url ),
+				'assistant_result'       => $stored_assistant,
+				'routing'                => $this->routing_from_request( $request, $stored_assistant ),
+				'booking_url'            => $booking_url,
+				'photo_analysis'         => ! empty( $request_app_state['photo_analysis'] ) && is_array( $request_app_state['photo_analysis'] ) ? $request_app_state['photo_analysis'] : array(),
+				'unsafe_flag'            => ! empty( $request['unsafe_flag'] ),
+				'unsafe_reason'          => $request['unsafe_reason'] ?? '',
 			);
 		}
 
@@ -442,13 +471,15 @@ class Handik_Booking_App_ChatKit_Service {
 		}
 
 		return array(
-			'success'       => true,
-			'assistant_result' => $assistant,
-			'routing'       => $routing,
-			'booking_url'   => $booking_url,
-			'photo_analysis'=> $photo_analysis,
-			'unsafe_flag'   => ! empty( $routing['unsafe_flag'] ),
-			'unsafe_reason' => $routing['unsafe_reason'],
+			'success'                => true,
+			'assistant_result_saved' => $this->has_complete_routing_payload( $assistant ),
+			'booking_url_ready'      => ! empty( $booking_url ),
+			'assistant_result'       => $assistant,
+			'routing'                => $routing,
+			'booking_url'            => $booking_url,
+			'photo_analysis'         => $photo_analysis,
+			'unsafe_flag'            => ! empty( $routing['unsafe_flag'] ),
+			'unsafe_reason'          => $routing['unsafe_reason'],
 		);
 	}
 

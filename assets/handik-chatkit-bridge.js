@@ -522,9 +522,9 @@
 					const routing = payload && payload.routing && 'object' === typeof payload.routing ? payload.routing : {};
 					const assistantResult = payload && payload.assistant_result && 'object' === typeof payload.assistant_result ? payload.assistant_result : {};
 					const responsePayload = {
-						ok: true,
-						success: true,
-						assistant_result_saved: true,
+						ok: !! ( payload && payload.assistant_result_saved ),
+						success: !! ( payload && payload.success ),
+						assistant_result_saved: !! ( payload && payload.assistant_result_saved ),
 						booking_type: routing.booking_type || assistantResult.booking_type || '',
 						duration_bucket: routing.duration_bucket || assistantResult.duration_bucket || '',
 						suggested_duration_hours: routing.suggested_duration_hours || assistantResult.suggested_duration_hours || '',
@@ -540,7 +540,7 @@
 						estimate_disclaimer: assistantResult.estimate_disclaimer || '',
 						unsafe_flag: !! ( payload && payload.unsafe_flag ),
 						unsafe_reason: payload && payload.unsafe_reason ? String( payload.unsafe_reason ) : '',
-						booking_url_ready: !! ( payload && payload.booking_url ),
+						booking_url_ready: !! ( payload && payload.booking_url_ready && payload.booking_url ),
 						booking_url: payload && payload.booking_url ? String( payload.booking_url ) : ''
 					};
 					log( 'info', 'ChatKit routing result tool save completed.', {

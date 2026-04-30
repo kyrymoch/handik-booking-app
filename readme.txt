@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.1.3.14
+Stable tag: 2.1.3.15
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, returning-client auth, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,12 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.1.3.15 =
+* Locked the assistant-to-booking gate so the Cal step only opens after a saved routing result returns a ready booking URL and complete booking type, duration bucket, and suggested duration.
+* Kept incomplete assistant events on the assistant step with a `Preparing booking recommendation...` state instead of saving fallback routing or building Cal URLs.
+* Blocked the `/booking-url` endpoint from fallback-routing drafts that do not already have complete saved assistant routing.
+* Kept the assistant continue button pending until ChatKit finishes responding after the routing tool save, with a short fallback unlock if the final assistant-message event is not emitted.
 
 = 2.1.3.14 =
 * Locked in the first valid assistant-generated Cal booking URL so later fallback routing cannot switch the customer to a different event type.

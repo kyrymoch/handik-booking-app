@@ -244,13 +244,12 @@ class Handik_Booking_App_Controller {
 		if ( ! $request ) {
 			return array( 'error' => __( 'Draft request not found.', 'handik-booking-app' ), 'status' => 404 );
 		}
+		if ( ! $this->has_complete_saved_routing( $request ) ) {
+			return array( 'error' => __( 'Assistant is still preparing the booking recommendation.', 'handik-booking-app' ), 'status' => 409 );
+		}
 		if ( ! empty( $request['cal_booking_url'] ) ) {
 			$this->job_requests->mark_booking_pending( $request_id );
 			return array( 'success' => true, 'booking_url' => esc_url_raw( $request['cal_booking_url'] ), 'booking_url_locked' => true );
-		}
-		if ( empty( $request['booking_type'] ) ) {
-			$routing = $this->routing->route( $request );
-			$this->job_requests->apply_routing( $request_id, $routing, array() );
 		}
 		$url = $this->cal->build_booking_url( $request_id );
 		if ( ! $url ) {
@@ -258,6 +257,15 @@ class Handik_Booking_App_Controller {
 		}
 		$this->job_requests->mark_booking_pending( $request_id );
 		return array( 'success' => true, 'booking_url' => $url );
+	}
+
+	/**
+	 * @param array<string, mixed> $request Request.
+	 * @return bool
+	 */
+	protected function has_complete_saved_routing( array $request ) {
+		$app_state = ! empty( $request['app_state'] ) && is_array( $request['app_state'] ) ? $request['app_state'] : array();
+		return ! empty( $request['booking_type'] ) && ! empty( $request['duration_bucket'] ) && ! empty( $app_state['suggested_duration_hours'] );
 	}
 
 	/**
