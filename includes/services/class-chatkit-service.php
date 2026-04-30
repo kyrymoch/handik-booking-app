@@ -399,6 +399,7 @@ class Handik_Booking_App_ChatKit_Service {
 				'success'                => true,
 				'assistant_result_saved' => false,
 				'booking_url_ready'      => false,
+				'assistant_ready_for_booking' => false,
 				'assistant_result'       => $stored_assistant,
 				'routing'                => array(
 					'status'         => 'needs_more_info',
@@ -411,7 +412,8 @@ class Handik_Booking_App_ChatKit_Service {
 			);
 		}
 		if ( ( ! $this->has_complete_routing_payload( $incoming_assistant ) || $incoming_differs_from_locked_url ) && ( $this->has_complete_routing_payload( $stored_assistant ) || $this->request_has_complete_routing( $request ) ) ) {
-			$booking_url = ! empty( $request['cal_booking_url'] ) ? (string) $request['cal_booking_url'] : $this->cal->build_booking_url( $request_id );
+			$preserved_assistant = $this->has_complete_routing_payload( $stored_assistant ) ? $stored_assistant : $this->assistant_from_request( $request, $stored_assistant );
+			$booking_url         = $this->assistant_ready_for_booking( $preserved_assistant, $request ) ? ( ! empty( $request['cal_booking_url'] ) ? (string) $request['cal_booking_url'] : $this->cal->build_booking_url( $request_id ) ) : '';
 			$this->logger->info(
 				'Ignored assistant result to preserve existing routing.',
 				array(
@@ -431,8 +433,9 @@ class Handik_Booking_App_ChatKit_Service {
 				'success'                => true,
 				'assistant_result_saved' => true,
 				'booking_url_ready'      => ! empty( $booking_url ),
-				'assistant_result'       => $stored_assistant,
-				'routing'                => $this->routing_from_request( $request, $stored_assistant ),
+				'assistant_ready_for_booking' => $this->assistant_ready_for_booking( $preserved_assistant, $request, $booking_url ),
+				'assistant_result'       => $preserved_assistant,
+				'routing'                => $this->routing_from_request( $request, $preserved_assistant ),
 				'booking_url'            => $booking_url,
 				'photo_analysis'         => ! empty( $request_app_state['photo_analysis'] ) && is_array( $request_app_state['photo_analysis'] ) ? $request_app_state['photo_analysis'] : array(),
 				'unsafe_flag'            => ! empty( $request['unsafe_flag'] ),
@@ -469,11 +472,13 @@ class Handik_Booking_App_ChatKit_Service {
 		if ( 'ready_for_booking' === $routing['status'] && ! empty( $routing['booking_type'] ) ) {
 			$booking_url = $this->cal->build_booking_url( $request_id );
 		}
+		$assistant_ready_for_booking = $this->assistant_ready_for_booking( $assistant, $routing, $booking_url );
 
 		return array(
 			'success'                => true,
 			'assistant_result_saved' => $this->has_complete_routing_payload( $assistant ),
 			'booking_url_ready'      => ! empty( $booking_url ),
+			'assistant_ready_for_booking' => $assistant_ready_for_booking,
 			'assistant_result'       => $assistant,
 			'routing'                => $routing,
 			'booking_url'            => $booking_url,
@@ -989,6 +994,35 @@ class Handik_Booking_App_ChatKit_Service {
 	protected function request_has_complete_routing( array $request ) {
 		$app_state = ! empty( $request['app_state'] ) && is_array( $request['app_state'] ) ? $request['app_state'] : array();
 		return ! empty( $request['booking_type'] ) && ! empty( $request['duration_bucket'] ) && ! empty( $app_state['suggested_duration_hours'] );
+	}
+
+	/**
+	 * @param array<string, mixed> $assistant Assistant payload.
+	 * @param array<string, mixed> $context Routing or request context.
+	 * @param string               $booking_url Booking URL.
+	 * @return bool
+	 */
+	protected function assistant_ready_for_booking( array $assistant, array $context = array(), $booking_url = '' ) {
+		$has_booking_url = ! empty( $booking_url ) || ! empty( $context['cal_booking_url'] );
+		$status_ok       = empty( $context['status'] ) || 'ready_for_booking' === (string) $context['status'];
+		$routing_ok      = empty( $context['routing_status'] ) || 'complete' === (string) $context['routing_status'];
+
+		return $this->has_complete_routing_payload( $assistant )
+			&& ! empty( $assistant['enough_information'] )
+			&& empty( $assistant['unsafe'] )
+			&& empty( $context['unsafe_flag'] )
+			&& $status_ok
+			&& $routing_ok
+			&& $has_booking_url;
+	}
+
+	/**
+	 * @param array<string, mixed> $request Request.
+	 * @param array<string, mixed> $assistant Assistant payload.
+	 * @return array<string, mixed>
+	 */
+	protected function assistant_from_request( array $request, array $assistant ) {
+		return $this->merge_assistant_result( $assistant, $this->routing_from_request( $request, $assistant ) );
 	}
 
 	/**

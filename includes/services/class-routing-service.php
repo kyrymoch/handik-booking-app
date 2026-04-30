@@ -85,7 +85,8 @@ class Handik_Booking_App_Routing_Service {
 		$suggested_duration   = ! empty( $assistant['suggested_duration_hours'] ) ? sanitize_key( (string) $assistant['suggested_duration_hours'] ) : $this->suggested_duration_hours( $booking_type, $tasks, $rate_family, $description, $request );
 		$pricing_posture      = ! empty( $assistant['pricing_posture'] ) ? sanitize_key( (string) $assistant['pricing_posture'] ) : $this->pricing_posture( $booking_type, $rate_family );
 		$service_family       = ! empty( $assistant['service_family'] ) ? sanitize_key( (string) $assistant['service_family'] ) : $this->service_family( $tasks, $description, $rate_family );
-		$enough              = ! empty( $assistant['enough_information'] ) || ( ! empty( $request['address_full'] ) && ( ! empty( $tasks ) || ! empty( $description ) ) );
+		$assistant_has_readiness = array_key_exists( 'enough_information', $assistant );
+		$enough                  = $assistant_has_readiness ? ! empty( $assistant['enough_information'] ) : ( ! empty( $request['address_full'] ) && ( ! empty( $tasks ) || ! empty( $description ) ) );
 
 		return array(
 			'service_family'           => $service_family,

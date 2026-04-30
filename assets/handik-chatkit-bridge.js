@@ -525,10 +525,13 @@
 						ok: !! ( payload && payload.assistant_result_saved ),
 						success: !! ( payload && payload.success ),
 						assistant_result_saved: !! ( payload && payload.assistant_result_saved ),
+						assistant_ready_for_booking: !! ( payload && payload.assistant_ready_for_booking ),
 						booking_type: routing.booking_type || assistantResult.booking_type || '',
 						duration_bucket: routing.duration_bucket || assistantResult.duration_bucket || '',
 						suggested_duration_hours: routing.suggested_duration_hours || assistantResult.suggested_duration_hours || '',
 						pricing_posture: routing.pricing_posture || assistantResult.pricing_posture || '',
+						enough_information: !! assistantResult.enough_information,
+						next_message: assistantResult.next_message || '',
 						applied_hourly_rate: assistantResult.applied_hourly_rate || 0,
 						labor_estimate_low: assistantResult.labor_estimate_low || 0,
 						labor_estimate_high: assistantResult.labor_estimate_high || 0,
@@ -550,7 +553,8 @@
 						suggested_duration_hours: responsePayload.suggested_duration_hours,
 						total_estimate_low: responsePayload.total_estimate_low,
 						total_estimate_high: responsePayload.total_estimate_high,
-						booking_url_ready: responsePayload.booking_url_ready
+						booking_url_ready: responsePayload.booking_url_ready,
+						assistant_ready_for_booking: responsePayload.assistant_ready_for_booking
 					} );
 					return responsePayload;
 				} ).catch( function( error ) {

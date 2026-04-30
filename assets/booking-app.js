@@ -64,8 +64,11 @@
 				assistantResult: null,
 				assistantResultSaved: false,
 				assistantBookingUrlReady: false,
+				assistantReadyForBooking: false,
 				assistantRoutingPending: false,
 				assistantAwaitingResponse: false,
+				assistantResponseSeen: false,
+				assistantFallbackMessage: '',
 				assistantUserMessageSent: false,
 				assistantThreadId: '',
 				contact: { first_name: '', last_name: '', full_name: '', email: '', phone: '' },
@@ -698,8 +701,12 @@
 			return !! (
 				this.state.assistantResultSaved &&
 				this.state.assistantBookingUrlReady &&
+				this.state.assistantReadyForBooking &&
+				this.state.assistantResponseSeen &&
 				! this.state.assistantRoutingPending &&
 				this.state.bookingUrl &&
+				true === result.enough_information &&
+				! result.unsafe &&
 				result.booking_type &&
 				result.duration_bucket &&
 				result.suggested_duration_hours
@@ -1127,8 +1134,11 @@
 						assistantResult: null,
 						assistantResultSaved: false,
 						assistantBookingUrlReady: false,
+						assistantReadyForBooking: false,
 						assistantRoutingPending: false,
 						assistantAwaitingResponse: false,
+						assistantResponseSeen: false,
+						assistantFallbackMessage: '',
 						assistantUserMessageSent: false,
 						assistantThreadId: '',
 						contact: { first_name: '', last_name: '', full_name: '', email: '', phone: '' },
@@ -1615,17 +1625,25 @@
 			const result = this.state.assistantResult || {};
 			const hasValidRouting = !! ( result.booking_type && result.duration_bucket && result.suggested_duration_hours );
 			const hasReadyUrl = !! ( this.state.bookingUrl && ( ! payload || payload.booking_url_ready || payload.booking_url ) );
-			if ( payload && payload.assistant_result_saved && hasReadyUrl && hasValidRouting ) {
+			const hasEnoughInformation = true === result.enough_information;
+			const isUnsafe = !! ( result.unsafe || ( payload && payload.unsafe_flag ) );
+			const assistantReadyForBooking = !! ( payload && payload.assistant_ready_for_booking && hasEnoughInformation && ! isUnsafe && hasReadyUrl && hasValidRouting );
+
+			if ( payload && payload.assistant_result_saved && hasValidRouting ) {
 				this.state.assistantResultSaved = true;
-				this.state.assistantBookingUrlReady = true;
+				this.state.assistantBookingUrlReady = hasReadyUrl;
+				this.state.assistantReadyForBooking = assistantReadyForBooking;
+
 				if ( this.state.assistantAwaitingResponse ) {
+					const fallbackMessage = result.next_message || ( assistantReadyForBooking ? 'Your booking recommendation is ready.' : 'I need a little more information before we book a time.' );
 					this.state.assistantRoutingPending = true;
 					if ( this.assistantUnlockTimer ) {
 						window.clearTimeout( this.assistantUnlockTimer );
 					}
 					this.assistantUnlockTimer = window.setTimeout( () => {
 						this.assistantUnlockTimer = null;
-						if ( this.state.assistantResultSaved && this.state.assistantBookingUrlReady && this.state.assistantAwaitingResponse ) {
+						if ( this.state.assistantResultSaved && this.state.assistantAwaitingResponse ) {
+							this.showAssistantFallbackMessage( fallbackMessage );
 							this.state.assistantAwaitingResponse = false;
 							this.state.assistantRoutingPending = false;
 							this.setAssistantContinueBusy( false );
@@ -1637,6 +1655,35 @@
 			}
 
 			this.setAssistantContinueBusy( false );
+		}
+
+		showAssistantFallbackMessage( message ) {
+			const text = String( message || '' ).trim();
+			if ( ! text ) {
+				return;
+			}
+			this.state.assistantFallbackMessage = text;
+			this.state.assistantResponseSeen = true;
+			const panel = this.root.querySelector( '.handik-assistant-panel' );
+			if ( ! panel ) {
+				return;
+			}
+			let fallback = panel.querySelector( '.handik-assistant-fallback-message' );
+			if ( ! fallback ) {
+				fallback = document.createElement( 'div' );
+				fallback.className = 'handik-assistant-fallback-message';
+				const footer = panel.querySelector( '.handik-footer-wrap' );
+				panel.insertBefore( fallback, footer || null );
+			}
+			fallback.textContent = text;
+		}
+
+		clearAssistantFallbackMessage() {
+			this.state.assistantFallbackMessage = '';
+			const fallback = this.root.querySelector( '.handik-assistant-fallback-message' );
+			if ( fallback ) {
+				fallback.remove();
+			}
 		}
 
 		setBookingStatusMessage( message, isError ) {
@@ -1962,9 +2009,13 @@
 			}
 
 			if ( ! this.assistantCanContinue() ) {
-				this.state.assistantRoutingPending = true;
+				this.state.assistantRoutingPending = ! this.state.assistantResultSaved;
 				this.setAssistantContinueBusy( false );
-				this.setAssistantNotice( 'Preparing booking recommendation...', true );
+				if ( this.state.assistantResult && this.state.assistantResult.next_message ) {
+					this.showAssistantFallbackMessage( this.state.assistantResult.next_message );
+				} else {
+					this.setAssistantNotice( 'Preparing booking recommendation...', true );
+				}
 				return;
 			}
 
@@ -2064,14 +2115,19 @@
 							this.state.assistantUserMessageSent = true;
 							this.state.assistantRoutingPending = true;
 							this.state.assistantAwaitingResponse = true;
+							this.state.assistantResponseSeen = false;
+							this.state.assistantReadyForBooking = false;
+							this.clearAssistantFallbackMessage();
 							if ( this.assistantUnlockTimer ) {
 								window.clearTimeout( this.assistantUnlockTimer );
 								this.assistantUnlockTimer = null;
 							}
 							this.setAssistantContinueBusy( false );
-						} else if ( isAssistantLike && this.state.assistantResultSaved && this.state.assistantBookingUrlReady ) {
+						} else if ( isAssistantLike && this.state.assistantResultSaved ) {
+							this.state.assistantResponseSeen = true;
 							this.state.assistantAwaitingResponse = false;
 							this.state.assistantRoutingPending = false;
+							this.clearAssistantFallbackMessage();
 							if ( this.assistantUnlockTimer ) {
 								window.clearTimeout( this.assistantUnlockTimer );
 								this.assistantUnlockTimer = null;
@@ -2083,6 +2139,9 @@
 						this.state.assistantUserMessageSent = true;
 						this.state.assistantRoutingPending = true;
 						this.state.assistantAwaitingResponse = true;
+						this.state.assistantResponseSeen = false;
+						this.state.assistantReadyForBooking = false;
+						this.clearAssistantFallbackMessage();
 						if ( this.assistantUnlockTimer ) {
 							window.clearTimeout( this.assistantUnlockTimer );
 							this.assistantUnlockTimer = null;
@@ -2315,7 +2374,8 @@
 
 		assistantMarkup() {
 			const skeleton = '<div class="handik-skeleton handik-skeleton--assistant" aria-hidden="true"><div class="handik-skeleton__bar"></div><div class="handik-skeleton__bar handik-skeleton__bar--short"></div><div class="handik-skeleton__bar"></div></div>';
-			return '<p class="handik-booking-app__intro">' + this.escape( config.strings.assistantIntro || 'This AI assistant helps you understand rough cost, timing, materials, and what to expect, while helping us collect the details needed to prepare for the job properly.' ) + '</p><div class="handik-assistant-layout"><div class="handik-assistant-panel"><div class="handik-booking-app__assistant-host">' + skeleton + '</div>' + this.footerActions( 'back-assistant', 'assistant-next', this.escape( config.strings.assistantContinue || 'Book a time' ), '', { continueMuted: ! this.assistantCanContinue() } ) + '</div></div>';
+			const fallback = this.state.assistantFallbackMessage ? '<div class="handik-assistant-fallback-message">' + this.escape( this.state.assistantFallbackMessage ) + '</div>' : '';
+			return '<p class="handik-booking-app__intro">' + this.escape( config.strings.assistantIntro || 'This AI assistant helps you understand rough cost, timing, materials, and what to expect, while helping us collect the details needed to prepare for the job properly.' ) + '</p><div class="handik-assistant-layout"><div class="handik-assistant-panel"><div class="handik-booking-app__assistant-host">' + skeleton + '</div>' + fallback + this.footerActions( 'back-assistant', 'assistant-next', this.escape( config.strings.assistantContinue || 'Book a time' ), '', { continueMuted: ! this.assistantCanContinue() } ) + '</div></div>';
 		}
 
 		contactMarkup() {

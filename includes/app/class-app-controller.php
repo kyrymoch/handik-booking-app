@@ -265,7 +265,13 @@ class Handik_Booking_App_Controller {
 	 */
 	protected function has_complete_saved_routing( array $request ) {
 		$app_state = ! empty( $request['app_state'] ) && is_array( $request['app_state'] ) ? $request['app_state'] : array();
-		return ! empty( $request['booking_type'] ) && ! empty( $request['duration_bucket'] ) && ! empty( $app_state['suggested_duration_hours'] );
+		$assistant = ! empty( $request['assistant_result'] ) && is_array( $request['assistant_result'] ) ? $request['assistant_result'] : array();
+		return ! empty( $request['booking_type'] )
+			&& ! empty( $request['duration_bucket'] )
+			&& ! empty( $app_state['suggested_duration_hours'] )
+			&& ! empty( $assistant['enough_information'] )
+			&& empty( $assistant['unsafe'] )
+			&& empty( $request['unsafe_flag'] );
 	}
 
 	/**

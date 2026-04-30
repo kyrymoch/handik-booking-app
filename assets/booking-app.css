@@ -623,6 +623,18 @@
 	max-width: 100%;
 }
 
+.handik-assistant-fallback-message {
+	max-width: 760px;
+	justify-self: center;
+	padding: 12px 14px;
+	border: 1px solid rgba(40, 54, 24, 0.18);
+	border-radius: 16px;
+	background: #f8faf5;
+	color: #1a1a1c;
+	line-height: 1.45;
+	box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
+}
+
 .handik-chatkit-bridge__loading {
 	min-height: 520px;
 	display: grid;
