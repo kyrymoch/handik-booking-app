@@ -2300,6 +2300,8 @@
 		addressMarkup() {
 			const addressOptions = this.state.verifiedProfile && Array.isArray( this.state.verifiedProfile.addresses ) ? this.state.verifiedProfile.addresses : [];
 			const isReturningProfile = !! ( this.state.verifiedProfile && this.state.verifiedProfile.contact );
+			const addressAntiAutofillAttrs = ' autocomplete="new-password" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" data-form-type="other" name="handik_job_location_query"';
+			const unitAntiAutofillAttrs = ' autocomplete="new-password" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" data-form-type="other" name="handik_job_unit_detail"';
 			let savedAddressMarkup = '';
 			if ( addressOptions.length ) {
 				savedAddressMarkup = '<label class="handik-field"><span>' + this.escape( config.strings.savedAddressLabel || 'Saved address' ) + '</span><select id="handik-saved-address" autocomplete="off"><option value="">' + this.escape( config.strings.savedAddressPlaceholder || 'Choose saved address' ) + '</option>' + addressOptions.map( ( item ) => '<option value="' + item.id + '">' + this.escape( item.address_full ) + '</option>' ).join( '' ) + '</select></label>';
@@ -2309,10 +2311,10 @@
 
 			return (
 				savedAddressMarkup +
-				'<label class="handik-field handik-field--address' + ( this.state.address.is_valid || ! this.state.address.address_full ? '' : ' is-invalid' ) + '"><span>' + this.escape( config.strings.addressLabel || 'Address of the job' ) + '</span><input id="handik-job-address" type="text" data-model="address.address_full" autocomplete="street-address" placeholder="' + this.escape( config.strings.addressPlaceholder || 'Start typing the address of the job' ) + '" value="' + this.escape( this.state.address.address_full || '' ) + '" />' +
+				'<label class="handik-field handik-field--address' + ( this.state.address.is_valid || ! this.state.address.address_full ? '' : ' is-invalid' ) + '"><span>' + this.escape( config.strings.addressLabel || 'Address of the job' ) + '</span><input id="handik-job-address" type="text" data-model="address.address_full"' + addressAntiAutofillAttrs + ' placeholder="' + this.escape( config.strings.addressPlaceholder || 'Start typing the address of the job' ) + '" value="' + this.escape( this.state.address.address_full || '' ) + '" />' +
 					( this.state.address.address_full && ! this.state.address.is_valid ? '<span class="handik-field__error" role="alert">' + this.escape( ( config.strings.errors && config.strings.errors.addressRequired ) || 'Choose a valid address from the suggestions to continue.' ) + '</span>' : '' ) +
 				'</label>' +
-				'<label class="handik-field"><span>' + this.escape( config.strings.unitLabel || 'Unit or apartment (optional)' ) + '</span><input type="text" data-model="address.address_unit" autocomplete="address-line2" value="' + this.escape( this.state.address.address_unit || '' ) + '" /></label>' +
+				'<label class="handik-field"><span>' + this.escape( config.strings.unitLabel || 'Unit or apartment (optional)' ) + '</span><input type="text" data-model="address.address_unit"' + unitAntiAutofillAttrs + ' value="' + this.escape( this.state.address.address_unit || '' ) + '" /></label>' +
 				this.footerActions( 'back-address', 'address-next', this.escape( config.strings.continue ), '', { continueMuted: ! this.stepCanContinue( 'address_details' ) } )
 			);
 		}
@@ -2453,6 +2455,7 @@
 			if ( ! input || ! config.googleMapsApiKey ) {
 				return;
 			}
+			this.disableNativeAddressAutofill( input );
 
 			if ( '1' === input.getAttribute( 'data-google-mounted' ) ) {
 				return;
@@ -2485,10 +2488,25 @@
 				} );
 
 				input.setAttribute( 'data-google-mounted', '1' );
+				this.disableNativeAddressAutofill( input );
 			} catch ( error ) {
 				this.googleMapsPromise = Promise.resolve( null );
 				console.error( '[HandikBookingApp] Google Maps autocomplete failed.', error );
 			}
+		}
+
+		disableNativeAddressAutofill( input ) {
+			if ( ! input ) {
+				return;
+			}
+			input.setAttribute( 'autocomplete', 'new-password' );
+			input.setAttribute( 'autocorrect', 'off' );
+			input.setAttribute( 'autocapitalize', 'off' );
+			input.setAttribute( 'spellcheck', 'false' );
+			input.setAttribute( 'data-lpignore', 'true' );
+			input.setAttribute( 'data-1p-ignore', 'true' );
+			input.setAttribute( 'data-form-type', 'other' );
+			input.setAttribute( 'name', 'handik_job_location_query' );
 		}
 
 		bind() {
