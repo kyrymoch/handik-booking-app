@@ -39,12 +39,48 @@ class Handik_Booking_App_Photo_Analysis_Service {
 	 * @return array<string, mixed>
 	 */
 	public function analyze_request( array $request, $force = false ) {
-		$photos = ! empty( $request['photos'] ) && is_array( $request['photos'] ) ? array_values( $request['photos'] ) : array();
+		$media = ! empty( $request['photos'] ) && is_array( $request['photos'] ) ? array_values( $request['photos'] ) : array();
+		if ( empty( $media ) ) {
+			return array();
+		}
+		$videos = array_values(
+			array_filter(
+				$media,
+				function( $item ) {
+					$type = ! empty( $item['media_type'] ) ? (string) $item['media_type'] : ( ! empty( $item['type'] ) ? (string) $item['type'] : '' );
+					$mime = ! empty( $item['mime_type'] ) ? (string) $item['mime_type'] : '';
+					return 'video' === $type || 0 === strpos( $mime, 'video/' );
+				}
+			)
+		);
+		$photos = array_values(
+			array_filter(
+				$media,
+				function( $item ) {
+					$type = ! empty( $item['media_type'] ) ? (string) $item['media_type'] : ( ! empty( $item['type'] ) ? (string) $item['type'] : '' );
+					$mime = ! empty( $item['mime_type'] ) ? (string) $item['mime_type'] : '';
+					return 'video' !== $type && 0 !== strpos( $mime, 'video/' );
+				}
+			)
+		);
 		if ( empty( $photos ) ) {
+			$this->job_requests->update_app_state(
+				(int) $request['id'],
+				array(
+					'photo_analysis_status'         => 'video_saved',
+					'has_uploaded_videos'           => ! empty( $videos ),
+					'uploaded_video_count'          => count( $videos ),
+					'photo_context_summary'         => ! empty( $videos ) ? 'Customer uploaded video files. They are saved in the CRM for Alex to review.' : '',
+					'visible_tasks_summary'         => '',
+					'safety_summary'                => '',
+					'visual_estimate_notes'         => ! empty( $videos ) ? 'Video files are available in the request, but automated video analysis is not enabled for this flow.' : '',
+					'has_actionable_visual_context' => false,
+				)
+			);
 			return array();
 		}
 
-		$signature = $this->photos_signature( $photos );
+		$signature = $this->photos_signature( $media );
 		$cached    = $this->cached_analysis( $request );
 
 		if ( ! $force && ! empty( $cached['photos_signature'] ) && $cached['photos_signature'] === $signature ) {
@@ -71,7 +107,7 @@ class Handik_Booking_App_Photo_Analysis_Service {
 		$content = array(
 			array(
 				'type' => 'text',
-				'text' => $this->analysis_prompt( $request, count( $photos ) ),
+				'text' => $this->analysis_prompt( $request, count( $photos ), count( $videos ) ),
 			),
 		);
 
@@ -206,6 +242,7 @@ class Handik_Booking_App_Photo_Analysis_Service {
 			array(
 				'request_id'     => (int) $request['id'],
 				'photo_count'    => count( $photos ),
+				'video_count'    => count( $videos ),
 				'visible_tasks'  => $analysis['visible_tasks'],
 				'actionable'     => $analysis['has_actionable_visual_context'],
 			)
@@ -298,9 +335,10 @@ class Handik_Booking_App_Photo_Analysis_Service {
 	/**
 	 * @param array<string, mixed> $request Request.
 	 * @param int                  $photo_count Photo count.
+	 * @param int                  $video_count Video count.
 	 * @return string
 	 */
-	protected function analysis_prompt( array $request, $photo_count ) {
+	protected function analysis_prompt( array $request, $photo_count, $video_count = 0 ) {
 		$tasks = ! empty( $request['selected_tasks'] ) && is_array( $request['selected_tasks'] ) ? implode( ', ', $request['selected_tasks'] ) : 'Not provided';
 
 		return implode(
@@ -313,6 +351,7 @@ class Handik_Booking_App_Photo_Analysis_Service {
 				'- Project flag: ' . ( ! empty( $request['is_project'] ) ? 'yes' : 'no' ),
 				'- Address: ' . ( ! empty( $request['address_full'] ) ? $request['address_full'] : 'not provided' ),
 				'- Number of uploaded photos: ' . (int) $photo_count,
+				'- Number of uploaded videos saved for CRM review but not directly analyzed here: ' . (int) $video_count,
 				'Return only JSON with these keys:',
 				'- visual_summary: concise summary of what is visibly relevant for the handyman visit',
 				'- visual_estimate_notes: useful estimate/setup notes based only on visible evidence',

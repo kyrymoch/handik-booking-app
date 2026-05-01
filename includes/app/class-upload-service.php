@@ -23,16 +23,34 @@ class Handik_Booking_App_Upload_Service {
 	 * @return array<string, mixed>
 	 */
 	public function upload_image( array $file, array $context = array() ) {
+		return $this->upload_media( $file, $context );
+	}
+
+	/**
+	 * @param array<string, mixed> $file File.
+	 * @param array<string, mixed> $context Context.
+	 * @return array<string, mixed>
+	 */
+	public function upload_media( array $file, array $context = array() ) {
 		require_once ABSPATH . 'wp-admin/includes/file.php';
 		require_once ABSPATH . 'wp-admin/includes/image.php';
 		require_once ABSPATH . 'wp-admin/includes/media.php';
 
-		$allowed = array( 'image/jpeg', 'image/png', 'image/webp', 'image/heic' );
-		if ( empty( $file['tmp_name'] ) || empty( $file['type'] ) || ! in_array( $file['type'], $allowed, true ) ) {
-			return array( 'error' => __( 'Only image uploads are allowed.', 'handik-booking-app' ), 'status' => 400 );
+		$allowed_images = array( 'image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/heic', 'image/heif' );
+		$allowed_videos = array( 'video/mp4', 'video/quicktime', 'video/webm' );
+		$mime_type      = ! empty( $file['type'] ) ? sanitize_mime_type( (string) $file['type'] ) : '';
+		$is_image       = in_array( $mime_type, $allowed_images, true );
+		$is_video       = in_array( $mime_type, $allowed_videos, true );
+
+		if ( empty( $file['tmp_name'] ) || ! $mime_type || ( ! $is_image && ! $is_video ) ) {
+			return array( 'error' => __( 'Only photo and short video uploads are allowed.', 'handik-booking-app' ), 'status' => 400 );
 		}
-		if ( ! empty( $file['size'] ) && (int) $file['size'] > 10 * MB_IN_BYTES ) {
+
+		if ( $is_image && ! empty( $file['size'] ) && (int) $file['size'] > 10 * MB_IN_BYTES ) {
 			return array( 'error' => __( 'Images must be 10MB or smaller.', 'handik-booking-app' ), 'status' => 400 );
+		}
+		if ( $is_video && ! empty( $file['size'] ) && (int) $file['size'] > 50 * MB_IN_BYTES ) {
+			return array( 'error' => __( 'Videos must be 50MB or smaller.', 'handik-booking-app' ), 'status' => 400 );
 		}
 
 		$upload_filter = function( $uploads ) use ( $context ) {
@@ -47,7 +65,21 @@ class Handik_Booking_App_Upload_Service {
 			return $uploads;
 		};
 		add_filter( 'upload_dir', $upload_filter );
-		$handled = wp_handle_upload( $file, array( 'test_form' => false ) );
+		$handled = wp_handle_upload(
+			$file,
+			array(
+				'test_form' => false,
+				'mimes'     => array(
+					'jpg|jpeg|jpe' => 'image/jpeg',
+					'png'          => 'image/png',
+					'webp'         => 'image/webp',
+					'heic|heif'    => 'image/heic',
+					'mp4|m4v'      => 'video/mp4',
+					'mov|qt'       => 'video/quicktime',
+					'webm'         => 'video/webm',
+				),
+			)
+		);
 		remove_filter( 'upload_dir', $upload_filter );
 		if ( ! empty( $handled['error'] ) ) {
 			return array( 'error' => $handled['error'], 'status' => 400 );
@@ -60,7 +92,7 @@ class Handik_Booking_App_Upload_Service {
 		);
 		$attachment_id = wp_insert_attachment( $attachment, $handled['file'] );
 		$meta          = array();
-		if ( ! is_wp_error( $attachment_id ) ) {
+		if ( ! is_wp_error( $attachment_id ) && $is_image ) {
 			$meta = wp_generate_attachment_metadata( $attachment_id, $handled['file'] );
 			wp_update_attachment_metadata( $attachment_id, $meta );
 		}
@@ -71,6 +103,8 @@ class Handik_Booking_App_Upload_Service {
 			'attachment_id' => ! is_wp_error( $attachment_id ) ? (int) $attachment_id : 0,
 			'name'          => sanitize_file_name( wp_basename( $handled['file'] ) ),
 			'mime_type'     => sanitize_text_field( (string) $handled['type'] ),
+			'media_type'    => $is_video ? 'video' : 'image',
+			'type'          => $is_video ? 'video' : 'image',
 			'filesize'      => ! empty( $file['size'] ) ? (int) $file['size'] : 0,
 			'width'         => ! empty( $meta['width'] ) ? (int) $meta['width'] : 0,
 			'height'        => ! empty( $meta['height'] ) ? (int) $meta['height'] : 0,

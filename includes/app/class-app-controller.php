@@ -214,17 +214,26 @@ class Handik_Booking_App_Controller {
 		$draft_token = ! empty( $context['draft_token'] ) ? sanitize_text_field( (string) $context['draft_token'] ) : '';
 
 		if ( ! $request_id || ! $draft_token || ! $this->job_requests->verify_draft_token( $request_id, $draft_token ) ) {
-			return array( 'error' => __( 'Valid draft request is required before uploading photos.', 'handik-booking-app' ), 'status' => 403 );
+			return array( 'error' => __( 'Valid draft request is required before uploading files.', 'handik-booking-app' ), 'status' => 403 );
+		}
+		$request = $this->job_requests->get( $request_id );
+		$current_files = $request && ! empty( $request['photos'] ) && is_array( $request['photos'] ) ? $request['photos'] : array();
+		if ( count( $current_files ) >= 8 ) {
+			return array( 'error' => __( 'You can upload up to 8 photos or videos for one request.', 'handik-booking-app' ), 'status' => 400 );
 		}
 
 		$context['request_id'] = $request_id;
-		$result = $this->upload_service->upload_image( $file, $context );
+		$result = method_exists( $this->upload_service, 'upload_media' ) ? $this->upload_service->upload_media( $file, $context ) : $this->upload_service->upload_image( $file, $context );
 		if ( empty( $result['error'] ) ) {
+			$app_state_patch = array(
+				'photo_analysis_status' => ( ! empty( $result['media_type'] ) && 'video' === $result['media_type'] ) ? 'video_saved' : 'queued',
+			);
+			if ( ! empty( $result['media_type'] ) && 'video' === $result['media_type'] ) {
+				$app_state_patch['has_uploaded_videos'] = true;
+			}
 			$this->job_requests->update_app_state(
 				$request_id,
-				array(
-					'photo_analysis_status' => 'queued',
-				)
+				$app_state_patch
 			);
 		}
 

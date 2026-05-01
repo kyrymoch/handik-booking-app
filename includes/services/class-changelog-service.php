@@ -11,6 +11,17 @@ class Handik_Booking_App_Changelog_Service {
 	public function get_entries() {
 		return array(
 			array(
+				'version'      => '2.1.4',
+				'date'         => '2026-05-01',
+				'title'        => 'Reorder Intake Flow And Stabilize Assistant Booking Gate',
+				'notes'        => array(
+					'Moved task selection to the first screen, added Photos / Videos before client type, and changed returning-client verification to a clearer phone-only two-step code flow.',
+					'Added video uploads to the CRM path while keeping automated AI analysis on the stable image-only pipeline and exposing uploaded-video presence to the assistant context.',
+					'Tightened assistant-to-booking gating, added clearer client-side logs, removed normal Back from assistant and booking screens, and replaced it with a confirmed Start a new booking reset.',
+					'Added selected-task mismatch flags so admin can see when uploaded/contextual details caused the assistant to reroute away from the initially selected category.',
+				),
+			),
+			array(
 				'version'      => '2.1.3',
 				'date'         => '2026-04-26',
 				'title'        => 'Tighten Task Choice UX And Speed Up Assistant Mount',

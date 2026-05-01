@@ -93,6 +93,12 @@ class Handik_Booking_App_Job_Requests_Service {
 		}
 		$app_state['materials_notes']     = sanitize_textarea_field( (string) ( $assistant_result['materials_notes'] ?? $app_state['materials_notes'] ?? '' ) );
 		$app_state['estimate_disclaimer'] = sanitize_textarea_field( (string) ( $assistant_result['estimate_disclaimer'] ?? $app_state['estimate_disclaimer'] ?? '' ) );
+		$app_state['selected_task_mismatch'] = ! empty( $routing['selected_task_mismatch'] ) || ! empty( $assistant_result['selected_task_mismatch'] );
+		$app_state['mismatch_notes']         = sanitize_textarea_field( (string) ( $routing['mismatch_notes'] ?? $assistant_result['mismatch_notes'] ?? $app_state['mismatch_notes'] ?? '' ) );
+		if ( ! empty( $app_state['selected_task_mismatch'] ) ) {
+			$assistant_result['selected_task_mismatch'] = true;
+			$assistant_result['mismatch_notes'] = $app_state['mismatch_notes'];
+		}
 		$updated = $wpdb->update(
 			$table,
 			array(
@@ -124,6 +130,7 @@ class Handik_Booking_App_Job_Requests_Service {
 				'applied_hourly_rate'      => $app_state['applied_hourly_rate'] ?? 0,
 				'total_estimate_low'       => $app_state['total_estimate_low'] ?? 0,
 				'total_estimate_high'      => $app_state['total_estimate_high'] ?? 0,
+				'selected_task_mismatch'   => ! empty( $app_state['selected_task_mismatch'] ),
 			)
 		);
 	}

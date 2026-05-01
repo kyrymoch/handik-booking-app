@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.1.3.18
+Stable tag: 2.1.4
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, returning-client auth, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -17,7 +17,7 @@ Features:
 * shortcode and Elementor widget embedding
 * hosted ChatKit assistant step
 * local CRM tables for contacts, addresses, requests, bookings, and login tokens
-* returning-client email/phone verification with one-time code flow
+* returning-client phone verification with one-time code flow
 * Cal.com booking URL routing and webhook sync
 * GitHub release-based plugin updates with WordPress auto-update support
 
@@ -31,6 +31,11 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.1.4 =
+* Reordered intake so task selection starts the flow, photos/videos come before client type, and address/contact happen after returning-client verification.
+* Added phone-only returning-client verification UI, video upload storage/previews, assistant video-context exposure, and stricter assistant booking gating/logging.
+* Replaced normal Back on assistant/booking with a confirmed Start a new booking reset and added selected-task mismatch flags for admin review.
 
 = 2.1.3.18 =
 * Split technical Cal URL readiness from true assistant booking readiness so `enough_information=false` keeps clients on the assistant step.

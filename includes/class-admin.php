@@ -338,7 +338,11 @@ class Handik_Booking_App_Admin {
 		echo '<div class="handik-admin-note">' . nl2br( esc_html( (string) ( $request['assistant_summary'] ?? '' ) ) ) . '</div>';
 		echo '<h3>' . esc_html__( 'Assistant notes', 'handik-booking-app' ) . '</h3>';
 		echo '<div class="handik-admin-note">' . nl2br( esc_html( (string) ( $request['estimate_notes'] ?? '' ) ) ) . '</div>';
-		echo '<h3>' . esc_html__( 'Photos', 'handik-booking-app' ) . '</h3>';
+		if ( ! empty( $request['app_state']['selected_task_mismatch'] ) ) {
+			echo '<h3>' . esc_html__( 'Selected task mismatch', 'handik-booking-app' ) . '</h3>';
+			echo '<div class="handik-admin-note is-warning">' . nl2br( esc_html( (string) ( $request['app_state']['mismatch_notes'] ?? 'Selected task did not fully match the assistant-routed work type.' ) ) ) . '</div>';
+		}
+		echo '<h3>' . esc_html__( 'Photos / Videos', 'handik-booking-app' ) . '</h3>';
 		echo $this->photos_gallery_markup( $photos );
 		echo '</div>';
 
@@ -904,7 +908,7 @@ class Handik_Booking_App_Admin {
 
 	protected function photos_gallery_markup( array $photos ) {
 		if ( empty( $photos ) ) {
-			return '<p>' . esc_html__( 'No photos attached to this request.', 'handik-booking-app' ) . '</p>';
+			return '<p>' . esc_html__( 'No photos or videos attached to this request.', 'handik-booking-app' ) . '</p>';
 		}
 
 		$html = '<div class="handik-admin-photo-grid">';
@@ -914,7 +918,13 @@ class Handik_Booking_App_Admin {
 			}
 			$url  = esc_url( (string) $photo['url'] );
 			$name = ! empty( $photo['name'] ) ? (string) $photo['name'] : basename( (string) $photo['url'] );
-			$html .= '<a class="handik-admin-photo" href="' . $url . '" target="_blank" rel="noopener noreferrer"><img src="' . $url . '" alt="' . esc_attr( $name ) . '" /><span>' . esc_html( $name ) . '</span></a>';
+			$type = ! empty( $photo['media_type'] ) ? (string) $photo['media_type'] : ( ! empty( $photo['type'] ) ? (string) $photo['type'] : '' );
+			$mime = ! empty( $photo['mime_type'] ) ? (string) $photo['mime_type'] : '';
+			if ( 'video' === $type || 0 === strpos( $mime, 'video/' ) ) {
+				$html .= '<a class="handik-admin-photo handik-admin-photo--video" href="' . $url . '" target="_blank" rel="noopener noreferrer"><video src="' . $url . '" muted preload="metadata"></video><span>' . esc_html( $name ) . '</span><em>' . esc_html__( 'Video', 'handik-booking-app' ) . '</em></a>';
+			} else {
+				$html .= '<a class="handik-admin-photo" href="' . $url . '" target="_blank" rel="noopener noreferrer"><img src="' . $url . '" alt="' . esc_attr( $name ) . '" /><span>' . esc_html( $name ) . '</span></a>';
+			}
 		}
 		$html .= '</div>';
 		return $html;

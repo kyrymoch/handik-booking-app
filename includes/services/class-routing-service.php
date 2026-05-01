@@ -87,6 +87,7 @@ class Handik_Booking_App_Routing_Service {
 		$service_family       = ! empty( $assistant['service_family'] ) ? sanitize_key( (string) $assistant['service_family'] ) : $this->service_family( $tasks, $description, $rate_family );
 		$assistant_has_readiness = array_key_exists( 'enough_information', $assistant );
 		$enough                  = $assistant_has_readiness ? ! empty( $assistant['enough_information'] ) : ( ! empty( $request['address_full'] ) && ( ! empty( $tasks ) || ! empty( $description ) ) );
+		$mismatch                = $this->selected_task_mismatch( $tasks, $service_family, $rate_family );
 
 		return array(
 			'service_family'           => $service_family,
@@ -101,6 +102,42 @@ class Handik_Booking_App_Routing_Service {
 			'routing_status'           => $enough ? 'complete' : 'awaiting_assistant',
 			'unsafe_flag'              => 0,
 			'unsafe_reason'            => '',
+			'selected_task_mismatch'   => $mismatch['selected_task_mismatch'],
+			'mismatch_notes'           => $mismatch['mismatch_notes'],
+		);
+	}
+
+	/**
+	 * @param array<int, string> $tasks Selected task IDs.
+	 * @param string             $service_family Routed service family.
+	 * @param string             $rate_family Routed rate family.
+	 * @return array<string, mixed>
+	 */
+	protected function selected_task_mismatch( array $tasks, $service_family, $rate_family ) {
+		$tasks = array_values( array_filter( $tasks ) );
+		if ( empty( $tasks ) || ! $service_family || ! $rate_family ) {
+			return array(
+				'selected_task_mismatch' => false,
+				'mismatch_notes'         => '',
+			);
+		}
+
+		foreach ( $tasks as $task_id ) {
+			if ( empty( $this->task_map[ $task_id ] ) ) {
+				continue;
+			}
+			$mapped = $this->task_map[ $task_id ];
+			if ( $service_family === $mapped['service_family'] || $rate_family === $mapped['rate_family'] ) {
+				return array(
+					'selected_task_mismatch' => false,
+					'mismatch_notes'         => '',
+				);
+			}
+		}
+
+		return array(
+			'selected_task_mismatch' => true,
+			'mismatch_notes'         => sprintf( 'Selected %s but assistant routed to %s / %s.', implode( ', ', $tasks ), $service_family, $rate_family ),
 		);
 	}
 

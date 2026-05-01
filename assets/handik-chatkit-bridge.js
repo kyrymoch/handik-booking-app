@@ -63,7 +63,9 @@
 			unsafe: Boolean( value.unsafe ),
 			unsafe_reason: sanitizeText( value.unsafe_reason ),
 			is_project: Boolean( value.is_project ),
-			next_message: sanitizeText( value.next_message )
+			next_message: sanitizeText( value.next_message ),
+			selected_task_mismatch: Boolean( value.selected_task_mismatch ),
+			mismatch_notes: sanitizeText( value.mismatch_notes )
 		};
 		[ 'applied_hourly_rate', 'labor_estimate_low', 'labor_estimate_high', 'materials_estimate_low', 'materials_estimate_high', 'total_estimate_low', 'total_estimate_high' ].forEach( function( key ) {
 			if ( Object.prototype.hasOwnProperty.call( value, key ) ) {
@@ -541,6 +543,8 @@
 						total_estimate_high: assistantResult.total_estimate_high || 0,
 						materials_notes: assistantResult.materials_notes || '',
 						estimate_disclaimer: assistantResult.estimate_disclaimer || '',
+						selected_task_mismatch: !! assistantResult.selected_task_mismatch,
+						mismatch_notes: assistantResult.mismatch_notes || '',
 						unsafe_flag: !! ( payload && payload.unsafe_flag ),
 						unsafe_reason: payload && payload.unsafe_reason ? String( payload.unsafe_reason ) : '',
 						booking_url_ready: !! ( payload && payload.booking_url_ready && payload.booking_url ),

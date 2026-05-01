@@ -521,6 +521,12 @@
 	grid-template-columns: 1fr;
 }
 
+.handik-photo-list__type {
+	text-transform: capitalize;
+	font-size: 0.76rem;
+	color: var(--handik-muted-text, #64748b);
+}
+
 .handik-photo-input {
 	position: absolute;
 	width: 1px;
@@ -1282,6 +1288,10 @@ openai-chatkit {
 		handik-selected-sheet-bounce 0.72s cubic-bezier(0.2, 0.9, 0.22, 1.15) 2s;
 }
 
+.handik-selected-sheet.is-attention:not(.is-open) {
+	animation: handik-selected-sheet-attention 2.65s ease-in-out 0.8s 5;
+}
+
 .handik-selected-sheet__toggle {
 	width: 100%;
 	display: flex;
@@ -1342,6 +1352,30 @@ openai-chatkit {
 	color: var(--handik-accent, #0f766e);
 	font-size: 0.8rem;
 	font-weight: 700;
+}
+
+@keyframes handik-selected-sheet-attention {
+	0%, 78%, 100% {
+		transform: translateY(0) scale(1);
+		box-shadow: 0 16px 40px rgba(15, 23, 42, 0.14);
+	}
+	84% {
+		transform: translateY(-8px) scale(1.006);
+		box-shadow: 0 20px 44px rgba(15, 23, 42, 0.18);
+	}
+	90% {
+		transform: translateY(2px) scale(0.998);
+	}
+	95% {
+		transform: translateY(-4px) scale(1.003);
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.handik-selected-sheet.is-attention:not(.is-open),
+	.handik-selected-sheet.is-bouncing {
+		animation: none;
+	}
 }
 
 @media (max-width: 767px) {

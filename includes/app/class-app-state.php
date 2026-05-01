@@ -22,11 +22,11 @@ class Handik_Booking_App_State {
 	 */
 	public function steps() {
 		return array(
+			'task_selection',
+			'photos',
 			'client_type',
 			'returning_verify',
-			'task_selection',
 			'address_details',
-			'photos',
 			'contact_details',
 			'assistant',
 			'booking',

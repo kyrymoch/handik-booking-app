@@ -10,7 +10,7 @@ class Handik_Booking_App_Schema {
 	 */
 	public function default_state() {
 		return array(
-			'step'               => 'client_type',
+			'step'               => 'task_selection',
 			'clientType'         => '',
 			'verifiedProfile'    => null,
 			'requestId'          => 0,

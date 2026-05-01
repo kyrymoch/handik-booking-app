@@ -572,7 +572,19 @@ class Handik_Booking_App_ChatKit_Service {
 	protected function build_photo_context_payload( array $request, array $analysis ) {
 		$app_state   = ! empty( $request['app_state'] ) && is_array( $request['app_state'] ) ? $request['app_state'] : array();
 		$photos      = ! empty( $request['photos'] ) && is_array( $request['photos'] ) ? array_values( $request['photos'] ) : array();
-		$has_photos  = ! empty( $photos );
+		$image_count = 0;
+		$video_count = 0;
+		foreach ( $photos as $item ) {
+			$type = ! empty( $item['media_type'] ) ? (string) $item['media_type'] : ( ! empty( $item['type'] ) ? (string) $item['type'] : '' );
+			$mime = ! empty( $item['mime_type'] ) ? (string) $item['mime_type'] : '';
+			if ( 'video' === $type || 0 === strpos( $mime, 'video/' ) ) {
+				++$video_count;
+			} else {
+				++$image_count;
+			}
+		}
+		$has_photos  = $image_count > 0;
+		$has_videos  = $video_count > 0 || ! empty( $app_state['has_uploaded_videos'] );
 		$status      = ! empty( $app_state['photo_analysis_status'] ) ? sanitize_key( (string) $app_state['photo_analysis_status'] ) : '';
 		$summary     = ! empty( $analysis['photo_context_summary'] ) ? (string) $analysis['photo_context_summary'] : (string) ( $app_state['photo_context_summary'] ?? '' );
 		$tasks       = ! empty( $analysis['visible_tasks_summary'] ) ? (string) $analysis['visible_tasks_summary'] : (string) ( $app_state['visible_tasks_summary'] ?? '' );
@@ -595,11 +607,16 @@ class Handik_Booking_App_ChatKit_Service {
 		if ( $has_photos && empty( $missing ) && ! $actionable ) {
 			$missing[] = __( 'Uploaded photos are available, but the current visual context is still limited.', 'handik-booking-app' );
 		}
+		if ( $has_videos && ! $has_photos ) {
+			$missing[] = __( 'Uploaded videos are saved in the CRM for Alex to review, but automated video analysis is not enabled for this flow.', 'handik-booking-app' );
+		}
 
 		return array(
 			'request_id'                    => (int) $request['id'],
 			'has_photos'                    => $has_photos,
-			'photo_count'                   => count( $photos ),
+			'has_videos'                    => $has_videos,
+			'photo_count'                   => $image_count,
+			'video_count'                   => $video_count,
 			'photo_analysis_status'         => $status,
 			'has_actionable_visual_context' => $actionable,
 			'photo_context_summary'         => sanitize_textarea_field( $summary ),
@@ -896,6 +913,8 @@ class Handik_Booking_App_ChatKit_Service {
 			'unsafe'                   => ! empty( $result['unsafe'] ),
 			'unsafe_reason'            => sanitize_textarea_field( $result['unsafe_reason'] ?? '' ),
 			'is_project'               => ! empty( $result['is_project'] ),
+			'selected_task_mismatch'   => ! empty( $result['selected_task_mismatch'] ),
+			'mismatch_notes'           => sanitize_textarea_field( $result['mismatch_notes'] ?? '' ),
 		);
 
 		foreach ( array( 'applied_hourly_rate', 'labor_estimate_low', 'labor_estimate_high', 'materials_estimate_low', 'materials_estimate_high', 'total_estimate_low', 'total_estimate_high' ) as $pricing_key ) {

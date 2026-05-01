@@ -51,8 +51,8 @@ class Handik_Booking_App_Assets {
 		}
 
 		$assistant_intro = (string) $this->settings->get( 'ui_assistant_intro', (string) $this->settings->get( 'ui_assistant_helper', '' ) );
-		if ( '' === trim( $assistant_intro ) || in_array( trim( $assistant_intro ), array( 'Describe the task, ask any questions you have, and continue when you are ready to choose a time.', 'This AI assistant can help estimate the job, time, materials, and next steps while collecting the details we need to prepare properly.', 'This AI assistant helps estimate the job, time, materials, and next steps while collecting the details we need to prepare properly.' ), true ) ) {
-			$assistant_intro = 'This AI assistant helps you understand rough cost, timing, materials, and what to expect, while helping us collect the details needed to prepare for the job properly.';
+		if ( '' === trim( $assistant_intro ) || in_array( trim( $assistant_intro ), array( 'Describe the task, ask any questions you have, and continue when you are ready to choose a time.', 'This AI assistant can help estimate the job, time, materials, and next steps while collecting the details we need to prepare properly.', 'This AI assistant helps estimate the job, time, materials, and next steps while collecting the details we need to prepare properly.', 'This AI assistant helps you understand rough cost, timing, materials, and what to expect, while helping us collect the details needed to prepare for the job properly.' ), true ) ) {
+			$assistant_intro = 'This AI assistant helps you understand rough cost, timing, materials, and what to expect, while helping Alex collect the details needed to prepare for the job properly.';
 		}
 
 		$assistant_continue = (string) $this->settings->get( 'ui_assistant_continue_button', 'Book a time' );
@@ -70,14 +70,49 @@ class Handik_Booking_App_Assets {
 			$contact_continue = 'Continue to Assistant';
 		}
 
-		$photos_title = (string) $this->settings->get( 'ui_photos_title', 'Photos of the Work Area' );
-		if ( '' === trim( $photos_title ) || 'Photos' === trim( $photos_title ) ) {
-			$photos_title = 'Photos of the Work Area';
+		$client_type_intro = (string) $this->settings->get( 'ui_client_type_intro', 'Choose New client if this is your first time booking through this form. Choose Returning client if you have booked here before.' );
+		if ( '' === trim( $client_type_intro ) || 'Choose the option that best matches your situation.' === trim( $client_type_intro ) ) {
+			$client_type_intro = 'Choose New client if this is your first time booking through this form. Choose Returning client if you have booked here before.';
 		}
 
-		$photos_intro = (string) $this->settings->get( 'ui_photos_intro', 'Upload clear photos of the area, item, fixture, wall, or problem you need help with. Photos help the assistant estimate time, materials, and the right booking type.' );
-		if ( '' === trim( $photos_intro ) || in_array( trim( $photos_intro ), array( 'Photos really help us understand the job faster, but you can continue without them if needed.', 'Upload a few clear photos if you have them. We review them before the AI assistant opens.' ), true ) ) {
-			$photos_intro = 'Upload clear photos of the area, item, fixture, wall, or problem you need help with. Photos help the assistant estimate time, materials, and the right booking type.';
+		$verify_intro = (string) $this->settings->get( 'ui_returning_verify_intro', 'Enter your phone number and Alex will send a one-time verification code.' );
+		if ( '' === trim( $verify_intro ) || 'Enter your email or phone to receive a one-time code.' === trim( $verify_intro ) ) {
+			$verify_intro = 'Enter your phone number and Alex will send a one-time verification code.';
+		}
+
+		$saved_address_label = (string) $this->settings->get( 'ui_saved_address_label', 'Choose a saved address or enter a new one' );
+		if ( '' === trim( $saved_address_label ) || 'Saved address' === trim( $saved_address_label ) ) {
+			$saved_address_label = 'Choose a saved address or enter a new one';
+		}
+
+		$photos_label = (string) $this->settings->get( 'ui_photos_label', 'Photos / Videos' );
+		if ( '' === trim( $photos_label ) || 'Photos' === trim( $photos_label ) ) {
+			$photos_label = 'Photos / Videos';
+		}
+
+		$photos_help = (string) $this->settings->get( 'ui_photos_help', 'Upload photos or short videos of the problem area, item, fixture, wall, appliance, or installation spot.' );
+		if ( '' === trim( $photos_help ) || in_array( trim( $photos_help ), array( 'Add a few clear photos so we can understand the job faster.', 'Add a few clear photos so we can review the job visually before the assistant starts.' ), true ) ) {
+			$photos_help = 'Upload photos or short videos of the problem area, item, fixture, wall, appliance, or installation spot.';
+		}
+
+		$photos_cta = (string) $this->settings->get( 'ui_photos_cta', 'Tap to add photos or videos' );
+		if ( '' === trim( $photos_cta ) || 'Tap to add photos' === trim( $photos_cta ) ) {
+			$photos_cta = 'Tap to add photos or videos';
+		}
+
+		$photos_empty = (string) $this->settings->get( 'ui_photos_empty', 'No photos or videos added yet' );
+		if ( '' === trim( $photos_empty ) || 'No photos added yet' === trim( $photos_empty ) ) {
+			$photos_empty = 'No photos or videos added yet';
+		}
+
+		$photos_title = (string) $this->settings->get( 'ui_photos_title', 'Photos / Videos of the Work Area' );
+		if ( '' === trim( $photos_title ) || in_array( trim( $photos_title ), array( 'Photos', 'Photos of the Work Area' ), true ) ) {
+			$photos_title = 'Photos / Videos of the Work Area';
+		}
+
+		$photos_intro = (string) $this->settings->get( 'ui_photos_intro', 'Upload photos or short videos of the problem area, item, fixture, wall, appliance, or installation spot.' );
+		if ( '' === trim( $photos_intro ) || in_array( trim( $photos_intro ), array( 'Photos really help us understand the job faster, but you can continue without them if needed.', 'Upload a few clear photos if you have them. We review them before the AI assistant opens.', 'Upload clear photos of the area, item, fixture, wall, or problem you need help with. Photos help the assistant estimate time, materials, and the right booking type.' ), true ) ) {
+			$photos_intro = 'Upload photos or short videos of the problem area, item, fixture, wall, appliance, or installation spot.';
 		}
 
 		wp_localize_script(
@@ -101,7 +136,7 @@ class Handik_Booking_App_Assets {
 					'openBooking'        => (string) $this->settings->get( 'ui_open_booking_button', 'Open calendar in new tab' ),
 					'completeBooking'    => (string) $this->settings->get( 'ui_complete_booking_button', 'Check booking status' ),
 					'launchAssistant'    => __( 'Open assistant', 'handik-booking-app' ),
-					'uploading'          => (string) $this->settings->get( 'ui_photos_loading', 'Uploading your photos...' ),
+					'uploading'          => (string) $this->settings->get( 'ui_photos_loading', 'Uploading your files...' ),
 					'unsafeTitle'        => (string) $this->settings->get( 'ui_unsafe_title', 'We need to stop the normal booking flow' ),
 					'assistantGreeting'  => $assistant_greeting,
 					'assistantReadyNotice' => (string) $this->settings->get( 'ui_assistant_ready_notice', 'The virtual assistant has enough information. Continue when you are ready.' ),
@@ -112,11 +147,11 @@ class Handik_Booking_App_Assets {
 					'loadingAssistant'   => (string) $this->settings->get( 'ui_loading_assistant_title', 'Loading...' ),
 					'loadingAssistantSubtext' => (string) $this->settings->get( 'ui_loading_assistant_subtitle', '' ),
 					'clientTypeTitle'    => (string) $this->settings->get( 'ui_client_type_title', 'Who is booking today?' ),
-					'clientTypeIntro'    => (string) $this->settings->get( 'ui_client_type_intro', 'Choose the option that best matches your situation.' ),
+					'clientTypeIntro'    => $client_type_intro,
 					'newClientLabel'     => (string) $this->settings->get( 'ui_new_client_label', 'New client' ),
 					'returningClientLabel' => (string) $this->settings->get( 'ui_returning_client_label', 'Returning client' ),
 					'verifyTitle'        => (string) $this->settings->get( 'ui_returning_verify_title', 'Returning client verification' ),
-					'verifyIntro'        => (string) $this->settings->get( 'ui_returning_verify_intro', 'Enter your email or phone to receive a one-time code.' ),
+					'verifyIntro'        => $verify_intro,
 					'taskTitle'          => (string) $this->settings->get( 'ui_task_selection_title', 'What do you need help with?' ),
 					'taskIntro'          => $task_intro,
 					'projectLabel'       => (string) $this->settings->get( 'ui_project_label', 'Complex Project Work' ),
@@ -127,12 +162,12 @@ class Handik_Booking_App_Assets {
 					'unitLabel'          => (string) $this->settings->get( 'ui_address_unit_label', 'Unit or apartment (optional)' ),
 					'photosTitle'        => $photos_title,
 					'photosIntro'        => $photos_intro,
-					'savedAddressLabel'  => (string) $this->settings->get( 'ui_saved_address_label', 'Saved address' ),
+					'savedAddressLabel'  => $saved_address_label,
 					'savedAddressPlaceholder' => (string) $this->settings->get( 'ui_saved_address_placeholder', 'Choose saved address' ),
-					'photosLabel'        => (string) $this->settings->get( 'ui_photos_label', 'Photos' ),
-					'photosHelp'         => (string) $this->settings->get( 'ui_photos_help', 'Add a few clear photos so we can review the job visually before the assistant starts.' ),
-					'photosCta'          => (string) $this->settings->get( 'ui_photos_cta', 'Tap to add photos' ),
-					'photosEmpty'        => (string) $this->settings->get( 'ui_photos_empty', 'No photos added yet' ),
+					'photosLabel'        => $photos_label,
+					'photosHelp'         => $photos_help,
+					'photosCta'          => $photos_cta,
+					'photosEmpty'        => $photos_empty,
 					'assistantTitle'     => (string) $this->settings->get( 'ui_assistant_title', 'Virtual assistant' ),
 					'assistantIntro'     => $assistant_intro,
 					'assistantContinue'  => $assistant_continue,
@@ -149,8 +184,8 @@ class Handik_Booking_App_Assets {
 						'addressRequired'=> (string) $this->settings->get( 'ui_error_address_required', 'Choose a valid address from the Google suggestions before continuing.' ),
 						'invalidCode'    => (string) $this->settings->get( 'ui_error_invalid_code', 'Code or magic link is invalid or expired.' ),
 						'assistantRequired' => (string) $this->settings->get( 'ui_error_assistant_required', 'Please send the virtual assistant a short description of the job before continuing.' ),
-						'nameEmailRequired' => (string) $this->settings->get( 'ui_error_name_email_required', 'Name and email are required before you can continue.' ),
-						'phoneOrEmailRequired' => (string) $this->settings->get( 'ui_error_phone_or_email_required', 'Enter your email or phone, then request a code.' ),
+						'nameEmailRequired' => (string) $this->settings->get( 'ui_error_name_email_required', 'Name and phone are required before you can continue.' ),
+						'phoneOrEmailRequired' => (string) $this->settings->get( 'ui_error_phone_or_email_required', 'Enter your phone, then request a code.' ),
 						'invalidName'    => (string) $this->settings->get( 'ui_error_invalid_name', 'Enter a real full name using letters only.' ),
 						'invalidEmail'   => (string) $this->settings->get( 'ui_error_invalid_email', 'Enter a valid email address before continuing.' ),
 						'invalidPhone'   => (string) $this->settings->get( 'ui_error_invalid_phone', 'Enter a phone number in the format +1 123 456 78 90.' ),
