@@ -11,6 +11,16 @@ class Handik_Booking_App_Changelog_Service {
 	public function get_entries() {
 		return array(
 			array(
+				'version'      => '2.1.6',
+				'date'         => '2026-05-03',
+				'title'        => 'Finalize Flow Audit And Assistant Prewarm',
+				'notes'        => array(
+					'Added cached bootstrap payloads so the static catalog, appearance, Cal settings, and ZIP list are reused between warm requests.',
+					'Prewarmed ChatKit sessions from Address details when a draft already exists, reducing the wait before the assistant mounts.',
+					'Added a small optimistic typing indicator while the assistant is preparing a visible reply.',
+				),
+			),
+			array(
 				'version'      => '2.1.5',
 				'date'         => '2026-05-03',
 				'title'        => 'Simplify Flow And Stabilize Cal Duration',

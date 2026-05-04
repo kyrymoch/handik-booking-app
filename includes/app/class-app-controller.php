@@ -105,24 +105,42 @@ class Handik_Booking_App_Controller {
 	 * @return array<string, mixed>
 	 */
 	public function bootstrap() {
-		$contact_id = $this->auth->current_contact_id();
-		$cal_fallback_url = trim( (string) $this->settings->get( 'cal_fallback_url', '' ) );
-		if ( '' === $cal_fallback_url ) {
-			$cal_fallback_url = trim( (string) $this->settings->get( 'cal_standard_event_url', '' ) );
+		$contact_id    = $this->auth->current_contact_id();
+		$settings_hash = md5( wp_json_encode( $this->settings->all() ) );
+		$cache_key     = 'bootstrap_static_' . HANDIK_BOOKING_APP_VERSION . '_' . $settings_hash;
+		$cache_group   = 'handik_booking_app';
+		$static        = wp_cache_get( $cache_key, $cache_group );
+		if ( ! is_array( $static ) ) {
+			$static = get_transient( $cache_key );
 		}
-		return array(
-			'success'         => true,
-			'version'         => HANDIK_BOOKING_APP_VERSION,
-			'db_version'      => (string) get_option( Handik_Booking_App_Migrations::OPTION_NAME, '0.0.0' ),
-			'task_catalog'    => $this->state->task_catalog(),
-			'steps'           => $this->state->steps(),
-			'default_state'   => $this->schema->default_state(),
-			'appearance'      => $this->appearance->css_variables(),
-			'verified_profile'=> $contact_id ? $this->auth->profile( $contact_id ) : null,
-			'changelog'       => $this->changelog->get_entries(),
-			'cal_configured'  => array_filter( $this->cal->event_map() ),
-			'cal_fallback_url'=> $cal_fallback_url,
-			'serviceable_zips'=> $this->serviceable_zips(),
+
+		if ( ! is_array( $static ) ) {
+			$cal_fallback_url = trim( (string) $this->settings->get( 'cal_fallback_url', '' ) );
+			if ( '' === $cal_fallback_url ) {
+				$cal_fallback_url = trim( (string) $this->settings->get( 'cal_standard_event_url', '' ) );
+			}
+			$static = array(
+				'version'         => HANDIK_BOOKING_APP_VERSION,
+				'db_version'      => (string) get_option( Handik_Booking_App_Migrations::OPTION_NAME, '0.0.0' ),
+				'task_catalog'    => $this->state->task_catalog(),
+				'steps'           => $this->state->steps(),
+				'default_state'   => $this->schema->default_state(),
+				'appearance'      => $this->appearance->css_variables(),
+				'changelog'       => $this->changelog->get_entries(),
+				'cal_configured'  => array_filter( $this->cal->event_map() ),
+				'cal_fallback_url'=> $cal_fallback_url,
+				'serviceable_zips'=> $this->serviceable_zips(),
+			);
+			wp_cache_set( $cache_key, $static, $cache_group, HOUR_IN_SECONDS );
+			set_transient( $cache_key, $static, HOUR_IN_SECONDS );
+		}
+
+		return array_merge(
+			array(
+				'success'          => true,
+				'verified_profile' => $contact_id ? $this->auth->profile( $contact_id ) : null,
+			),
+			$static
 		);
 	}
 

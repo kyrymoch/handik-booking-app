@@ -628,6 +628,7 @@
 }
 
 .handik-booking-app__assistant-host {
+	position: relative;
 	min-height: 460px;
 	border: 1px solid var(--handik-border, #dbe3ea);
 	border-radius: 16px;
@@ -639,6 +640,51 @@
 }
 
 .handik-assistant-fallback-message { display: none !important; }
+
+.handik-assistant-typing-indicator {
+	position: absolute;
+	left: 18px;
+	bottom: 18px;
+	z-index: 4;
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	padding: 10px 12px;
+	border: 1px solid var(--handik-border, #dbe3ea);
+	border-radius: 999px;
+	background: rgba(255, 255, 255, 0.96);
+	box-shadow: 0 10px 26px rgba(15, 23, 42, 0.12);
+	opacity: 0;
+	transform: translateY(8px);
+	transition: opacity 0.16s ease, transform 0.16s ease;
+	pointer-events: none;
+}
+
+.handik-assistant-typing-indicator.is-visible {
+	opacity: 1;
+	transform: translateY(0);
+}
+
+.handik-assistant-typing-indicator span {
+	width: 6px;
+	height: 6px;
+	border-radius: 999px;
+	background: var(--handik-accent, #283618);
+	animation: handik-typing-dot 0.9s ease-in-out infinite;
+}
+
+.handik-assistant-typing-indicator span:nth-child(2) {
+	animation-delay: 0.12s;
+}
+
+.handik-assistant-typing-indicator span:nth-child(3) {
+	animation-delay: 0.24s;
+}
+
+@keyframes handik-typing-dot {
+	0%, 80%, 100% { transform: translateY(0); opacity: 0.45; }
+	40% { transform: translateY(-4px); opacity: 1; }
+}
 
 .handik-chatkit-bridge__loading {
 	min-height: 520px;

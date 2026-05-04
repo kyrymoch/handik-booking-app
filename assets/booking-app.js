@@ -41,6 +41,8 @@
 			this.calEmbedListenerKey = '';
 			this.assistantPreparationPromise = null;
 			this.assistantMountPromise = null;
+			this.assistantSessionPrewarmPromise = null;
+			this.assistantSessionPrewarmedRequestId = 0;
 			this.pendingAssistantContextAnalysis = null;
 			this.notificationTimers = new Map();
 			this.assistantBridge = null;
@@ -49,6 +51,7 @@
 			this.photoAnalysisWarmPromiseRequestId = 0;
 			this.assistantContextDispatchPromise = null;
 			this.assistantUnlockTimer = null;
+			this.assistantTypingTimer = null;
 			this.state = {
 				step: 'task_selection',
 				isReturningClient: false,
@@ -1180,6 +1183,9 @@
 
 		executeRestart() {
 			this.stopBookingStatusPolling();
+			this.hideAssistantTypingIndicator();
+			this.assistantSessionPrewarmPromise = null;
+			this.assistantSessionPrewarmedRequestId = 0;
 					this.clearDraftStorage();
 					if ( window.HandikChatKitBridge && typeof window.HandikChatKitBridge.reset === 'function' && this.state.requestId ) {
 						window.HandikChatKitBridge.reset( 'request_' + String( this.state.requestId ) );
@@ -1476,6 +1482,73 @@
 			this.setAssistantPreparingState( ! this.assistantBridge );
 
 			return this.assistantPreparationPromise;
+		}
+
+		prewarmAssistantSession() {
+			if ( 'address_details' !== this.state.step || ! this.state.requestId || ! this.state.draftToken ) {
+				return;
+			}
+			const requestId = Number( this.state.requestId ) || 0;
+			if ( this.assistantBridge || this.assistantSessionPrewarmPromise || this.assistantSessionPrewarmedRequestId === requestId ) {
+				return;
+			}
+			this.assistantSessionPrewarmedRequestId = requestId;
+
+			this.assistantSessionPrewarmPromise = this.api( 'chatkit-session', {
+				request_id: this.state.requestId,
+				draft_token: this.state.draftToken
+			} ).then( ( payload ) => {
+				this.logClient( 'info', 'ChatKit session prewarmed before assistant step.', {
+					request_id: this.state.requestId,
+					has_client_secret: !! ( payload && payload.client_secret )
+				} );
+				return payload;
+			} ).catch( ( error ) => {
+				this.logClient( 'debug', 'ChatKit session prewarm skipped.', {
+					request_id: this.state.requestId,
+					error: error.message || 'Unknown error'
+				} );
+			} ).finally( () => {
+				this.assistantSessionPrewarmPromise = null;
+			} );
+		}
+
+		showAssistantTypingIndicator() {
+			const host = this.root.querySelector( '.handik-booking-app__assistant-host' );
+			if ( ! host ) {
+				return;
+			}
+			let indicator = host.querySelector( '.handik-assistant-typing-indicator' );
+			if ( indicator ) {
+				indicator.classList.add( 'is-visible' );
+				return;
+			}
+			indicator = document.createElement( 'div' );
+			indicator.className = 'handik-assistant-typing-indicator';
+			indicator.setAttribute( 'aria-hidden', 'true' );
+			indicator.innerHTML = '<span></span><span></span><span></span>';
+			host.appendChild( indicator );
+			window.requestAnimationFrame( () => {
+				indicator.classList.add( 'is-visible' );
+			} );
+		}
+
+		hideAssistantTypingIndicator() {
+			const host = this.root.querySelector( '.handik-booking-app__assistant-host' );
+			const indicator = host ? host.querySelector( '.handik-assistant-typing-indicator' ) : null;
+			if ( ! indicator ) {
+				return;
+			}
+			indicator.classList.remove( 'is-visible' );
+			if ( this.assistantTypingTimer ) {
+				window.clearTimeout( this.assistantTypingTimer );
+			}
+			this.assistantTypingTimer = window.setTimeout( () => {
+				if ( indicator.parentNode ) {
+					indicator.parentNode.removeChild( indicator );
+				}
+				this.assistantTypingTimer = null;
+			}, 180 );
 		}
 
 		async ensureDraftRequest( appStep ) {
@@ -2129,6 +2202,7 @@
 						const isUserLike = 'user' === role || false !== messageType.indexOf( 'user' ) || 'outgoing' === direction || 'user' === source || 'client' === source;
 						const isAssistantLike = 'assistant' === role || false !== messageType.indexOf( 'assistant' ) || false !== messageType.indexOf( 'output' ) || 'incoming' === direction || 'assistant' === source;
 						if ( isUserLike ) {
+							this.showAssistantTypingIndicator();
 							this.state.assistantUserMessageSent = true;
 							this.state.assistantRoutingPending = true;
 							this.state.assistantAwaitingResponse = true;
@@ -2141,6 +2215,7 @@
 							}
 							this.setAssistantContinueBusy( false );
 						} else if ( isAssistantLike ) {
+							this.hideAssistantTypingIndicator();
 							this.logClient( 'info', 'Assistant final message detected.', {
 								request_id: this.state.requestId
 							} );
@@ -2156,6 +2231,7 @@
 						}
 					},
 					onComposerSubmit: () => {
+						this.showAssistantTypingIndicator();
 						this.logClient( 'info', 'User submitted assistant message.', {
 							request_id: this.state.requestId
 						} );
@@ -2172,6 +2248,7 @@
 						this.setAssistantContinueBusy( false );
 					},
 					onComplete: ( normalized, payload ) => {
+						this.hideAssistantTypingIndicator();
 						this.applySavedAssistantRouting( normalized, payload, 'chatkit-complete' );
 						this.state.assistantUserMessageSent = true;
 						if ( payload && payload.unsafe_flag ) {
@@ -2181,6 +2258,7 @@
 						}
 					},
 					onError: ( error ) => {
+						this.hideAssistantTypingIndicator();
 						this.setAssistantPreparingState( false );
 						this.setAssistantNotice( error.message || 'The virtual assistant had trouble loading. Give it another moment, then send a short message about the job.', true );
 					}
@@ -2224,6 +2302,7 @@
 			}
 			if ( 'address_details' === this.state.step ) {
 				window.setTimeout( () => this.mountAddressAutocomplete(), 0 );
+				this.prewarmAssistantSession();
 			}
 			if ( 'booking' === this.state.step ) {
 				window.setTimeout( () => this.startBookingStatusPolling(), 0 );
