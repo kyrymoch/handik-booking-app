@@ -11,6 +11,16 @@ class Handik_Booking_App_Changelog_Service {
 	public function get_entries() {
 		return array(
 			array(
+				'version'      => '2.1.7',
+				'date'         => '2026-05-03',
+				'title'        => 'Fix Cal URL Encoding',
+				'notes'        => array(
+					'Changed Cal.com URL generation to use a safe encoded query builder instead of WordPress query concatenation helpers.',
+					'Prefills phone with attendeePhoneNumber and encodes plus signs, metadata bracket keys, notes, duration, and location JSON correctly.',
+					'Forces older generated Cal URLs to rebuild so stale bad encoding is not reused.',
+				),
+			),
+			array(
 				'version'      => '2.1.6',
 				'date'         => '2026-05-03',
 				'title'        => 'Finalize Flow Audit And Assistant Prewarm',
