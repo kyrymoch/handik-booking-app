@@ -24,10 +24,8 @@ class Handik_Booking_App_State {
 		return array(
 			'task_selection',
 			'photos',
-			'client_type',
-			'returning_verify',
-			'address_details',
 			'contact_details',
+			'address_details',
 			'assistant',
 			'booking',
 			'unsafe',

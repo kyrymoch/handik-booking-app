@@ -11,8 +11,9 @@ class Handik_Booking_App_Schema {
 	public function default_state() {
 		return array(
 			'step'               => 'task_selection',
-			'clientType'         => '',
+			'isReturningClient'  => false,
 			'verifiedProfile'    => null,
+			'lastLookupPhone'    => '',
 			'requestId'          => 0,
 			'draftToken'         => '',
 			'selectedTasks'      => array(),
@@ -43,6 +44,7 @@ class Handik_Booking_App_Schema {
 			'bookingStatus'      => '',
 			'bookingStatusMessage' => '',
 			'unsafeReason'       => '',
+			'restartConfirmVisible' => false,
 			'appSessionKey'      => '',
 			'message'            => '',
 			'footerHint'         => '',

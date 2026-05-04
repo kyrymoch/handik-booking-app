@@ -88,6 +88,7 @@ class Handik_Booking_App_Routing_Service {
 		$assistant_has_readiness = array_key_exists( 'enough_information', $assistant );
 		$enough                  = $assistant_has_readiness ? ! empty( $assistant['enough_information'] ) : ( ! empty( $request['address_full'] ) && ( ! empty( $tasks ) || ! empty( $description ) ) );
 		$mismatch                = $this->selected_task_mismatch( $tasks, $service_family, $rate_family );
+		list( $booking_type, $duration_bucket, $suggested_duration ) = $this->reconcile_booking_and_duration( $booking_type, $duration_bucket, $suggested_duration );
 
 		return array(
 			'service_family'           => $service_family,
@@ -105,6 +106,43 @@ class Handik_Booking_App_Routing_Service {
 			'selected_task_mismatch'   => $mismatch['selected_task_mismatch'],
 			'mismatch_notes'           => $mismatch['mismatch_notes'],
 		);
+	}
+
+	/**
+	 * Keep booking type, bucket, and Cal duration in the same allowed lane.
+	 *
+	 * @param string $booking_type Booking type.
+	 * @param string $duration_bucket Bucket.
+	 * @param string $suggested_duration Suggested hours.
+	 * @return array<int, string>
+	 */
+	protected function reconcile_booking_and_duration( $booking_type, $duration_bucket, $suggested_duration ) {
+		if ( 'consult_1' === $suggested_duration || 'project_consult' === $duration_bucket || 'project_consultation' === $booking_type ) {
+			return array( 'project_consultation', 'project_consult', 'consult_1' );
+		}
+
+		$hours = (int) $suggested_duration;
+		if ( $hours <= 0 ) {
+			$defaults = array(
+				'standard_visit' => array( '1_2_hours', '2' ),
+				'extended_visit' => array( '3_5_hours', '4' ),
+				'large_visit'    => array( '6_8_hours', '7' ),
+			);
+			$row = $defaults[ $booking_type ] ?? array( '1_2_hours', '2' );
+			return array( $booking_type, $row[0], $row[1] );
+		}
+
+		if ( $hours <= 2 ) {
+			return array( 'standard_visit', '1_2_hours', (string) max( 1, $hours ) );
+		}
+		if ( $hours <= 5 ) {
+			return array( 'extended_visit', '3_5_hours', (string) min( 5, max( 3, $hours ) ) );
+		}
+		if ( $hours <= 8 ) {
+			return array( 'large_visit', '6_8_hours', (string) min( 8, max( 6, $hours ) ) );
+		}
+
+		return array( 'project_consultation', 'project_consult', 'consult_1' );
 	}
 
 	/**

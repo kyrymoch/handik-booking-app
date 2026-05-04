@@ -65,19 +65,9 @@ class Handik_Booking_App_Assets {
 			$task_intro = 'Choose the option that best matches your request.';
 		}
 
-		$contact_continue = (string) $this->settings->get( 'ui_contact_continue_button', 'Continue to Assistant' );
-		if ( '' === trim( $contact_continue ) || 'Go to AI estimate' === trim( $contact_continue ) ) {
-			$contact_continue = 'Continue to Assistant';
-		}
-
-		$client_type_intro = (string) $this->settings->get( 'ui_client_type_intro', 'Choose New client if this is your first time booking through this form. Choose Returning client if you have booked here before.' );
-		if ( '' === trim( $client_type_intro ) || 'Choose the option that best matches your situation.' === trim( $client_type_intro ) ) {
-			$client_type_intro = 'Choose New client if this is your first time booking through this form. Choose Returning client if you have booked here before.';
-		}
-
-		$verify_intro = (string) $this->settings->get( 'ui_returning_verify_intro', 'Enter your phone number and Alex will send a one-time verification code.' );
-		if ( '' === trim( $verify_intro ) || 'Enter your email or phone to receive a one-time code.' === trim( $verify_intro ) ) {
-			$verify_intro = 'Enter your phone number and Alex will send a one-time verification code.';
+		$contact_continue = (string) $this->settings->get( 'ui_contact_continue_button', 'Continue' );
+		if ( '' === trim( $contact_continue ) || in_array( trim( $contact_continue ), array( 'Go to AI estimate', 'Continue to Assistant' ), true ) ) {
+			$contact_continue = 'Continue';
 		}
 
 		$saved_address_label = (string) $this->settings->get( 'ui_saved_address_label', 'Choose a saved address or enter a new one' );
@@ -85,19 +75,9 @@ class Handik_Booking_App_Assets {
 			$saved_address_label = 'Choose a saved address or enter a new one';
 		}
 
-		$photos_label = (string) $this->settings->get( 'ui_photos_label', 'Photos / Videos' );
-		if ( '' === trim( $photos_label ) || 'Photos' === trim( $photos_label ) ) {
-			$photos_label = 'Photos / Videos';
-		}
-
-		$photos_help = (string) $this->settings->get( 'ui_photos_help', 'Upload photos or short videos of the problem area, item, fixture, wall, appliance, or installation spot.' );
-		if ( '' === trim( $photos_help ) || in_array( trim( $photos_help ), array( 'Add a few clear photos so we can understand the job faster.', 'Add a few clear photos so we can review the job visually before the assistant starts.' ), true ) ) {
-			$photos_help = 'Upload photos or short videos of the problem area, item, fixture, wall, appliance, or installation spot.';
-		}
-
-		$photos_cta = (string) $this->settings->get( 'ui_photos_cta', 'Tap to add photos or videos' );
-		if ( '' === trim( $photos_cta ) || 'Tap to add photos' === trim( $photos_cta ) ) {
-			$photos_cta = 'Tap to add photos or videos';
+		$photos_cta = (string) $this->settings->get( 'ui_photos_cta', 'Add photos or videos' );
+		if ( '' === trim( $photos_cta ) || in_array( trim( $photos_cta ), array( 'Tap to add photos', 'Tap to add photos or videos' ), true ) ) {
+			$photos_cta = 'Add photos or videos';
 		}
 
 		$photos_empty = (string) $this->settings->get( 'ui_photos_empty', 'No photos or videos added yet' );
@@ -115,6 +95,11 @@ class Handik_Booking_App_Assets {
 			$photos_intro = 'Upload photos or short videos of the problem area, item, fixture, wall, appliance, or installation spot.';
 		}
 
+		$contact_intro = (string) $this->settings->get( 'ui_contact_intro', "Tell us how to reach you. If you've booked here before, we'll recognize you." );
+		if ( '' === trim( $contact_intro ) || 'This is the last step where you can change the booking details before the AI review starts.' === trim( $contact_intro ) ) {
+			$contact_intro = "Tell us how to reach you. If you've booked here before, we'll recognize you.";
+		}
+
 		wp_localize_script(
 			'handik-booking-app',
 			'HandikBookingAppConfig',
@@ -125,11 +110,11 @@ class Handik_Booking_App_Assets {
 				'appearance' => $this->appearance->css_variables(),
 				'googleMapsApiKey' => (string) $this->settings->get( 'google_maps_api_key', '' ),
 				'googleMapsCountry' => strtolower( (string) $this->settings->get( 'google_maps_country', 'us' ) ),
+				'calFallbackUrl' => esc_url_raw( (string) ( $this->settings->get( 'cal_fallback_url', '' ) ?: $this->settings->get( 'cal_standard_event_url', '' ) ) ),
+				'serviceableZips' => array_values( array_filter( array_map( 'trim', preg_split( '/\R+/', (string) $this->settings->get( 'serviceable_zips', '' ) ) ?: array() ) ) ),
 				'strings'    => array(
 					'loading'            => (string) $this->settings->get( 'ui_loading_title', 'Loading...' ),
 					'loadingSubtext'     => (string) $this->settings->get( 'ui_loading_subtitle', '' ),
-					'verify'             => (string) $this->settings->get( 'ui_verify_button', 'Verify' ),
-					'sendCode'           => (string) $this->settings->get( 'ui_send_code_button', 'Send one-time code' ),
 					'continue'           => (string) $this->settings->get( 'ui_continue_button', 'Continue' ),
 					'back'               => (string) $this->settings->get( 'ui_back_button', 'Back' ),
 					'bookNow'            => __( 'Book a visit', 'handik-booking-app' ),
@@ -140,18 +125,12 @@ class Handik_Booking_App_Assets {
 					'unsafeTitle'        => (string) $this->settings->get( 'ui_unsafe_title', 'We need to stop the normal booking flow' ),
 					'assistantGreeting'  => $assistant_greeting,
 					'assistantReadyNotice' => (string) $this->settings->get( 'ui_assistant_ready_notice', 'The virtual assistant has enough information. Continue when you are ready.' ),
-					'bookingWaiting'     => (string) $this->settings->get( 'ui_booking_waiting', 'Stay on this screen while we wait for Cal.com to confirm the booking.' ),
+					'bookingWaiting'     => (string) $this->settings->get( 'ui_booking_waiting', 'Hang tight - confirming your booking.' ),
 					'bookingConfirmed'   => (string) $this->settings->get( 'ui_booking_confirmed', 'Booking confirmed. Finishing your request...' ),
 					'bookingCancelled'   => (string) $this->settings->get( 'ui_booking_cancelled', 'This booking was cancelled. You can choose another slot below.' ),
 					'addressPlaceholder' => (string) $this->settings->get( 'ui_address_placeholder', 'Start typing the address of the job' ),
 					'loadingAssistant'   => (string) $this->settings->get( 'ui_loading_assistant_title', 'Loading...' ),
 					'loadingAssistantSubtext' => (string) $this->settings->get( 'ui_loading_assistant_subtitle', '' ),
-					'clientTypeTitle'    => (string) $this->settings->get( 'ui_client_type_title', 'Who is booking today?' ),
-					'clientTypeIntro'    => $client_type_intro,
-					'newClientLabel'     => (string) $this->settings->get( 'ui_new_client_label', 'New client' ),
-					'returningClientLabel' => (string) $this->settings->get( 'ui_returning_client_label', 'Returning client' ),
-					'verifyTitle'        => (string) $this->settings->get( 'ui_returning_verify_title', 'Returning client verification' ),
-					'verifyIntro'        => $verify_intro,
 					'taskTitle'          => (string) $this->settings->get( 'ui_task_selection_title', 'What do you need help with?' ),
 					'taskIntro'          => $task_intro,
 					'projectLabel'       => (string) $this->settings->get( 'ui_project_label', 'Complex Project Work' ),
@@ -164,28 +143,23 @@ class Handik_Booking_App_Assets {
 					'photosIntro'        => $photos_intro,
 					'savedAddressLabel'  => $saved_address_label,
 					'savedAddressPlaceholder' => (string) $this->settings->get( 'ui_saved_address_placeholder', 'Choose saved address' ),
-					'photosLabel'        => $photos_label,
-					'photosHelp'         => $photos_help,
 					'photosCta'          => $photos_cta,
 					'photosEmpty'        => $photos_empty,
 					'assistantTitle'     => (string) $this->settings->get( 'ui_assistant_title', 'Virtual assistant' ),
 					'assistantIntro'     => $assistant_intro,
 					'assistantContinue'  => $assistant_continue,
 					'contactContinue'    => $contact_continue,
-					'contactIntro'       => (string) $this->settings->get( 'ui_contact_intro', 'This is the last step where you can change the booking details before the AI review starts.' ),
+					'contactIntro'       => $contact_intro,
 					'projectNotice'      => (string) $this->settings->get( 'ui_project_notice', 'Project / Large Job means a bigger scope that usually needs a consultation-style visit before the work is scheduled.' ),
 					'contactTitle'       => (string) $this->settings->get( 'ui_contact_title', 'Contact details' ),
 					'bookingTitle'       => (string) $this->settings->get( 'ui_booking_title', 'Book your time slot' ),
 					'unsafeBody'         => (string) $this->settings->get( 'ui_unsafe_body', 'This request needs manual review before booking.' ),
 					'restart'            => (string) $this->settings->get( 'ui_restart_button', 'Start another booking' ),
 					'errors'             => array(
-						'pickClientType' => (string) $this->settings->get( 'ui_error_pick_client_type', 'Choose whether you are a new client or a returning client to continue.' ),
 						'selectTask'     => (string) $this->settings->get( 'ui_error_select_task', 'Select at least one task or mark this as a project.' ),
 						'addressRequired'=> (string) $this->settings->get( 'ui_error_address_required', 'Choose a valid address from the Google suggestions before continuing.' ),
-						'invalidCode'    => (string) $this->settings->get( 'ui_error_invalid_code', 'Code or magic link is invalid or expired.' ),
 						'assistantRequired' => (string) $this->settings->get( 'ui_error_assistant_required', 'Please send the virtual assistant a short description of the job before continuing.' ),
 						'nameEmailRequired' => (string) $this->settings->get( 'ui_error_name_email_required', 'Name and phone are required before you can continue.' ),
-						'phoneOrEmailRequired' => (string) $this->settings->get( 'ui_error_phone_or_email_required', 'Enter your phone, then request a code.' ),
 						'invalidName'    => (string) $this->settings->get( 'ui_error_invalid_name', 'Enter a real full name using letters only.' ),
 						'invalidEmail'   => (string) $this->settings->get( 'ui_error_invalid_email', 'Enter a valid email address before continuing.' ),
 						'invalidPhone'   => (string) $this->settings->get( 'ui_error_invalid_phone', 'Enter a phone number in the format +1 123 456 78 90.' ),

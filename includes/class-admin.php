@@ -182,6 +182,7 @@ class Handik_Booking_App_Admin {
 				<?php $this->field( 'cal_extended_event_url', __( 'Extended Visit URL', 'handik-booking-app' ), $s['cal_extended_event_url'] ); ?>
 				<?php $this->field( 'cal_large_event_url', __( 'Large Visit URL', 'handik-booking-app' ), $s['cal_large_event_url'] ); ?>
 				<?php $this->field( 'cal_project_event_url', __( 'Project Consultation URL', 'handik-booking-app' ), $s['cal_project_event_url'] ); ?>
+				<?php $this->field( 'cal_fallback_url', __( 'Generic booking URL (fallback for disclaimer)', 'handik-booking-app' ), $s['cal_fallback_url'] ); ?>
 				<?php $this->field( 'cal_webhook_secret', __( 'Cal Webhook Secret', 'handik-booking-app' ), $s['cal_webhook_secret'], 'password' ); ?>
 				<?php $this->field( 'email_from_name', __( 'Email From Name', 'handik-booking-app' ), $s['email_from_name'] ); ?>
 				<?php $this->field( 'email_from_address', __( 'Email From Address', 'handik-booking-app' ), $s['email_from_address'], 'email' ); ?>
@@ -417,8 +418,6 @@ class Handik_Booking_App_Admin {
 				<?php $this->textarea_field( 'ui_loading_subtitle', __( 'Loading Subtitle', 'handik-booking-app' ), $s['ui_loading_subtitle'] ); ?>
 				<?php $this->field( 'ui_continue_button', __( 'Continue Button Label', 'handik-booking-app' ), $s['ui_continue_button'] ); ?>
 				<?php $this->field( 'ui_back_button', __( 'Back Button Label', 'handik-booking-app' ), $s['ui_back_button'] ); ?>
-				<?php $this->field( 'ui_send_code_button', __( 'Send Code Button Label', 'handik-booking-app' ), $s['ui_send_code_button'] ); ?>
-				<?php $this->field( 'ui_verify_button', __( 'Verify Button Label', 'handik-booking-app' ), $s['ui_verify_button'] ); ?>
 				<?php $this->field( 'ui_open_booking_button', __( 'Open Booking Button Label', 'handik-booking-app' ), $s['ui_open_booking_button'] ); ?>
 				<?php $this->field( 'ui_complete_booking_button', __( 'Booking Status Button Label', 'handik-booking-app' ), $s['ui_complete_booking_button'] ); ?>
 				<?php $this->field( 'ui_restart_button', __( 'Restart Button Label', 'handik-booking-app' ), $s['ui_restart_button'] ); ?>
@@ -459,20 +458,11 @@ class Handik_Booking_App_Admin {
 				<?php $this->field( 'app_task_group_gap', __( 'Task Group Gap (px)', 'handik-booking-app' ), $s['app_task_group_gap'], 'number' ); ?>
 			</div>
 			<?php $this->textarea_field( 'app_custom_css', __( 'Custom CSS', 'handik-booking-app' ), $s['app_custom_css'], __( 'Use {{WRAPPER}} to scope rules to this app instance.', 'handik-booking-app' ) ); ?>
+			<?php $this->textarea_field( 'serviceable_zips', __( 'Serviceable ZIP codes', 'handik-booking-app' ), $s['serviceable_zips'], __( 'One ZIP per line. Leave empty to allow any ZIP.', 'handik-booking-app' ) ); ?>
 			<?php elseif ( 'copy' === $tab ) : ?>
 			<div class="handik-admin-grid">
 				<?php $this->field( 'ui_loading_title', __( 'Loading Title', 'handik-booking-app' ), $s['ui_loading_title'] ); ?>
 				<?php $this->textarea_field( 'ui_loading_subtitle', __( 'Loading Subtitle', 'handik-booking-app' ), $s['ui_loading_subtitle'] ); ?>
-				<?php $this->field( 'ui_client_type_title', __( 'Client Type Title', 'handik-booking-app' ), $s['ui_client_type_title'] ); ?>
-				<?php $this->textarea_field( 'ui_client_type_intro', __( 'Client Type Intro', 'handik-booking-app' ), $s['ui_client_type_intro'] ); ?>
-				<?php $this->field( 'ui_new_client_label', __( 'New Client Label', 'handik-booking-app' ), $s['ui_new_client_label'] ); ?>
-				<?php $this->field( 'ui_returning_client_label', __( 'Returning Client Label', 'handik-booking-app' ), $s['ui_returning_client_label'] ); ?>
-				<?php $this->field( 'ui_new_client_tooltip_title', __( 'New Client Tooltip Title', 'handik-booking-app' ), $s['ui_new_client_tooltip_title'] ); ?>
-				<?php $this->textarea_field( 'ui_new_client_tooltip_text', __( 'New Client Tooltip Text', 'handik-booking-app' ), $s['ui_new_client_tooltip_text'] ); ?>
-				<?php $this->field( 'ui_returning_client_tooltip_title', __( 'Returning Client Tooltip Title', 'handik-booking-app' ), $s['ui_returning_client_tooltip_title'] ); ?>
-				<?php $this->textarea_field( 'ui_returning_client_tooltip_text', __( 'Returning Client Tooltip Text', 'handik-booking-app' ), $s['ui_returning_client_tooltip_text'] ); ?>
-				<?php $this->field( 'ui_returning_verify_title', __( 'Verification Title', 'handik-booking-app' ), $s['ui_returning_verify_title'] ); ?>
-				<?php $this->textarea_field( 'ui_returning_verify_intro', __( 'Verification Intro', 'handik-booking-app' ), $s['ui_returning_verify_intro'] ); ?>
 				<?php $this->field( 'ui_task_selection_title', __( 'Task Selection Title', 'handik-booking-app' ), $s['ui_task_selection_title'] ); ?>
 				<?php $this->textarea_field( 'ui_task_selection_intro', __( 'Task Selection Intro', 'handik-booking-app' ), $s['ui_task_selection_intro'] ); ?>
 				<?php $this->field( 'ui_project_label', __( 'Project Label', 'handik-booking-app' ), $s['ui_project_label'] ); ?>
@@ -486,8 +476,6 @@ class Handik_Booking_App_Admin {
 				<?php $this->field( 'ui_skip_photos_button', __( 'Skip Photos Button', 'handik-booking-app' ), $s['ui_skip_photos_button'] ); ?>
 				<?php $this->field( 'ui_saved_address_label', __( 'Saved Address Label', 'handik-booking-app' ), $s['ui_saved_address_label'] ); ?>
 				<?php $this->field( 'ui_saved_address_placeholder', __( 'Saved Address Placeholder', 'handik-booking-app' ), $s['ui_saved_address_placeholder'] ); ?>
-				<?php $this->field( 'ui_photos_label', __( 'Photos Label', 'handik-booking-app' ), $s['ui_photos_label'] ); ?>
-				<?php $this->textarea_field( 'ui_photos_help', __( 'Photos Help', 'handik-booking-app' ), $s['ui_photos_help'] ); ?>
 				<?php $this->field( 'ui_photos_cta', __( 'Photos CTA', 'handik-booking-app' ), $s['ui_photos_cta'] ); ?>
 				<?php $this->field( 'ui_photos_empty', __( 'Photos Empty State', 'handik-booking-app' ), $s['ui_photos_empty'] ); ?>
 				<?php $this->field( 'ui_photos_loading', __( 'Photos Loading Text', 'handik-booking-app' ), $s['ui_photos_loading'] ); ?>
@@ -506,20 +494,15 @@ class Handik_Booking_App_Admin {
 				<?php $this->textarea_field( 'ui_unsafe_body', __( 'Unsafe Body', 'handik-booking-app' ), $s['ui_unsafe_body'] ); ?>
 				<?php $this->field( 'ui_continue_button', __( 'Continue Button Label', 'handik-booking-app' ), $s['ui_continue_button'] ); ?>
 				<?php $this->field( 'ui_back_button', __( 'Back Button Label', 'handik-booking-app' ), $s['ui_back_button'] ); ?>
-				<?php $this->field( 'ui_send_code_button', __( 'Send Code Button Label', 'handik-booking-app' ), $s['ui_send_code_button'] ); ?>
-				<?php $this->field( 'ui_verify_button', __( 'Verify Button Label', 'handik-booking-app' ), $s['ui_verify_button'] ); ?>
 				<?php $this->field( 'ui_open_booking_button', __( 'Open Booking Button Label', 'handik-booking-app' ), $s['ui_open_booking_button'] ); ?>
 				<?php $this->field( 'ui_complete_booking_button', __( 'Booking Status Button Label', 'handik-booking-app' ), $s['ui_complete_booking_button'] ); ?>
 				<?php $this->field( 'ui_restart_button', __( 'Restart Button Label', 'handik-booking-app' ), $s['ui_restart_button'] ); ?>
 				<?php $this->field( 'ui_loading_assistant_title', __( 'Assistant Loading Title', 'handik-booking-app' ), $s['ui_loading_assistant_title'] ); ?>
 				<?php $this->textarea_field( 'ui_loading_assistant_subtitle', __( 'Assistant Loading Subtitle', 'handik-booking-app' ), $s['ui_loading_assistant_subtitle'] ); ?>
-				<?php $this->textarea_field( 'ui_error_pick_client_type', __( 'Client Type Validation Message', 'handik-booking-app' ), $s['ui_error_pick_client_type'] ); ?>
 				<?php $this->textarea_field( 'ui_error_select_task', __( 'Task Validation Message', 'handik-booking-app' ), $s['ui_error_select_task'] ); ?>
 				<?php $this->textarea_field( 'ui_error_address_required', __( 'Address Validation Message', 'handik-booking-app' ), $s['ui_error_address_required'] ); ?>
-				<?php $this->textarea_field( 'ui_error_invalid_code', __( 'Invalid Code Message', 'handik-booking-app' ), $s['ui_error_invalid_code'] ); ?>
 				<?php $this->textarea_field( 'ui_error_assistant_required', __( 'Assistant Validation Message', 'handik-booking-app' ), $s['ui_error_assistant_required'] ); ?>
 				<?php $this->textarea_field( 'ui_error_name_email_required', __( 'Contact Validation Message', 'handik-booking-app' ), $s['ui_error_name_email_required'] ); ?>
-				<?php $this->textarea_field( 'ui_error_phone_or_email_required', __( 'Verification Validation Message', 'handik-booking-app' ), $s['ui_error_phone_or_email_required'] ); ?>
 				<?php $this->textarea_field( 'ui_booking_waiting', __( 'Booking Waiting Message', 'handik-booking-app' ), $s['ui_booking_waiting'] ); ?>
 				<?php $this->textarea_field( 'ui_booking_confirmed', __( 'Booking Confirmed Message', 'handik-booking-app' ), $s['ui_booking_confirmed'] ); ?>
 				<?php $this->textarea_field( 'ui_booking_cancelled', __( 'Booking Cancelled Message', 'handik-booking-app' ), $s['ui_booking_cancelled'] ); ?>

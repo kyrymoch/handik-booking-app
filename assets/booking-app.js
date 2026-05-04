@@ -9,7 +9,9 @@
 	const CAL_EMBED_TIMEOUT_MS = 15000;
 	const PERSISTED_STATE_FIELDS = [
 		'step',
-		'clientType',
+		'isReturningClient',
+		'verifiedProfile',
+		'lastLookupPhone',
 		'requestId',
 		'draftToken',
 		'selectedTasks',
@@ -19,6 +21,7 @@
 		'address',
 		'photos',
 		'shortDescription',
+		'assistantThreadId',
 		'contact',
 		'appSessionKey'
 	];
@@ -48,8 +51,9 @@
 			this.assistantUnlockTimer = null;
 			this.state = {
 				step: 'task_selection',
-				clientType: '',
+				isReturningClient: false,
 				verifiedProfile: null,
+				lastLookupPhone: '',
 				requestId: 0,
 				draftToken: '',
 				selectedTasks: [],
@@ -74,8 +78,6 @@
 				assistantThreadId: '',
 				contact: { first_name: '', last_name: '', full_name: '', email: '', phone: '' },
 				touched: { full_name: false, email: false, phone: false },
-				verificationCode: '',
-				verificationCodeSent: false,
 				bookingUrl: '',
 				bookingUrlLocked: false,
 				bookingStatus: '',
@@ -85,6 +87,7 @@
 				message: '',
 				footerHint: '',
 				footerHintError: false,
+				restartConfirmVisible: false,
 				lastAssistantNotice: '',
 				assistantPreparing: false,
 				loading: false,
@@ -102,6 +105,7 @@
 				this.bootstrap = await this.api( 'app/bootstrap', {}, 'GET' );
 				if ( this.bootstrap.verified_profile ) {
 					this.state.verifiedProfile = this.bootstrap.verified_profile;
+					this.state.isReturningClient = true;
 				}
 				this.render();
 				this.replaceHistoryState( this.state.step );
@@ -717,10 +721,6 @@
 
 		stepCanContinue( step ) {
 			switch ( step ) {
-				case 'client_type':
-					return !! this.state.clientType;
-				case 'returning_verify':
-					return !! ( this.state.verificationCodeSent && this.validatePhone( this.state.contact.phone ) && this.state.verificationCode );
 				case 'task_selection':
 					return !! ( this.state.selectedTasks.length || this.state.isProject );
 				case 'address_details':
@@ -739,10 +739,6 @@
 		stepBlockMessage( step ) {
 			const errors = config.strings.errors || {};
 			switch ( step ) {
-				case 'client_type':
-					return errors.pickClientType || 'Check this step. Choose whether you are a new client or a returning client to continue.';
-				case 'returning_verify':
-					return errors.invalidCode || 'Check this step. Enter your code and verify to continue.';
 				case 'task_selection':
 					return errors.selectTask || 'Check this step. Select at least one task or mark this as a project.';
 				case 'address_details':
@@ -760,7 +756,7 @@
 
 		validateFullName( value ) {
 			const normalized = String( value || '' ).trim();
-			return /^[\p{L}][\p{L}\s'-]*$/u.test( normalized );
+			return /^[\p{L}][\p{L}\s'.-]*$/u.test( normalized );
 		}
 
 		validateEmail( value ) {
@@ -820,11 +816,6 @@
 			return errors.nameEmailRequired || 'Check this step. Name and phone are required before you can continue.';
 		}
 
-		clientTypeChoiceMarkup( type, action, label, description ) {
-			const isSelected = type === this.state.clientType;
-			return '<div class="handik-choice-wrap"><button data-action="' + this.escape( action ) + '" class="handik-choice ' + ( isSelected ? 'is-selected' : '' ) + '"><span class="handik-choice__title">' + this.escape( label ) + '</span>' + ( description ? '<span class="handik-choice__hint">' + this.escape( description ) + '</span>' : '' ) + '</button></div>';
-		}
-
 		taskPathChoiceMarkup( action, label, description, price, isSelected ) {
 			return '<div class="handik-choice-wrap"><button data-action="' + this.escape( action ) + '" class="handik-choice handik-choice--large ' + ( isSelected ? 'is-selected' : '' ) + '"><span class="handik-choice__title">' + this.escape( label ) + '</span><span class="handik-choice__hint">' + this.escape( description ) + '</span><span class="handik-choice__price">' + this.escape( price ) + '</span></button></div>';
 		}
@@ -838,6 +829,10 @@
 			this.state.step = step;
 			this.state.footerHint = '';
 			this.state.footerHintError = false;
+			if ( 'task_selection' === step && previousStep !== step ) {
+				this.state.selectedTasksSheetAnimate = false;
+				this.state.selectedTasksSheetAttentionDismissed = false;
+			}
 			this.render();
 			this.scrollStepIntoView();
 			this.focusStepHeading();
@@ -1007,21 +1002,6 @@
 				case 'start':
 					this.goTo( 'task_selection' );
 					break;
-				case 'choose-new':
-					this.state.clientType = 'new_client';
-					this.render();
-					break;
-				case 'choose-returning':
-					this.state.clientType = 'returning_client';
-					this.render();
-					break;
-				case 'client-type-next':
-					if ( ! this.state.clientType ) {
-						this.showStepWarning( 'client_type' );
-						return;
-					}
-					this.goTo( 'returning_client' === this.state.clientType ? 'returning_verify' : 'address_details' );
-					break;
 				case 'choose-general-handyman':
 					this.state.selectedTasks = [ 'general_handyman_help' ];
 					this.state.taskSelectionMode = 'overview';
@@ -1053,12 +1033,6 @@
 					this.render();
 					this.scrollStepIntoView();
 					break;
-				case 'send-code':
-					await this.sendCode();
-					break;
-				case 'verify-code':
-					await this.verifyCode();
-					break;
 				case 'tasks-next':
 					if ( ! this.stepCanContinue( 'task_selection' ) ) {
 						this.showStepWarning( 'task_selection' );
@@ -1072,19 +1046,32 @@
 						this.showStepWarning( 'address_details' );
 						return;
 					}
-					this.goTo( 'contact_details' );
+					if ( ! this.isServiceableZip( this.state.address.zip_code ) ) {
+						this.setFooterHint( 'We don\'t currently provide service to this ZIP code. Email alex@handik.pro to discuss your project.', true );
+						return;
+					}
+					await this.saveContactAndPrepareBooking();
 					break;
 				case 'photos-next':
-					this.goTo( 'client_type' );
+					this.goTo( 'contact_details' );
 					break;
 				case 'contact-next':
-					await this.saveContactAndPrepareBooking();
+					if ( ! this.stepCanContinue( 'contact_details' ) ) {
+						this.state.touched.full_name = true;
+						this.state.touched.email = true;
+						this.state.touched.phone = true;
+						this.render();
+						this.setFooterHint( this.contactValidationMessage(), true );
+						return;
+					}
+					await this.maybeLookupContact( true );
+					this.goTo( 'address_details' );
 					break;
 				case 'open-booking':
 					if ( this.state.bookingUrl ) {
 						window.open( this.state.bookingUrl, '_blank', 'noopener,noreferrer' );
 						this.state.bookingOpened = true;
-						this.setBookingStatusMessage( config.strings.bookingWaiting || 'Stay on this screen while we wait for Cal.com to confirm the booking.', false );
+						this.setBookingStatusMessage( config.strings.bookingWaiting || 'Hang tight - confirming your booking.', false );
 					}
 					break;
 				case 'booking-complete':
@@ -1117,76 +1104,26 @@
 					}
 					break;
 				case 'restart':
-					if ( ! window.confirm( 'Start over? This will clear the current booking draft and start a new booking.' ) ) {
-						return;
-					}
-					this.stopBookingStatusPolling();
-					this.clearDraftStorage();
-					if ( window.HandikChatKitBridge && typeof window.HandikChatKitBridge.reset === 'function' && this.state.requestId ) {
-						window.HandikChatKitBridge.reset( 'request_' + String( this.state.requestId ) );
-					}
-					this.photoAnalysisWarmRequestId = 0;
-					this.photoAnalysisWarmPromise = null;
-					this.photoAnalysisWarmPromiseRequestId = 0;
-					this.assistantContextDispatchPromise = null;
-					if ( this.assistantUnlockTimer ) {
-						window.clearTimeout( this.assistantUnlockTimer );
-						this.assistantUnlockTimer = null;
-					}
-					this.assistantMountPromise = null;
-					this.pendingAssistantContextAnalysis = null;
-					this.state = Object.assign( this.state, {
-						step: 'task_selection',
-						clientType: '',
-						requestId: 0,
-						draftToken: '',
-						selectedTasks: [],
-						taskSelectionMode: 'overview',
-						selectedTasksSheetOpen: false,
-						selectedTasksSheetAnimate: false,
-						selectedTasksSheetAttentionDismissed: false,
-						isProject: false,
-						jobShape: '',
-						address: { address_id: 0, address_full: '', address_line_1: '', address_unit: '', city: '', state: '', zip_code: '', is_valid: false },
-						photos: [],
-						shortDescription: '',
-						assistantResult: null,
-						assistantResultSaved: false,
-						assistantBookingUrlReady: false,
-						assistantReadyForBooking: false,
-						assistantRoutingPending: false,
-						assistantAwaitingResponse: false,
-						assistantResponseSeen: false,
-						assistantFallbackMessage: '',
-						assistantUserMessageSent: false,
-						assistantThreadId: '',
-						contact: { first_name: '', last_name: '', full_name: '', email: '', phone: '' },
-						verificationCode: '',
-						verificationCodeSent: false,
-						bookingUrl: '',
-						bookingUrlLocked: false,
-						bookingStatus: '',
-						bookingStatusMessage: '',
-						unsafeReason: '',
-						appSessionKey: 'app_' + Math.random().toString( 36 ).slice( 2 ),
-						message: '',
-						lastAssistantNotice: '',
-						assistantPreparing: false,
-						footerHint: '',
-						footerHintError: false,
-						photoUploading: false,
-						bookingOpened: false
-					} );
-					this.goTo( 'task_selection' );
+					this.requestRestart();
+					break;
+				case 'restart-cancel':
+					this.state.restartConfirmVisible = false;
+					this.render();
+					break;
+				case 'restart-confirm':
+					this.executeRestart();
+					break;
+				case 'back-from-unsafe':
+					this.state.unsafeReason = '';
+					this.goTo( 'assistant' );
+					break;
+				case 'restart-now':
+					this.executeRestart();
+					break;
+				case 'noop':
 					break;
 				case 'back-start':
 					this.setFooterHint( '', false );
-					break;
-				case 'back-client':
-					this.goTo( 'photos' );
-					break;
-				case 'back-returning':
-					this.goTo( 'client_type' );
 					break;
 				case 'back-tasks':
 					if ( 'specific' === this.state.taskSelectionMode ) {
@@ -1198,16 +1135,16 @@
 					}
 					break;
 				case 'back-address':
-					this.goTo( 'returning_client' === this.state.clientType ? 'returning_verify' : 'client_type' );
+					this.goTo( 'contact_details' );
 					break;
 				case 'back-photos':
 					this.goTo( 'task_selection' );
 					break;
 				case 'back-contact':
-					this.goTo( 'address_details' );
+					this.goTo( 'photos' );
 					break;
 				case 'back-assistant':
-					this.goTo( 'contact_details' );
+					this.goTo( 'address_details' );
 					break;
 				case 'back-booking':
 					this.goTo( 'assistant' );
@@ -1236,51 +1173,71 @@
 			}
 		}
 
-		async sendCode() {
-			if ( ! this.validatePhone( this.state.contact.phone ) ) {
-				this.setFooterHint( ( config.strings.errors && config.strings.errors.invalidPhone ) || 'Enter a valid 10-digit US phone number, then request a code.', true );
-				return;
-			}
-			try {
-				this.state.loading = true;
-				this.render();
-				const response = await this.api( 'auth/request-code', {
-					email: '',
-					phone: this.phoneApiValue( this.state.contact.phone ),
-					redirect: window.location.href
-				} );
-				this.state.verificationCodeSent = true;
-				this.setFooterHint( response.message, false );
-			} catch ( error ) {
-				this.setFooterHint( error.message, true );
-			}
-			this.state.loading = false;
+		requestRestart() {
+			this.state.restartConfirmVisible = true;
 			this.render();
 		}
 
-		async verifyCode() {
-			if ( ! this.stepCanContinue( 'returning_verify' ) ) {
-				this.setFooterHint( ( config.strings.errors && config.strings.errors.invalidCode ) || 'Enter your code and verify to continue.', true );
-				return;
-			}
-			try {
-				this.state.loading = true;
-				this.render();
-				const response = await this.api( 'auth/verify', {
-					email: '',
-					phone: this.phoneApiValue( this.state.contact.phone ),
-					code: this.state.verificationCode
-				} );
-				this.state.verifiedProfile = response.profile;
-				this.prefillFromProfile();
-				this.setFooterHint( 'Verification successful.', false );
-				this.state.loading = false;
-				this.goTo( 'address_details' );
-			} catch ( error ) {
-				this.state.loading = false;
-				this.render();
-				this.setFooterHint( error.message, true );
-			}
+		executeRestart() {
+			this.stopBookingStatusPolling();
+					this.clearDraftStorage();
+					if ( window.HandikChatKitBridge && typeof window.HandikChatKitBridge.reset === 'function' && this.state.requestId ) {
+						window.HandikChatKitBridge.reset( 'request_' + String( this.state.requestId ) );
+					}
+					this.photoAnalysisWarmRequestId = 0;
+					this.photoAnalysisWarmPromise = null;
+					this.photoAnalysisWarmPromiseRequestId = 0;
+					this.assistantContextDispatchPromise = null;
+					if ( this.assistantUnlockTimer ) {
+						window.clearTimeout( this.assistantUnlockTimer );
+						this.assistantUnlockTimer = null;
+					}
+					this.assistantMountPromise = null;
+					this.pendingAssistantContextAnalysis = null;
+					this.state = Object.assign( this.state, {
+						step: 'task_selection',
+						isReturningClient: false,
+						verifiedProfile: null,
+						lastLookupPhone: '',
+						requestId: 0,
+						draftToken: '',
+						selectedTasks: [],
+						taskSelectionMode: 'overview',
+						selectedTasksSheetOpen: false,
+						selectedTasksSheetAnimate: false,
+						selectedTasksSheetAttentionDismissed: false,
+						isProject: false,
+						jobShape: '',
+						address: { address_id: 0, address_full: '', address_line_1: '', address_unit: '', city: '', state: '', zip_code: '', is_valid: false },
+						photos: [],
+						shortDescription: '',
+						assistantResult: null,
+						assistantResultSaved: false,
+						assistantBookingUrlReady: false,
+						assistantReadyForBooking: false,
+						assistantRoutingPending: false,
+						assistantAwaitingResponse: false,
+						assistantResponseSeen: false,
+						assistantFallbackMessage: '',
+						assistantUserMessageSent: false,
+						assistantThreadId: '',
+						contact: { first_name: '', last_name: '', full_name: '', email: '', phone: '' },
+						bookingUrl: '',
+						bookingUrlLocked: false,
+						bookingStatus: '',
+						bookingStatusMessage: '',
+						unsafeReason: '',
+						appSessionKey: 'app_' + Math.random().toString( 36 ).slice( 2 ),
+						message: '',
+						lastAssistantNotice: '',
+						assistantPreparing: false,
+						footerHint: '',
+						footerHintError: false,
+						restartConfirmVisible: false,
+						photoUploading: false,
+						bookingOpened: false
+					} );
+			this.goTo( 'task_selection' );
 		}
 
 		prefillFromProfile() {
@@ -1288,21 +1245,67 @@
 				return;
 			}
 			const contact = this.state.verifiedProfile.contact;
-			this.state.contact.full_name = contact.full_name || this.state.contact.full_name;
-			this.state.contact.email = contact.email || this.state.contact.email;
-			this.state.contact.phone = contact.phone ? String( contact.phone ) : this.state.contact.phone;
-			if ( Array.isArray( this.state.verifiedProfile.addresses ) && this.state.verifiedProfile.addresses.length ) {
-				const primary = this.state.verifiedProfile.addresses[0];
-				this.state.address = {
-					address_id: primary.id,
-					address_full: primary.address_full || '',
-					address_line_1: primary.address_line_1 || '',
-					address_unit: primary.address_unit || '',
-					city: primary.city || '',
-					state: primary.state || '',
-					zip_code: primary.zip_code || '',
-					is_valid: true
-				};
+			if ( ! String( this.state.contact.full_name || '' ).trim() && contact.full_name ) {
+				this.state.contact.full_name = contact.full_name;
+			}
+			if ( ! String( this.state.contact.email || '' ).trim() && contact.email ) {
+				this.state.contact.email = contact.email;
+			}
+			if ( ! String( this.state.contact.phone || '' ).trim() && contact.phone ) {
+				this.state.contact.phone = String( contact.phone );
+			}
+		}
+
+		isServiceableZip( zip ) {
+			const list = Array.isArray( config.serviceableZips ) ? config.serviceableZips : [];
+			if ( ! list.length ) {
+				return true;
+			}
+			return list.includes( String( zip || '' ).trim() );
+		}
+
+		async maybeLookupContact( immediate ) {
+			const phone = String( this.state.contact.phone || '' ).trim();
+			if ( ! this.validatePhone( phone ) ) {
+				return false;
+			}
+			const lookupPhone = this.phoneDigits( phone );
+			if ( ! immediate && this._contactLookupTimer ) {
+				window.clearTimeout( this._contactLookupTimer );
+			}
+			if ( ! immediate ) {
+				this._contactLookupTimer = window.setTimeout( () => this.maybeLookupContact( true ), 500 );
+				return false;
+			}
+			if ( this.state.lastLookupPhone === lookupPhone || this._contactLookupInFlight === lookupPhone ) {
+				return false;
+			}
+
+			this.state.lastLookupPhone = lookupPhone;
+			this._contactLookupInFlight = lookupPhone;
+			try {
+				const result = await this.api( 'contacts/lookup', {
+					phone: this.phoneApiValue( phone )
+				} );
+				if ( result && result.profile && result.profile.contact ) {
+					this.state.verifiedProfile = result.profile;
+					this.state.isReturningClient = true;
+					this.prefillFromProfile();
+					this.notify( 'info', '', 'Welcome back — we found your details.', 4000 );
+					this.render();
+					this.saveDraftToStorage();
+					return true;
+				}
+				this.state.verifiedProfile = null;
+				this.state.isReturningClient = false;
+				return false;
+			} catch ( error ) {
+				this.logClient( 'warn', 'Contact lookup failed.', {
+					error: error && error.message ? error.message : 'unknown'
+				} );
+				return false;
+			} finally {
+				this._contactLookupInFlight = '';
 			}
 		}
 
@@ -1487,26 +1490,6 @@
 			this.state.requestId = response.request_id;
 			this.state.draftToken = response.draft_token;
 			return response;
-		}
-
-		async saveAddressAndDraft() {
-			if ( ! this.stepCanContinue( 'address_details' ) ) {
-				this.setFooterHint( ( config.strings.errors && config.strings.errors.addressRequired ) || 'Add the address of the job before continuing.', true );
-				return;
-			}
-			try {
-				this.state.loading = true;
-				this.render();
-				const response = await this.api( 'app/draft', this.buildDraftPayload( 'contact_details' ) );
-				this.state.requestId = response.request_id;
-				this.state.draftToken = response.draft_token;
-				this.state.loading = false;
-				this.goTo( 'contact_details' );
-			} catch ( error ) {
-				this.state.loading = false;
-				this.render();
-				this.setFooterHint( error.message, true );
-			}
 		}
 
 		async saveContactAndPrepareBooking() {
@@ -1699,29 +1682,14 @@
 			}
 			this.state.assistantFallbackMessage = text;
 			this.state.assistantResponseSeen = true;
-			this.logClient( 'warn', 'Assistant fallback message shown.', {
-				request_id: this.state.requestId
+			this.logClient( 'warn', 'Assistant fallback used (silent - chat is the only surface).', {
+				request_id: this.state.requestId,
+				text_length: text.length
 			} );
-			const panel = this.root.querySelector( '.handik-assistant-panel' );
-			if ( ! panel ) {
-				return;
-			}
-			let fallback = panel.querySelector( '.handik-assistant-fallback-message' );
-			if ( ! fallback ) {
-				fallback = document.createElement( 'div' );
-				fallback.className = 'handik-assistant-fallback-message';
-				const footer = panel.querySelector( '.handik-footer-wrap' );
-				panel.insertBefore( fallback, footer || null );
-			}
-			fallback.textContent = text;
 		}
 
 		clearAssistantFallbackMessage() {
 			this.state.assistantFallbackMessage = '';
-			const fallback = this.root.querySelector( '.handik-assistant-fallback-message' );
-			if ( fallback ) {
-				fallback.remove();
-			}
 		}
 
 		setBookingStatusMessage( message, isError ) {
@@ -2085,7 +2053,7 @@
 			return {
 				request_id: this.state.requestId,
 				draft_token: this.state.draftToken,
-				client_type: this.state.clientType,
+				client_type: this.state.isReturningClient ? 'returning_client' : 'new_client',
 				selected_tasks: this.state.selectedTasks,
 				is_project: this.state.isProject,
 				job_shape: this.state.jobShape,
@@ -2225,16 +2193,22 @@
 		}
 
 		progressMarkup() {
-			if ( ! this.bootstrap || ! Array.isArray( this.bootstrap.steps ) ) {
+			if ( 'unsafe' === this.state.step ) {
 				return '';
 			}
-			const visible = this.bootstrap.steps.filter( ( step ) => ! [ 'returning_verify', 'unsafe' ].includes( step ) );
-			const activeIndex = Math.max( 0, visible.indexOf( this.state.step ) );
-			return '<div class="handik-booking-app__progress" style="grid-template-columns: repeat(' + visible.length + ', minmax(0, 1fr));">' + visible.map( ( step, index ) => '<span class="' + ( index <= activeIndex ? 'is-active' : '' ) + '"></span>' ).join( '' ) + '</div>';
+			const steps = this.applicableSteps();
+			const activeIndex = Math.max( 0, steps.indexOf( this.state.step ) );
+			return '<ol class="handik-progress-dots" aria-label="Booking progress">' +
+				steps.map( ( step, index ) => '<li class="' + ( index <= activeIndex ? 'is-done' : '' ) + ( index === activeIndex ? ' is-current' : '' ) + '"></li>' ).join( '' ) +
+			'</ol>';
+		}
+
+		applicableSteps() {
+			return [ 'task_selection', 'photos', 'contact_details', 'address_details', 'assistant', 'booking' ];
 		}
 
 		render() {
-			this.root.innerHTML = '<div class="handik-booking-app__shell">' + this.stepMarkup() + '</div>';
+			this.root.innerHTML = '<div class="handik-booking-app__shell">' + this.stepMarkup() + '<div class="handik-global-progress">' + this.progressMarkup() + '</div>' + this.appFooterDisclaimer() + this.restartModalMarkup() + '</div>';
 			this.bind();
 			this.renderNotifications();
 			if ( this.state.selectedTasksSheetAnimate ) {
@@ -2246,7 +2220,7 @@
 				}, 2900 );
 			}
 			if ( 'assistant' === this.state.step ) {
-				window.setTimeout( () => this.prepareAssistantStep(), 0 );
+				this.prepareAssistantStep();
 			}
 			if ( 'address_details' === this.state.step ) {
 				window.setTimeout( () => this.mountAddressAutocomplete(), 0 );
@@ -2261,26 +2235,6 @@
 
 		stepMarkup() {
 			switch ( this.state.step ) {
-				case 'client_type':
-					return this.screen(
-						config.strings.clientTypeTitle || 'Who is booking today?',
-						'<p class="handik-booking-app__intro">' + this.escape( config.strings.clientTypeIntro || 'Choose New client if this is your first time booking through this form. Choose Returning client if you have booked here before.' ) + '</p>' +
-				'<div class="handik-choice-grid">' +
-					this.clientTypeChoiceMarkup( 'new_client', 'choose-new', config.strings.newClientLabel || 'New client', 'I have not booked through this form before.' ) +
-					this.clientTypeChoiceMarkup( 'returning_client', 'choose-returning', config.strings.returningClientLabel || 'Returning client', 'I have booked through this form before and want to use my saved details.' ) +
-						'</div>' +
-						this.footerActions( 'back-client', 'client-type-next', this.escape( config.strings.continue || 'Continue' ), '', { continueMuted: ! this.stepCanContinue( 'client_type' ) } )
-					);
-				case 'returning_verify':
-					const codeSent = !! this.state.verificationCodeSent;
-					return this.screen(
-						config.strings.verifyTitle || 'Returning client verification',
-						'<p class="handik-booking-app__intro">' + this.escape( config.strings.verifyIntro || 'Enter your phone number and Alex will send a one-time verification code.' ) + '</p>' +
-						this.input( 'Phone', 'contact.phone', 'tel' ) +
-						'<div class="handik-inline-actions"><button data-action="send-code" class="handik-btn is-secondary">' + this.escape( codeSent ? 'Send code again' : ( config.strings.sendCode || 'Send one-time code' ) ) + '</button></div>' +
-						( codeSent ? '<label class="handik-field"><span>Verification code</span><input data-model="verificationCode" type="text" placeholder="6-digit code" value="' + this.escape( this.state.verificationCode ) + '" /></label><div class="handik-inline-actions"><button data-action="verify-code" class="handik-btn is-primary">' + this.escape( 'Verify code' ) + '</button></div>' : '' ) +
-						this.footerActions( 'back-returning', '', '', '', { hideContinue: true } )
-					);
 				case 'task_selection':
 					return this.screen( config.strings.taskTitle || 'What do you need help with?', this.tasksMarkup() );
 				case 'address_details':
@@ -2294,7 +2248,7 @@
 				case 'booking':
 					return this.screen( config.strings.bookingTitle || 'Book your time slot', this.bookingMarkup() );
 				case 'unsafe':
-					return this.screen( config.strings.unsafeTitle || 'Unsafe request', '<p class="handik-booking-app__intro">' + this.escape( this.state.unsafeReason || config.strings.unsafeBody || 'This request needs manual review before booking.' ) + '</p><button data-action="restart" class="handik-btn is-secondary">' + this.escape( config.strings.restart || 'Start another booking' ) + '</button>' );
+					return this.screen( config.strings.unsafeTitle || 'We need a closer look', '<p class="handik-booking-app__intro">' + this.escape( this.state.unsafeReason || config.strings.unsafeBody || 'This request needs manual review before booking.' ) + '</p><div class="handik-unsafe-actions"><button data-action="back-from-unsafe" class="handik-btn is-secondary">' + this.escape( 'Go back and adjust' ) + '</button><button data-action="restart" class="handik-btn is-secondary">' + this.escape( config.strings.restart || 'Start another booking' ) + '</button></div><p class="handik-booking-app__intro">If this seems wrong, please email <a href="mailto:alex@handik.pro">alex@handik.pro</a> and we\'ll sort it out.</p>' );
 				default:
 					return this.screen( 'Booking App', '<p>Unknown step.</p>' );
 			}
@@ -2305,6 +2259,37 @@
 			const overlay = overlayNeeded ? '<div class="handik-booking-app__loading-overlay" aria-live="polite">' + this.loaderMarkup( 'Loading' ) + '</div>' : '';
 			const stepClass = 'handik-booking-app__screen--' + String( this.state.step || 'unknown' ).replace( /[^a-z0-9_-]/gi, '-' ).toLowerCase();
 			return '<section class="handik-booking-app__screen ' + stepClass + ' ' + ( modifier || '' ) + '"><div class="handik-booking-app__screen-header"><h2>' + this.escape( title ) + '</h2></div><div class="handik-booking-app__screen-body">' + body + overlay + '</div></section>';
+		}
+
+		directBookingUrl() {
+			if ( this.state.bookingUrl ) {
+				return this.state.bookingUrl;
+			}
+			return config.calFallbackUrl || ( this.bootstrap && this.bootstrap.cal_fallback_url ) || '';
+		}
+
+		appFooterDisclaimer() {
+			const isBooked = 'booking' === this.state.step && 'booked' === this.state.bookingStatus;
+			if ( isBooked ) {
+				return '<aside class="handik-app-disclaimer is-success"><p>' + this.escape( 'All set. Alex will be in touch before the visit.' ) + '</p><p><a href="#" data-action="restart" class="handik-text-link">' + this.escape( 'Book another visit' ) + '</a></p></aside>';
+			}
+
+			const directUrl = this.directBookingUrl();
+			const restartLink = '<a href="#" data-action="restart" class="handik-text-link">' + this.escape( 'Start a new booking' ) + '</a>';
+			const directLink = directUrl ? '<a href="' + this.escape( directUrl ) + '" target="_blank" rel="noopener" class="handik-text-link">' + this.escape( 'Open the booking page directly' ) + '</a>' : '';
+			const links = directLink ? restartLink + '<span class="handik-app-disclaimer__sep" aria-hidden="true"> · </span>' + directLink : restartLink;
+			return '<aside class="handik-app-disclaimer"><p>' + this.escape( 'Stuck? ' ) + links + '</p></aside>';
+		}
+
+		restartModalMarkup() {
+			if ( ! this.state.restartConfirmVisible ) {
+				return '';
+			}
+			return '<div class="handik-modal-backdrop" role="presentation"><section class="handik-modal" role="dialog" aria-modal="true" aria-label="' + this.escape( 'Start over?' ) + '">' +
+				'<h3>' + this.escape( 'Start over?' ) + '</h3>' +
+				'<p>' + this.escape( 'This will clear the current booking draft and start a new booking.' ) + '</p>' +
+				'<div class="handik-modal__actions"><button type="button" class="handik-btn is-secondary" data-action="restart-cancel">' + this.escape( 'Cancel' ) + '</button><button type="button" class="handik-btn is-primary" data-action="restart-confirm">' + this.escape( 'Yes, restart' ) + '</button></div>' +
+			'</section></div>';
 		}
 
 		input( label, model, type, modifier, helpText ) {
@@ -2340,10 +2325,6 @@
 				case 'contact.phone':
 					attrs.autocomplete = 'tel';
 					attrs.inputmode = 'tel';
-					break;
-				case 'verificationCode':
-					attrs.autocomplete = 'one-time-code';
-					attrs.inputmode = 'numeric';
 					break;
 				default:
 					if ( 'email' === type ) {
@@ -2382,7 +2363,7 @@
 					tasks: ( group.tasks || [] ).filter( ( task ) => ! hiddenSpecificTaskIds.includes( task.id ) )
 				} );
 			} ).filter( ( group ) => group.tasks.length );
-			return '<p class="handik-booking-app__intro">' + this.escape( 'Tap one or more services to select or remove them.' ) + '</p><div class="handik-task-groups">' +
+			return '<p class="handik-booking-app__intro">' + this.escape( 'Tap services to add or remove them.' ) + '</p><div class="handik-task-groups">' +
 				groups.map( ( group ) => '<div class="handik-task-group"><h3>' + this.escape( group.group ) + '</h3><div class="handik-task-grid">' +
 					group.tasks.map( ( task ) => '<button type="button" class="handik-task ' + ( this.taskSelected( task.id ) ? 'is-selected' : '' ) + '" data-task-id="' + this.escape( task.id ) + '">' + this.escape( task.label ) + '</button>' ).join( '' ) +
 				'</div></div>' ).join( '' ) +
@@ -2414,7 +2395,7 @@
 		}
 
 		photosMarkup() {
-			const ctaLabel = config.strings.photosCta || 'Tap to add photos or videos';
+			const ctaLabel = config.strings.photosCta || 'Add photos or videos';
 			const photosMarkup = this.state.photos.length
 				? '<ul class="handik-photo-list">' + this.state.photos.map( ( photo, index ) => {
 					const photoId = photo.id || photo.attachment_id || photo.url || ( 'photo-' + index );
@@ -2427,27 +2408,26 @@
 				} ).join( '' ) + '</ul>'
 				: '<div class="handik-photo-list is-empty"><span>' + this.escape( config.strings.photosEmpty || 'No photos or videos added yet' ) + '</span></div>';
 			return '<p class="handik-booking-app__intro">' + this.escape( config.strings.photosIntro || 'Upload photos or short videos of the problem area, item, fixture, wall, appliance, or installation spot.' ) + '</p>' +
-				'<label class="handik-field"><span>' + this.escape( config.strings.photosLabel || 'Photos / Videos' ) + '</span><span class="handik-field__help">' + this.escape( config.strings.photosHelp || 'Upload photos or short videos of the problem area, item, fixture, wall, appliance, or installation spot.' ) + '</span><input type="file" id="handik-photo-input" class="handik-photo-input" multiple accept="image/jpeg,image/jpg,image/png,image/webp,image/heic,.jpg,.jpeg,.png,.webp,.heic,video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm" /><button type="button" class="handik-photo-dropzone" data-action="choose-photos"><span class="handik-photo-dropzone__icon" aria-hidden="true"></span><span>' + this.escape( ctaLabel ) + '</span><span class="handik-field__help">' + this.escape( 'Up to 8 files. Images up to 10 MB, videos up to 50 MB.' ) + '</span>' + ( this.state.photoUploading ? '<span>' + this.escape( config.strings.uploading || 'Loading...' ) + '</span><span class="handik-inline-spinner" aria-hidden="true"></span>' : '' ) + '</button>' + photosMarkup + '</label>' +
+				'<label class="handik-field handik-field--media"><input type="file" id="handik-photo-input" class="handik-photo-input" multiple accept="image/jpeg,image/jpg,image/png,image/webp,image/heic,.jpg,.jpeg,.png,.webp,.heic,video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm" /><button type="button" class="handik-photo-dropzone" data-action="choose-photos"><span class="handik-photo-dropzone__icon" aria-hidden="true"></span><span>' + this.escape( ctaLabel ) + '</span><span class="handik-field__help">' + this.escape( 'Up to 8 files · Photos to 10 MB · Videos to 50 MB' ) + '</span>' + ( this.state.photoUploading ? '<span>' + this.escape( config.strings.uploading || 'Loading...' ) + '</span><span class="handik-inline-spinner" aria-hidden="true"></span>' : '' ) + '</button>' + photosMarkup + '</label>' +
 				this.footerActions( 'back-photos', 'photos-next', this.escape( config.strings.continue ), this.escape( config.strings.back ), { continueMuted: ! this.stepCanContinue( 'photos' ) } );
 		}
 
 		assistantMarkup() {
 			const skeleton = '<div class="handik-skeleton handik-skeleton--assistant" aria-hidden="true"><div class="handik-skeleton__bar"></div><div class="handik-skeleton__bar handik-skeleton__bar--short"></div><div class="handik-skeleton__bar"></div></div>';
-			const fallback = this.state.assistantFallbackMessage ? '<div class="handik-assistant-fallback-message">' + this.escape( this.state.assistantFallbackMessage ) + '</div>' : '';
-			return '<p class="handik-booking-app__intro">' + this.escape( config.strings.assistantIntro || 'This AI assistant helps you understand rough cost, timing, materials, and what to expect, while helping Alex collect the details needed to prepare for the job properly.' ) + '</p><div class="handik-assistant-layout"><div class="handik-assistant-panel"><div class="handik-booking-app__assistant-host">' + skeleton + '</div>' + fallback + this.footerActions( 'restart', 'assistant-next', this.escape( config.strings.assistantContinue || 'Book a time' ), '', { backIsUtility: true, backLabel: 'Start a new booking', continueMuted: ! this.assistantCanContinue() } ) + '</div></div>';
+			return '<p class="handik-booking-app__intro">' + this.escape( config.strings.assistantIntro || 'This AI assistant helps you understand rough cost, timing, materials, and what to expect, while helping Alex collect the details needed to prepare for the job properly.' ) + '</p><div class="handik-assistant-layout"><div class="handik-assistant-panel"><div class="handik-booking-app__assistant-host">' + skeleton + '</div>' + this.footerActions( 'back-assistant', 'assistant-next', this.escape( config.strings.assistantContinue || 'Book a time' ), '', { continueMuted: ! this.assistantCanContinue() } ) + '</div></div>';
 		}
 
 		contactMarkup() {
 			if ( this.state.verifiedProfile && this.state.verifiedProfile.contact && ! this.state.contact.full_name ) {
 				this.prefillFromProfile();
 			}
-			return '<p class="handik-booking-app__intro">' + this.escape( config.strings.contactIntro || 'This is the last step where you can change the booking details before the AI review starts.' ) + '</p>' +
+			return '<p class="handik-booking-app__intro">' + this.escape( config.strings.contactIntro || "Tell us how to reach you. If you've booked here before, we'll recognize you." ) + '</p>' +
 				this.input( 'Full name', 'contact.full_name', 'text', this.isFieldInvalid( 'full_name' ) ? 'is-invalid' : '', '' ) +
 				'<div class="handik-grid-2">' +
 				this.input( 'Email (optional)', 'contact.email', 'email', this.isFieldInvalid( 'email' ) ? 'is-invalid' : '', '' ) +
 				this.input( 'Phone', 'contact.phone', 'tel', this.isFieldInvalid( 'phone' ) ? 'is-invalid' : '', '' ) +
 				'</div>' +
-				this.footerActions( 'back-contact', 'contact-next', this.escape( config.strings.contactContinue || 'Continue to Assistant' ), '', { continueMuted: ! this.stepCanContinue( 'contact_details' ) } );
+				this.footerActions( 'back-contact', 'contact-next', this.escape( config.strings.contactContinue || 'Continue' ), '', { continueMuted: ! this.stepCanContinue( 'contact_details' ) } );
 		}
 
 		bookingMarkup() {
@@ -2456,11 +2436,7 @@
 				'<div class="handik-skeleton__grid">' +
 				Array.from( { length: 9 } ).map( () => '<div class="handik-skeleton__cell"></div>' ).join( '' ) +
 				'</div></div>';
-			const fallback = this.state.bookingUrl
-				? '<div class="handik-booking-app__booking-direct"><a class="handik-btn is-secondary" target="_blank" rel="noopener" href="' + this.escape( this.state.bookingUrl ) + '">' + this.escape( 'Having trouble? Open booking page directly' ) + '</a></div>'
-				: '';
-			return '<div class="handik-booking-app__booking-embed">' + skeleton + '</div>' + fallback +
-				this.footerActions( 'restart', '', '', '', { backIsUtility: true, backLabel: 'Start a new booking', hideContinue: true } );
+			return '<div class="handik-booking-app__booking-embed">' + skeleton + '</div>';
 		}
 
 		footerActions( backAction, continueAction, continueLabel, backLabel, options ) {
@@ -2473,7 +2449,7 @@
 			const utilityButton = settings.utilityAction ? '<button data-action="' + this.escape( settings.utilityAction ) + '" class="handik-btn is-text">' + this.escape( settings.utilityLabel || '' ) + '</button>' : '';
 			const continueButton = settings.hideContinue ? '' : '<div class="handik-footer-actions__continue">' + utilityButton + '<button data-action="' + this.escape( continueAction ) + '" class="' + continueClass + '" aria-disabled="' + ( settings.continueMuted ? 'true' : 'false' ) + '">' + continueLabel + '</button></div>';
 			const actions = backButton || continueButton ? '<div class="handik-footer-actions is-docked' + ( settings.hideBack || settings.hideContinue ? ' is-single' : '' ) + '">' + backButton + continueButton + '</div>' : '';
-			return '<div class="handik-footer-wrap">' + actions + '<div class="handik-footer-progress">' + this.progressMarkup() + '</div></div>';
+			return '<div class="handik-footer-wrap">' + actions + '</div>';
 		}
 
 		normalizePhone( value ) {
@@ -2624,7 +2600,7 @@
 					let value = 'checkbox' === input.type ? input.checked : input.value;
 					const model = input.getAttribute( 'data-model' );
 					if ( 'contact.full_name' === model ) {
-						value = String( value || '' ).replace( /[^\p{L}\s'-]/gu, '' ).replace( /\s{2,}/g, ' ' );
+						value = String( value || '' ).replace( /[^\p{L}\s'.-]/gu, '' ).replace( /\s{2,}/g, ' ' );
 						input.value = value;
 						this.state.touched.full_name = true;
 					}
@@ -2655,9 +2631,9 @@
 						}
 						value = formatted;
 						this.state.touched.phone = true;
-						if ( 'returning_verify' === this.state.step ) {
-							this.state.verificationCodeSent = false;
-							this.state.verificationCode = '';
+						if ( this.phoneDigits( value ) !== this.state.lastLookupPhone ) {
+							this.state.verifiedProfile = null;
+							this.state.isReturningClient = false;
 						}
 					}
 					if ( 'contact.email' === model ) {
@@ -2671,6 +2647,9 @@
 					this.refreshFieldValidation( model, input );
 					this.refreshCurrentStepActions();
 					this._scheduleDraftSave();
+					if ( 'contact.phone' === model && this.validatePhone( value ) ) {
+						this.maybeLookupContact( false );
+					}
 				} );
 
 				const model = input.getAttribute( 'data-model' );
@@ -2678,6 +2657,7 @@
 					input.addEventListener( 'blur', () => {
 						this.state.touched.phone = true;
 						this.refreshFieldValidation( model, input );
+						this.maybeLookupContact( true );
 					} );
 				}
 				if ( 'contact.email' === model ) {

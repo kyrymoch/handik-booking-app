@@ -12,6 +12,9 @@
 	max-width: 100%;
 	margin: 0 auto;
 	padding: 0;
+	display: flex;
+	flex-direction: column;
+	min-height: auto;
 	background: transparent;
 	border: 0;
 	border-radius: 0;
@@ -23,6 +26,9 @@
 .handik-booking-app__screen {
 	width: 100%;
 	max-width: 100%;
+	display: flex;
+	flex-direction: column;
+	min-height: 0;
 	background: transparent;
 	border-radius: 0;
 	padding: 0;
@@ -261,21 +267,24 @@
 	color: #b91c1c;
 }
 
-.handik-booking-app__progress {
+.handik-progress-dots {
 	display: grid;
-	gap: 8px;
-	margin-bottom: 0;
+	grid-template-columns: repeat(6, minmax(0, 1fr));
+	gap: 6px;
+	margin: 0;
+	padding: 0;
 	width: 100%;
+	list-style: none;
 	align-items: center;
 }
 
-.handik-booking-app__progress span {
+.handik-progress-dots li {
 	height: 4px;
 	border-radius: 999px;
 	background: var(--handik-progress-track, #dbe3ea);
 }
 
-.handik-booking-app__progress span.is-active {
+.handik-progress-dots li.is-done {
 	background: var(--handik-accent, #0f766e);
 }
 
@@ -629,17 +638,7 @@
 	max-width: 100%;
 }
 
-.handik-assistant-fallback-message {
-	max-width: 760px;
-	justify-self: center;
-	padding: 12px 14px;
-	border: 1px solid rgba(40, 54, 24, 0.18);
-	border-radius: 16px;
-	background: #f8faf5;
-	color: #1a1a1c;
-	line-height: 1.45;
-	box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
-}
+.handik-assistant-fallback-message { display: none !important; }
 
 .handik-chatkit-bridge__loading {
 	min-height: 520px;
@@ -666,18 +665,16 @@ openai-chatkit {
 }
 
 .handik-footer-wrap {
-	position: fixed;
-	left: 0;
-	right: 0;
-	bottom: 0;
+	position: static;
 	z-index: 40;
 	display: grid;
 	gap: 8px;
-	padding: 12px 18px calc(12px + env(safe-area-inset-bottom, 0px));
-	background: rgba(255, 255, 255, 0.96);
-	border-top: 1px solid var(--handik-border, #dbe3ea);
-	box-shadow: 0 -14px 34px rgba(15, 23, 42, 0.12);
-	backdrop-filter: blur(10px);
+	margin-top: auto;
+	padding: 12px 0 0;
+	background: transparent;
+	border-top: 0;
+	box-shadow: none;
+	backdrop-filter: none;
 }
 
 .handik-sidebar ul {
@@ -924,22 +921,25 @@ openai-chatkit {
 	display: grid;
 }
 
+.handik-global-progress,
 .handik-footer-progress {
 	max-width: 980px;
 	width: 100%;
 	margin: 0 auto;
 }
 
-.handik-footer-progress .handik-booking-app__progress {
-	margin: 0;
-	gap: 6px;
+.handik-global-progress {
+	padding: 8px 0 0;
 }
 
 .handik-booking-app__screen-body {
 	width: 100%;
 	max-width: 100%;
 	overflow-x: clip;
-	padding-bottom: calc(132px + env(safe-area-inset-bottom, 0px));
+	flex: 1 1 auto;
+	display: flex;
+	flex-direction: column;
+	padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
 }
 
 .handik-booking-app__screen--assistant .handik-booking-app__screen-body {
@@ -959,6 +959,87 @@ openai-chatkit {
 .handik-footer-actions.is-single {
 	grid-template-columns: minmax(220px, 320px);
 	justify-content: center;
+}
+
+.handik-footer-actions.is-docked {
+	position: static;
+	margin-top: auto;
+}
+
+.handik-booking-app__screen--task_selection .handik-footer-actions.is-docked {
+	margin-bottom: 88px;
+}
+
+.handik-app-disclaimer {
+	padding: 14px 12px calc(14px + env(safe-area-inset-bottom, 0px));
+	text-align: center;
+	font-size: 0.88rem;
+	color: var(--handik-muted-text, #475569);
+}
+
+.handik-app-disclaimer p {
+	margin: 0 0 4px;
+	line-height: 1.4;
+}
+
+.handik-app-disclaimer p:last-child {
+	margin-bottom: 0;
+}
+
+.handik-app-disclaimer.is-success p:first-child {
+	color: var(--handik-text, #0f172a);
+	font-weight: 500;
+}
+
+.handik-app-disclaimer__sep {
+	color: var(--handik-border, #cbd5e1);
+	margin: 0 4px;
+}
+
+.handik-text-link {
+	color: var(--handik-accent, #0f766e);
+	text-decoration: underline;
+	text-underline-offset: 2px;
+	font-weight: 500;
+	background: none;
+	border: 0;
+	padding: 0;
+	cursor: pointer;
+}
+
+.handik-text-link:hover {
+	text-decoration-thickness: 2px;
+}
+
+.handik-modal-backdrop {
+	position: fixed;
+	inset: 0;
+	z-index: 80;
+	display: grid;
+	place-items: center;
+	padding: 18px;
+	background: rgba(15, 23, 42, 0.38);
+}
+
+.handik-modal {
+	width: min(420px, 100%);
+	display: grid;
+	gap: 12px;
+	padding: 18px;
+	border-radius: 20px;
+	background: #fff;
+	box-shadow: 0 24px 70px rgba(15, 23, 42, 0.25);
+}
+
+.handik-modal h3,
+.handik-modal p {
+	margin: 0;
+}
+
+.handik-modal__actions {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: 10px;
 }
 
 @media (max-width: 900px) {
@@ -1039,7 +1120,7 @@ openai-chatkit {
 	}
 
 	.handik-booking-app__screen--assistant .handik-booking-app__screen-body {
-		padding-bottom: calc(104px + env(safe-area-inset-bottom, 0px));
+		padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
 	}
 
 	.handik-booking-app__screen--assistant .handik-booking-app__assistant-host,
@@ -1222,23 +1303,11 @@ openai-chatkit {
 }
 
 @keyframes handik-selected-sheet-bounce {
-	0% {
-		opacity: 1;
-		transform: translateY(0) scale(1);
-	}
-	22% {
-		transform: translateY(-10px) scale(1.01);
-	}
-	48% {
-		transform: translateY(5px) scale(0.995);
-	}
-	72% {
-		transform: translateY(-4px) scale(1.003);
-	}
-	100% {
-		opacity: 1;
-		transform: translateY(0) scale(1);
-	}
+	0% { transform: translateY(0) scale(1); }
+	25% { transform: translateY(-10px) scale(1.012); }
+	55% { transform: translateY(4px) scale(0.996); }
+	78% { transform: translateY(-3px) scale(1.004); }
+	100% { transform: translateY(0) scale(1); }
 }
 
 @keyframes handik-selected-sheet-slide-up {
@@ -1253,7 +1322,7 @@ openai-chatkit {
 }
 
 .handik-task-groups {
-	padding-bottom: 220px;
+	padding-bottom: 16px;
 }
 
 .handik-choice:hover,
@@ -1285,11 +1354,11 @@ openai-chatkit {
 .handik-selected-sheet.is-bouncing {
 	animation:
 		handik-selected-sheet-slide-up 0.3s cubic-bezier(0.2, 0.9, 0.2, 1) both,
-		handik-selected-sheet-bounce 0.72s cubic-bezier(0.2, 0.9, 0.22, 1.15) 2s;
+		handik-selected-sheet-bounce 0.72s cubic-bezier(0.2, 0.9, 0.22, 1.15) 0.4s;
 }
 
 .handik-selected-sheet.is-attention:not(.is-open) {
-	animation: handik-selected-sheet-attention 2.65s ease-in-out 0.8s 5;
+	animation: handik-selected-sheet-bounce 0.9s cubic-bezier(0.2, 0.9, 0.22, 1.15) 1.5s 3;
 }
 
 .handik-selected-sheet__toggle {
@@ -1352,23 +1421,6 @@ openai-chatkit {
 	color: var(--handik-accent, #0f766e);
 	font-size: 0.8rem;
 	font-weight: 700;
-}
-
-@keyframes handik-selected-sheet-attention {
-	0%, 78%, 100% {
-		transform: translateY(0) scale(1);
-		box-shadow: 0 16px 40px rgba(15, 23, 42, 0.14);
-	}
-	84% {
-		transform: translateY(-8px) scale(1.006);
-		box-shadow: 0 20px 44px rgba(15, 23, 42, 0.18);
-	}
-	90% {
-		transform: translateY(2px) scale(0.998);
-	}
-	95% {
-		transform: translateY(-4px) scale(1.003);
-	}
 }
 
 @media (prefers-reduced-motion: reduce) {

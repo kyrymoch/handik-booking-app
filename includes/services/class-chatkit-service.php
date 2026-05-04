@@ -413,7 +413,7 @@ class Handik_Booking_App_ChatKit_Service {
 		}
 		if ( ( ! $this->has_complete_routing_payload( $incoming_assistant ) || $incoming_differs_from_locked_url ) && ( $this->has_complete_routing_payload( $stored_assistant ) || $this->request_has_complete_routing( $request ) ) ) {
 			$preserved_assistant = $this->has_complete_routing_payload( $stored_assistant ) ? $stored_assistant : $this->assistant_from_request( $request, $stored_assistant );
-			$booking_url         = $this->assistant_ready_for_booking( $preserved_assistant, $request ) ? ( ! empty( $request['cal_booking_url'] ) ? (string) $request['cal_booking_url'] : $this->cal->build_booking_url( $request_id ) ) : '';
+			$booking_url         = $this->assistant_ready_for_booking( $preserved_assistant, $request ) ? $this->cal->build_booking_url( $request_id ) : '';
 			$this->logger->info(
 				'Ignored assistant result to preserve existing routing.',
 				array(

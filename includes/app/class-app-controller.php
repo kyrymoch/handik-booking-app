@@ -106,6 +106,10 @@ class Handik_Booking_App_Controller {
 	 */
 	public function bootstrap() {
 		$contact_id = $this->auth->current_contact_id();
+		$cal_fallback_url = trim( (string) $this->settings->get( 'cal_fallback_url', '' ) );
+		if ( '' === $cal_fallback_url ) {
+			$cal_fallback_url = trim( (string) $this->settings->get( 'cal_standard_event_url', '' ) );
+		}
 		return array(
 			'success'         => true,
 			'version'         => HANDIK_BOOKING_APP_VERSION,
@@ -117,6 +121,63 @@ class Handik_Booking_App_Controller {
 			'verified_profile'=> $contact_id ? $this->auth->profile( $contact_id ) : null,
 			'changelog'       => $this->changelog->get_entries(),
 			'cal_configured'  => array_filter( $this->cal->event_map() ),
+			'cal_fallback_url'=> $cal_fallback_url,
+			'serviceable_zips'=> $this->serviceable_zips(),
+		);
+	}
+
+	/**
+	 * Silently recognize returning customers by phone without OTP friction.
+	 *
+	 * @param string $phone Phone.
+	 * @return array<string, mixed>
+	 */
+	public function contact_lookup( $phone ) {
+		$normalized = $this->contacts->normalize_phone( $phone );
+		$digits     = preg_replace( '/\D/', '', (string) $normalized );
+		if ( 11 === strlen( $digits ) && '1' === substr( $digits, 0, 1 ) ) {
+			$digits = substr( $digits, 1 );
+		}
+
+		if ( ! $normalized || 10 !== strlen( $digits ) ) {
+			return array( 'success' => true, 'profile' => null );
+		}
+
+		$limit = $this->auth->rate_limit_lookup( 'lookup:' . $digits );
+		if ( is_wp_error( $limit ) ) {
+			return array( 'error' => $limit->get_error_message(), 'status' => 429 );
+		}
+
+		$contact = $this->contacts->find_by_email_or_phone( '', $normalized );
+		if ( ! $contact || empty( $contact['id'] ) ) {
+			return array( 'success' => true, 'profile' => null );
+		}
+
+		return array(
+			'success' => true,
+			'profile' => $this->auth->profile( (int) $contact['id'], true ),
+		);
+	}
+
+	/**
+	 * @return array<int, string>
+	 */
+	protected function serviceable_zips() {
+		$raw = (string) $this->settings->get( 'serviceable_zips', '' );
+		$zips = preg_split( '/\R+/', $raw );
+		$zips = is_array( $zips ) ? $zips : array();
+		return array_values(
+			array_unique(
+				array_filter(
+					array_map(
+						function ( $zip ) {
+							$digits = preg_replace( '/\D/', '', (string) $zip );
+							return 5 === strlen( $digits ) ? $digits : '';
+						},
+						$zips
+					)
+				)
+			)
 		);
 	}
 
@@ -256,16 +317,12 @@ class Handik_Booking_App_Controller {
 		if ( ! $this->has_complete_saved_routing( $request ) ) {
 			return array( 'error' => __( 'Assistant is still preparing the booking recommendation.', 'handik-booking-app' ), 'status' => 409 );
 		}
-		if ( ! empty( $request['cal_booking_url'] ) ) {
-			$this->job_requests->mark_booking_pending( $request_id );
-			return array( 'success' => true, 'booking_url' => esc_url_raw( $request['cal_booking_url'] ), 'booking_url_locked' => true );
-		}
 		$url = $this->cal->build_booking_url( $request_id );
 		if ( ! $url ) {
 			return array( 'error' => __( 'Cal.com is not configured for this booking type.', 'handik-booking-app' ), 'status' => 400 );
 		}
 		$this->job_requests->mark_booking_pending( $request_id );
-		return array( 'success' => true, 'booking_url' => $url );
+		return array( 'success' => true, 'booking_url' => $url, 'booking_url_locked' => true );
 	}
 
 	/**
@@ -275,9 +332,10 @@ class Handik_Booking_App_Controller {
 	protected function has_complete_saved_routing( array $request ) {
 		$app_state = ! empty( $request['app_state'] ) && is_array( $request['app_state'] ) ? $request['app_state'] : array();
 		$assistant = ! empty( $request['assistant_result'] ) && is_array( $request['assistant_result'] ) ? $request['assistant_result'] : array();
+		$suggested_duration = ! empty( $assistant['suggested_duration_hours'] ) ? $assistant['suggested_duration_hours'] : ( $app_state['suggested_duration_hours'] ?? '' );
 		return ! empty( $request['booking_type'] )
 			&& ! empty( $request['duration_bucket'] )
-			&& ! empty( $app_state['suggested_duration_hours'] )
+			&& ! empty( $suggested_duration )
 			&& ! empty( $assistant['enough_information'] )
 			&& empty( $assistant['unsafe'] )
 			&& empty( $request['unsafe_flag'] );

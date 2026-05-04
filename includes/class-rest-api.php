@@ -48,6 +48,7 @@ class Handik_Booking_App_REST_API {
 		$this->route( $namespace, '/app/upload', array( $this, 'upload' ), WP_REST_Server::CREATABLE );
 		$this->route( $namespace, '/auth/request-code', array( $this, 'request_code' ), WP_REST_Server::CREATABLE );
 		$this->route( $namespace, '/auth/verify', array( $this, 'verify_code' ), WP_REST_Server::CREATABLE );
+		$this->route( $namespace, '/contacts/lookup', array( $this, 'contact_lookup' ), WP_REST_Server::CREATABLE );
 		$this->route( $namespace, '/chatkit-session', array( $this, 'chatkit_session' ), WP_REST_Server::CREATABLE );
 		$this->route( $namespace, '/photo-analysis', array( $this, 'photo_analysis' ), WP_REST_Server::CREATABLE );
 		$this->route( $namespace, '/request-photo-context', array( $this, 'request_photo_context' ), WP_REST_Server::CREATABLE );
@@ -106,6 +107,10 @@ class Handik_Booking_App_REST_API {
 
 	public function verify_code( WP_REST_Request $request ) {
 		return $this->respond( $this->auth->verify( (string) $request->get_param( 'email' ), (string) $request->get_param( 'phone' ), (string) $request->get_param( 'code' ), (string) $request->get_param( 'token' ) ) );
+	}
+
+	public function contact_lookup( WP_REST_Request $request ) {
+		return $this->respond( $this->app->contact_lookup( sanitize_text_field( (string) $request->get_param( 'phone' ) ) ) );
 	}
 
 	public function chatkit_session( WP_REST_Request $request ) {

@@ -257,13 +257,43 @@ class Handik_Booking_App_Auth_Service {
 	}
 
 	/**
-	 * @param int $contact_id Contact ID.
+	 * @param int  $contact_id Contact ID.
+	 * @param bool $for_lookup Whether this is an unauthenticated phone lookup payload.
 	 * @return array<string, mixed>
 	 */
-	public function profile( $contact_id ) {
+	public function profile( $contact_id, $for_lookup = false ) {
 		$contact = $this->contacts->get( $contact_id );
 		if ( ! $contact ) {
 			return array();
+		}
+
+		if ( $for_lookup ) {
+			$addresses = array_values(
+				array_map(
+					function ( $address ) {
+						return array(
+							'id'             => (int) ( $address['id'] ?? 0 ),
+							'address_full'   => sanitize_text_field( $address['address_full'] ?? '' ),
+							'address_line_1' => sanitize_text_field( $address['address_line_1'] ?? '' ),
+							'address_unit'   => sanitize_text_field( $address['address_unit'] ?? '' ),
+							'city'           => sanitize_text_field( $address['city'] ?? '' ),
+							'state'          => sanitize_text_field( $address['state'] ?? '' ),
+							'zip_code'       => sanitize_text_field( $address['zip_code'] ?? '' ),
+						);
+					},
+					$this->addresses->list_for_contact( $contact_id )
+				)
+			);
+
+			return array(
+				'contact'   => array(
+					'id'        => (int) ( $contact['id'] ?? 0 ),
+					'full_name' => sanitize_text_field( $contact['full_name'] ?? '' ),
+					'email'     => sanitize_email( $contact['email'] ?? '' ),
+					'phone'     => sanitize_text_field( $contact['phone'] ?? '' ),
+				),
+				'addresses' => $addresses,
+			);
 		}
 
 		return array(
@@ -679,6 +709,23 @@ class Handik_Booking_App_Auth_Service {
 			return new WP_Error( 'rate_limited', __( 'Too many verification attempts. Please try again later.', 'handik-booking-app' ) );
 		}
 		set_transient( $cache_key, $count + 1, 10 * MINUTE_IN_SECONDS );
+		return true;
+	}
+
+	/**
+	 * Aggressive rate limit for unauthenticated contact lookup.
+	 *
+	 * @param string $key Bucket key.
+	 * @return true|WP_Error
+	 */
+	public function rate_limit_lookup( $key ) {
+		$ip = isset( $_SERVER['REMOTE_ADDR'] ) ? sanitize_text_field( wp_unslash( (string) $_SERVER['REMOTE_ADDR'] ) ) : '';
+		$cache_key = 'handik_booking_app_lookup_' . md5( strtolower( $key . '|' . $ip ) );
+		$count     = (int) get_transient( $cache_key );
+		if ( $count >= 5 ) {
+			return new WP_Error( 'rate_limited', __( 'Too many lookup attempts. Please try again later.', 'handik-booking-app' ) );
+		}
+		set_transient( $cache_key, $count + 1, MINUTE_IN_SECONDS );
 		return true;
 	}
 }

@@ -59,18 +59,44 @@ class Handik_Booking_App_Cal_Service {
 		if ( ! $request || empty( $request['booking_type'] ) ) {
 			return '';
 		}
+		$assistant_result = ! empty( $request['assistant_result'] ) && is_array( $request['assistant_result'] ) ? $request['assistant_result'] : array();
+		$app_state        = ! empty( $request['app_state'] ) && is_array( $request['app_state'] ) ? $request['app_state'] : array();
+		$suggested_duration = ! empty( $assistant_result['suggested_duration_hours'] ) ? (string) $assistant_result['suggested_duration_hours'] : (string) ( $app_state['suggested_duration_hours'] ?? '' );
+		$current_duration_minutes = $this->duration_minutes( $suggested_duration );
 		if ( ! empty( $request['cal_booking_url'] ) ) {
+			$stored_query = wp_parse_url( $request['cal_booking_url'], PHP_URL_QUERY );
+			$stored_args  = array();
+			if ( $stored_query ) {
+				wp_parse_str( $stored_query, $stored_args );
+			}
+			$stored_duration_minutes = isset( $stored_args['duration'] ) ? (int) $stored_args['duration'] : 0;
+			$stored_booking_type = '';
+			if ( ! empty( $stored_args['metadata'] ) && is_array( $stored_args['metadata'] ) && ! empty( $stored_args['metadata']['handik_booking_type'] ) ) {
+				$stored_booking_type = sanitize_key( (string) $stored_args['metadata']['handik_booking_type'] );
+			}
+			if ( $stored_duration_minutes > 0 && $stored_duration_minutes === $current_duration_minutes && $stored_booking_type === (string) $request['booking_type'] ) {
+				if ( $this->logger ) {
+					$this->logger->info(
+						'Reusing existing Cal booking URL.',
+						array(
+							'request_id'       => $request_id,
+							'booking_type'     => (string) $request['booking_type'],
+							'duration_minutes' => $stored_duration_minutes,
+						)
+					);
+				}
+				return (string) $request['cal_booking_url'];
+			}
 			if ( $this->logger ) {
 				$this->logger->info(
-					'Reusing existing Cal booking URL.',
+					'Rebuilding Cal booking URL because duration changed.',
 					array(
 						'request_id'      => $request_id,
-						'booking_type'    => (string) $request['booking_type'],
-						'cal_booking_url' => (string) $request['cal_booking_url'],
+						'stored_minutes'  => $stored_duration_minutes,
+						'current_minutes' => $current_duration_minutes,
 					)
 				);
 			}
-			return (string) $request['cal_booking_url'];
 		}
 		$map     = $this->event_map();
 		$base    = $map[ $request['booking_type'] ] ?? '';
@@ -78,16 +104,13 @@ class Handik_Booking_App_Cal_Service {
 			return '';
 		}
 		$contact = ! empty( $request['contact_id'] ) ? $this->contacts->get( (int) $request['contact_id'] ) : null;
-		$assistant_result = ! empty( $request['assistant_result'] ) && is_array( $request['assistant_result'] ) ? $request['assistant_result'] : array();
-		$app_state        = ! empty( $request['app_state'] ) && is_array( $request['app_state'] ) ? $request['app_state'] : array();
-		$suggested_duration = ! empty( $assistant_result['suggested_duration_hours'] ) ? (string) $assistant_result['suggested_duration_hours'] : (string) ( $app_state['suggested_duration_hours'] ?? '' );
 		$pricing_posture    = ! empty( $assistant_result['pricing_posture'] ) ? (string) $assistant_result['pricing_posture'] : (string) ( $app_state['pricing_posture'] ?? '' );
 		$params  = array_filter(
 			array(
 				'name'                            => $contact['full_name'] ?? '',
 				'email'                           => $contact['email'] ?? '',
 				'phone'                           => $contact['phone'] ?? '',
-				'notes'                           => sprintf( 'Handik request #%d. Details, photos, and assistant notes are saved in the admin dashboard.', (int) $request_id ),
+				'notes'                           => sprintf( "Alex will take care of it. Full details, photos, and the assistant's notes are saved in the admin dashboard (request #%d).", (int) $request_id ),
 				'metadata[handik_job_request_id]' => (string) $request_id,
 				'metadata[handik_booking_type]'   => (string) $request['booking_type'],
 				'metadata[handik_contact_id]'     => ! empty( $request['contact_id'] ) ? (string) $request['contact_id'] : '',

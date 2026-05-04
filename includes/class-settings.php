@@ -25,6 +25,7 @@ class Handik_Booking_App_Settings {
 		'cal_extended_event_url' => 'HANDIK_BOOKING_APP_CAL_EXTENDED_EVENT_URL',
 		'cal_large_event_url'    => 'HANDIK_BOOKING_APP_CAL_LARGE_EVENT_URL',
 		'cal_project_event_url'  => 'HANDIK_BOOKING_APP_CAL_PROJECT_EVENT_URL',
+		'cal_fallback_url'       => 'HANDIK_BOOKING_APP_CAL_FALLBACK_URL',
 		'cal_webhook_secret'     => 'HANDIK_BOOKING_APP_CAL_WEBHOOK_SECRET',
 		'email_from_name'        => 'HANDIK_BOOKING_APP_EMAIL_FROM_NAME',
 		'email_from_address'     => 'HANDIK_BOOKING_APP_EMAIL_FROM_ADDRESS',
@@ -60,7 +61,9 @@ class Handik_Booking_App_Settings {
 			'cal_extended_event_url' => '',
 			'cal_large_event_url'    => '',
 			'cal_project_event_url'  => '',
+			'cal_fallback_url'       => '',
 			'cal_webhook_secret'     => '',
+			'serviceable_zips'       => '',
 			'email_from_name'        => get_bloginfo( 'name' ),
 			'email_from_address'     => get_option( 'admin_email' ),
 			'twilio_account_sid'     => '',
@@ -98,16 +101,6 @@ class Handik_Booking_App_Settings {
 			'service_catalog_json'   => '',
 			'ui_loading_title'       => 'Loading...',
 			'ui_loading_subtitle'    => '',
-			'ui_client_type_title'   => 'Who is booking today?',
-			'ui_client_type_intro'   => 'Choose New client if this is your first time booking through this form. Choose Returning client if you have booked here before.',
-			'ui_new_client_label'    => 'New client',
-			'ui_returning_client_label' => 'Returning client',
-			'ui_new_client_tooltip_title' => 'New client',
-			'ui_new_client_tooltip_text'  => 'New client means someone who has never booked through this form before.',
-			'ui_returning_client_tooltip_title' => 'Returning client',
-			'ui_returning_client_tooltip_text'  => 'Returning client means someone who has already booked through this form before.',
-			'ui_returning_verify_title' => 'Returning client verification',
-			'ui_returning_verify_intro' => 'Enter your phone number and Alex will send a one-time verification code.',
 			'ui_task_selection_title'   => 'What do you need help with?',
 			'ui_task_selection_intro'   => 'Choose the option that best matches your request.',
 			'ui_project_label'          => 'Complex Project Work',
@@ -121,9 +114,7 @@ class Handik_Booking_App_Settings {
 			'ui_skip_photos_button'     => '',
 			'ui_saved_address_label'    => 'Choose a saved address or enter a new one',
 			'ui_saved_address_placeholder' => 'Choose saved address',
-			'ui_photos_label'           => 'Photos / Videos',
-			'ui_photos_help'            => 'Upload photos or short videos of the problem area, item, fixture, wall, appliance, or installation spot.',
-			'ui_photos_cta'             => 'Tap to add photos or videos',
+			'ui_photos_cta'             => 'Add photos or videos',
 			'ui_photos_empty'           => 'No photos or videos added yet',
 			'ui_photos_loading'         => 'Uploading your files...',
 			'ui_assistant_title'        => 'Virtual assistant',
@@ -132,8 +123,8 @@ class Handik_Booking_App_Settings {
 			'ui_assistant_greeting'     => 'Describe the job.',
 			'ui_assistant_ready_notice' => 'The virtual assistant has enough information. Continue when you are ready.',
 			'ui_assistant_continue_button' => 'Book a time',
-			'ui_contact_continue_button' => 'Continue to Assistant',
-			'ui_contact_intro'         => 'This is the last step where you can change the booking details before the AI review starts.',
+			'ui_contact_continue_button' => 'Continue',
+			'ui_contact_intro'         => "Tell us how to reach you. If you've booked here before, we'll recognize you.",
 			'ui_project_notice'        => 'Complex Project Work means a bigger scope that usually needs a consultation-style visit before the work is scheduled.',
 			'ui_contact_title'          => 'Contact details',
 			'ui_booking_title'          => 'Book your time slot',
@@ -141,8 +132,6 @@ class Handik_Booking_App_Settings {
 			'ui_success_body'           => 'Your booking has been confirmed and saved.',
 			'ui_unsafe_title'           => 'We need to stop the normal booking flow',
 			'ui_unsafe_body'            => 'This request needs manual review before booking.',
-			'ui_verify_button'          => 'Verify',
-			'ui_send_code_button'       => 'Send one-time code',
 			'ui_continue_button'        => 'Continue',
 			'ui_back_button'            => 'Back',
 			'ui_open_booking_button'    => 'Open calendar in new tab',
@@ -150,14 +139,11 @@ class Handik_Booking_App_Settings {
 			'ui_restart_button'         => 'Start another booking',
 			'ui_loading_assistant_title'=> 'Loading...',
 			'ui_loading_assistant_subtitle' => '',
-			'ui_error_pick_client_type' => 'Choose whether you are a new client or a returning client to continue.',
 			'ui_error_select_task'      => 'Select at least one task or mark this as a project.',
 			'ui_error_address_required' => 'Add the address of the job before continuing.',
-			'ui_error_invalid_code'     => 'Code or magic link is invalid or expired.',
 			'ui_error_assistant_required' => 'Please send the virtual assistant a short description of the job before continuing.',
 			'ui_error_name_email_required' => 'Name and phone are required before you can continue.',
-			'ui_error_phone_or_email_required' => 'Enter your email or phone, then request a code.',
-			'ui_booking_waiting'        => '',
+			'ui_booking_waiting'        => 'Hang tight - confirming your booking.',
 			'ui_booking_confirmed'      => 'Your time slot is booked. Finishing your request now...',
 			'ui_booking_cancelled'      => 'This booking was cancelled. You can choose another slot below.',
 			'ui_address_placeholder'    => 'Start typing the address of the job',
@@ -249,6 +235,7 @@ class Handik_Booking_App_Settings {
 				case 'cal_extended_event_url':
 				case 'cal_large_event_url':
 				case 'cal_project_event_url':
+				case 'cal_fallback_url':
 					$output[ $key ] = esc_url_raw( (string) $value );
 					break;
 				case 'email_from_address':
@@ -273,6 +260,24 @@ class Handik_Booking_App_Settings {
 				case 'service_catalog_json':
 					$output[ $key ] = trim( str_replace( "\0", '', (string) $value ) );
 					break;
+				case 'serviceable_zips':
+					$lines = preg_split( '/\R+/', (string) $value );
+					$lines = is_array( $lines ) ? $lines : array();
+					$zips  = array_values(
+						array_unique(
+							array_filter(
+								array_map(
+									function ( $zip ) {
+										$digits = preg_replace( '/\D/', '', (string) $zip );
+										return 5 === strlen( $digits ) ? $digits : '';
+									},
+									$lines
+								)
+							)
+						)
+					);
+					$output[ $key ] = implode( "\n", $zips );
+					break;
 				case 'app_font_family':
 				case 'app_shadow':
 					$output[ $key ] = trim( (string) $value );
@@ -287,13 +292,8 @@ class Handik_Booking_App_Settings {
 					$output[ $key ] = preg_replace( '/[^0-9.]/', '', (string) $value );
 					break;
 				case 'ui_loading_subtitle':
-				case 'ui_client_type_intro':
-				case 'ui_new_client_tooltip_text':
-				case 'ui_returning_client_tooltip_text':
-				case 'ui_returning_verify_intro':
 				case 'ui_task_selection_intro':
 				case 'ui_photos_intro':
-				case 'ui_photos_help':
 				case 'ui_address_help':
 				case 'ui_address_valid_help':
 				case 'ui_assistant_intro':
@@ -303,10 +303,8 @@ class Handik_Booking_App_Settings {
 				case 'ui_project_notice':
 				case 'ui_success_body':
 				case 'ui_unsafe_body':
-				case 'ui_error_pick_client_type':
 				case 'ui_error_select_task':
 				case 'ui_error_address_required':
-				case 'ui_error_invalid_code':
 				case 'ui_error_assistant_required':
 				case 'ui_error_name_email_required':
 				case 'ui_error_phone_or_email_required':

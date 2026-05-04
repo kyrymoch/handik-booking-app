@@ -11,6 +11,17 @@ class Handik_Booking_App_Changelog_Service {
 	public function get_entries() {
 		return array(
 			array(
+				'version'      => '2.1.5',
+				'date'         => '2026-05-03',
+				'title'        => 'Simplify Flow And Stabilize Cal Duration',
+				'notes'        => array(
+					'Removed the New/Returning and SMS verification screens from the customer flow so the app now runs tasks, photos/videos, contact, address, assistant, and booking.',
+					'Added silent returning-client lookup by phone on the Contact step with saved addresses available on the Address step.',
+					'Fixed stale Cal.com URL reuse by rebuilding when the selected duration or booking type changes, and reconciled assistant booking type with suggested duration.',
+					'Moved restart/direct booking into one quiet global footer, removed visible assistant fallback duplicates, and unified the Selected tasks animation.',
+				),
+			),
+			array(
 				'version'      => '2.1.4',
 				'date'         => '2026-05-01',
 				'title'        => 'Reorder Intake Flow And Stabilize Assistant Booking Gate',
