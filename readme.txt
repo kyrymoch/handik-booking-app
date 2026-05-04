@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.1.7
+Stable tag: 2.1.8
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, silent returning-client recognition, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,13 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.1.8 =
+* Polished first-screen footer spacing and quieted the global helper links.
+* Pinned the Selected tasks & rates sheet to the bottom of the app with safe-area support.
+* Fixed Contact details validation so required fields do not show red until blur or Continue, and reordered Phone above optional Email.
+* Added a short saved-address loading state for recognized returning clients.
+* Hardened the assistant-to-booking gate so empty chat or incomplete assistant results cannot open booking.
 
 = 2.1.7 =
 * Rebuilt Cal.com booking URLs with a safe encoded query builder, including attendee phone, location JSON, metadata, notes, and duration.

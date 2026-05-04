@@ -11,6 +11,18 @@ class Handik_Booking_App_Changelog_Service {
 	public function get_entries() {
 		return array(
 			array(
+				'version'      => '2.1.8',
+				'date'         => '2026-05-03',
+				'title'        => 'Polish Booking UX And Assistant Gate',
+				'notes'        => array(
+					'Moved the first-screen progress and helper links closer to the bottom and made the helper links visually quieter.',
+					'Changed Selected tasks & rates into a bottom-docked sheet with safe-area support.',
+					'Prevented Contact details from showing red validation before field blur or Continue, and reordered Phone above optional Email.',
+					'Added a short saved-address loading state for recognized returning clients.',
+					'Blocked Book a time until the assistant has saved a complete, booking-ready result and added explicit gate logs for blocked/allowed attempts.',
+				),
+			),
+			array(
 				'version'      => '2.1.7',
 				'date'         => '2026-05-03',
 				'title'        => 'Fix Cal URL Encoding',

@@ -52,6 +52,8 @@
 			this.assistantContextDispatchPromise = null;
 			this.assistantUnlockTimer = null;
 			this.assistantTypingTimer = null;
+			this.savedAddressLoadingTimer = null;
+			this.savedAddressLoadingProfileKey = '';
 			this.state = {
 				step: 'task_selection',
 				isReturningClient: false,
@@ -91,6 +93,7 @@
 				footerHint: '',
 				footerHintError: false,
 				restartConfirmVisible: false,
+				savedAddressLoading: false,
 				lastAssistantNotice: '',
 				assistantPreparing: false,
 				loading: false,
@@ -694,10 +697,10 @@
 			if ( button ) {
 				const canContinue = this.assistantCanContinue();
 				const shouldDisable = !! isBusy || ! canContinue;
-				button.disabled = shouldDisable;
+				button.disabled = !! isBusy;
 				button.textContent = isBusy
 					? ( config.strings.loading || 'Loading...' )
-					: ( canContinue ? ( config.strings.assistantContinue || 'Book a time' ) : 'Preparing recommendation...' );
+					: ( config.strings.assistantContinue || 'Book a time' );
 				button.classList.remove( 'is-pending' );
 				button.classList.remove( 'is-primary' );
 				button.classList.add( shouldDisable ? 'is-pending' : 'is-primary' );
@@ -706,20 +709,86 @@
 		}
 
 		assistantCanContinue() {
+			const gate = this.assistantGateState();
+			return gate.allowed;
+		}
+
+		assistantGateState() {
 			const result = this.state.assistantResult && 'object' === typeof this.state.assistantResult ? this.state.assistantResult : {};
-			return !! (
+			const state = {
+				request_id: this.state.requestId,
+				assistant_result_saved: !! this.state.assistantResultSaved,
+				assistant_ready_for_booking: !! this.state.assistantReadyForBooking,
+				booking_url_ready: !! this.state.assistantBookingUrlReady,
+				enough_information: true === result.enough_information,
+				unsafe: !! result.unsafe,
+				has_user_message: !! this.state.assistantUserMessageSent,
+				has_booking_url: !! this.state.bookingUrl,
+				allowed: false,
+				reason: ''
+			};
+
+			if ( ! state.has_user_message ) {
+				state.reason = 'no user message';
+				return state;
+			}
+			if ( ! state.assistant_result_saved ) {
+				state.reason = 'no saved result';
+				return state;
+			}
+			if ( ! state.enough_information ) {
+				state.reason = 'enough_information false';
+				return state;
+			}
+			if ( state.unsafe ) {
+				state.reason = 'unsafe';
+				return state;
+			}
+			if ( ! state.assistant_ready_for_booking ) {
+				state.reason = 'assistant_ready_for_booking false';
+				return state;
+			}
+			if ( ! state.booking_url_ready || ! state.has_booking_url ) {
+				state.reason = 'booking_url missing';
+				return state;
+			}
+			if ( ! result.booking_type || ! result.duration_bucket || ! result.suggested_duration_hours ) {
+				state.reason = 'routing fields missing';
+				return state;
+			}
+			if ( this.state.assistantRoutingPending ) {
+				state.reason = 'assistant routing pending';
+				return state;
+			}
+
+			state.allowed = !! (
 				this.state.assistantResultSaved &&
 				this.state.assistantBookingUrlReady &&
 				this.state.assistantReadyForBooking &&
-				this.state.assistantResponseSeen &&
 				! this.state.assistantRoutingPending &&
 				this.state.bookingUrl &&
+				this.state.assistantUserMessageSent &&
 				true === result.enough_information &&
 				! result.unsafe &&
 				result.booking_type &&
 				result.duration_bucket &&
 				result.suggested_duration_hours
 			);
+			state.reason = state.allowed ? 'allowed' : 'unknown';
+			return state;
+		}
+
+		assistantGateLogContext( gate ) {
+			const state = gate || this.assistantGateState();
+			return {
+				request_id: state.request_id || this.state.requestId,
+				assistant_result_saved: !! state.assistant_result_saved,
+				assistant_ready_for_booking: !! state.assistant_ready_for_booking,
+				booking_url_ready: !! state.booking_url_ready,
+				enough_information: !! state.enough_information,
+				unsafe: !! state.unsafe,
+				has_user_message: !! state.has_user_message
+			};
 		}
 
 		stepCanContinue( step ) {
@@ -804,14 +873,30 @@
 			return !! ( this.state.touched && this.state.touched[ fieldName ] && false === validation[ fieldName ] );
 		}
 
+		contactFieldError( fieldName ) {
+			if ( ! this.isFieldInvalid( fieldName ) ) {
+				return '';
+			}
+			if ( 'full_name' === fieldName ) {
+				return 'Enter a real full name using letters, spaces, apostrophes, hyphens, or periods.';
+			}
+			if ( 'phone' === fieldName ) {
+				return 'Enter a valid 10-digit US phone number.';
+			}
+			if ( 'email' === fieldName ) {
+				return 'Enter a valid email address, or leave it blank.';
+			}
+			return '';
+		}
+
 		contactValidationMessage() {
 			const errors = config.strings.errors || {};
 			const validation = this.validateContactFields();
 			if ( ! validation.full_name ) {
-				return errors.invalidName || 'Check this step. Enter a real full name using letters only.';
+				return errors.invalidName || 'Check this step. Enter your full name.';
 			}
 			if ( ! validation.email ) {
-				return errors.invalidEmail || 'Check this step. Enter a valid email address before continuing.';
+				return errors.invalidEmail || 'Check this step. Enter a valid email address, or leave email blank.';
 			}
 			if ( ! validation.phone ) {
 				return errors.invalidPhone || 'Check this step. Enter a valid 10-digit US phone number.';
@@ -835,6 +920,12 @@
 			if ( 'task_selection' === step && previousStep !== step ) {
 				this.state.selectedTasksSheetAnimate = false;
 				this.state.selectedTasksSheetAttentionDismissed = false;
+			}
+			if ( 'address_details' === step && previousStep !== step ) {
+				this.startSavedAddressLoadingIfNeeded();
+			}
+			if ( 'address_details' !== step ) {
+				this.stopSavedAddressLoading( false );
 			}
 			this.render();
 			this.scrollStepIntoView();
@@ -1184,6 +1275,8 @@
 		executeRestart() {
 			this.stopBookingStatusPolling();
 			this.hideAssistantTypingIndicator();
+			this.stopSavedAddressLoading( false );
+			this.savedAddressLoadingProfileKey = '';
 			this.assistantSessionPrewarmPromise = null;
 			this.assistantSessionPrewarmedRequestId = 0;
 					this.clearDraftStorage();
@@ -1228,6 +1321,7 @@
 						assistantUserMessageSent: false,
 						assistantThreadId: '',
 						contact: { first_name: '', last_name: '', full_name: '', email: '', phone: '' },
+						touched: { full_name: false, email: false, phone: false },
 						bookingUrl: '',
 						bookingUrlLocked: false,
 						bookingStatus: '',
@@ -1240,6 +1334,7 @@
 						footerHint: '',
 						footerHintError: false,
 						restartConfirmVisible: false,
+						savedAddressLoading: false,
 						photoUploading: false,
 						bookingOpened: false
 					} );
@@ -1268,6 +1363,51 @@
 				return true;
 			}
 			return list.includes( String( zip || '' ).trim() );
+		}
+
+		savedAddressProfileKey() {
+			if ( ! this.state.verifiedProfile || ! this.state.verifiedProfile.contact ) {
+				return '';
+			}
+			const contact = this.state.verifiedProfile.contact;
+			return String( contact.id || contact.phone || contact.email || contact.full_name || '' );
+		}
+
+		startSavedAddressLoadingIfNeeded() {
+			const key = this.savedAddressProfileKey();
+			if ( ! key ) {
+				this.stopSavedAddressLoading( false );
+				this.savedAddressLoadingProfileKey = '';
+				return;
+			}
+			if ( key === this.savedAddressLoadingProfileKey && ! this.state.savedAddressLoading ) {
+				return;
+			}
+			if ( key === this.savedAddressLoadingProfileKey && this.state.savedAddressLoading ) {
+				return;
+			}
+
+			this.savedAddressLoadingProfileKey = key;
+			this.state.savedAddressLoading = true;
+			if ( this.savedAddressLoadingTimer ) {
+				window.clearTimeout( this.savedAddressLoadingTimer );
+			}
+			this.savedAddressLoadingTimer = window.setTimeout( () => {
+				this.stopSavedAddressLoading( true );
+			}, 1100 );
+		}
+
+		stopSavedAddressLoading( shouldRender ) {
+			if ( this.savedAddressLoadingTimer ) {
+				window.clearTimeout( this.savedAddressLoadingTimer );
+				this.savedAddressLoadingTimer = null;
+			}
+			if ( this.state.savedAddressLoading ) {
+				this.state.savedAddressLoading = false;
+				if ( shouldRender && 'address_details' === this.state.step ) {
+					this.render();
+				}
+			}
 		}
 
 		async maybeLookupContact( immediate ) {
@@ -2087,26 +2227,30 @@
 				return;
 			}
 
-			if ( ! this.assistantCanContinue() ) {
-				this.state.assistantRoutingPending = ! this.state.assistantResultSaved;
+			const gate = this.assistantGateState();
+			if ( ! gate.allowed ) {
 				this.setAssistantContinueBusy( false );
-				this.logClient( 'info', 'Booking CTA blocked and user kept on assistant step.', {
-					request_id: this.state.requestId,
-					assistant_result_saved: this.state.assistantResultSaved,
-					booking_url_ready: this.state.assistantBookingUrlReady,
-					assistant_ready_for_booking: this.state.assistantReadyForBooking,
-					assistant_response_seen: this.state.assistantResponseSeen,
-					has_booking_url: !! this.state.bookingUrl
-				} );
-				if ( ! this.state.assistantResponseSeen && this.state.assistantResult && this.state.assistantResult.next_message ) {
-					this.showAssistantFallbackMessage( this.state.assistantResult.next_message );
+				const logMessage = [
+					'no user message',
+					'no saved result',
+					'enough_information false',
+					'booking_url missing'
+				].includes( gate.reason ) ? 'Assistant continue blocked: ' + gate.reason : 'Assistant continue blocked: ' + ( gate.reason || 'not ready' );
+				this.logClient( 'info', logMessage, this.assistantGateLogContext( gate ) );
+				if ( 'no user message' === gate.reason ) {
+					this.setAssistantNotice( 'Please describe your job to the AI assistant first. It will help estimate the time, cost, and right booking type before you choose a time.', true );
+				} else if ( 'enough_information false' === gate.reason ) {
+					this.setAssistantNotice( 'Please answer the assistant follow-up before choosing a time.', true );
+				} else if ( 'booking_url missing' === gate.reason ) {
+					this.setAssistantNotice( 'The booking recommendation is not ready yet. Please wait for the assistant to finish.', true );
 				} else {
-					this.setAssistantNotice( 'Preparing booking recommendation...', true );
+					this.setAssistantNotice( 'Please wait for the assistant to finish reviewing your request.', true );
 				}
 				return;
 			}
 
 			try {
+				this.logClient( 'info', 'Assistant continue allowed', this.assistantGateLogContext( gate ) );
 				this.state.loading = true;
 				this.setAssistantContinueBusy( true );
 				this.state.loading = false;
@@ -2189,9 +2333,6 @@
 					},
 					onThreadChange: ( threadId ) => {
 						this.state.assistantThreadId = threadId || this.state.assistantThreadId;
-						if ( threadId ) {
-							this.state.assistantUserMessageSent = true;
-						}
 						this.setAssistantContinueBusy( false );
 					},
 					onMessageActivity: ( detail ) => {
@@ -2286,7 +2427,14 @@
 		}
 
 		render() {
-			this.root.innerHTML = '<div class="handik-booking-app__shell">' + this.stepMarkup() + '<div class="handik-global-progress">' + this.progressMarkup() + '</div>' + this.appFooterDisclaimer() + this.restartModalMarkup() + '</div>';
+			const shellClasses = [
+				'handik-booking-app__shell',
+				'handik-booking-app__shell--' + String( this.state.step || 'unknown' ).replace( /[^a-z0-9_-]/gi, '-' ).toLowerCase()
+			];
+			if ( 'task_selection' === this.state.step ) {
+				shellClasses.push( 'handik-booking-app__shell--task-' + String( this.state.taskSelectionMode || 'overview' ).replace( /[^a-z0-9_-]/gi, '-' ).toLowerCase() );
+			}
+			this.root.innerHTML = '<div class="' + shellClasses.join( ' ' ) + '">' + this.stepMarkup() + '<div class="handik-global-progress">' + this.progressMarkup() + '</div>' + this.appFooterDisclaimer() + this.restartModalMarkup() + '</div>';
 			this.bind();
 			this.renderNotifications();
 			if ( this.state.selectedTasksSheetAnimate ) {
@@ -2371,10 +2519,15 @@
 			'</section></div>';
 		}
 
-		input( label, model, type, modifier, helpText ) {
+		input( label, model, type, modifier, helpText, errorText ) {
 			const value = this.getByPath( model ) || '';
 			const attrs = this.inputAttrsForModel( model, type );
-			return '<label class="handik-field ' + this.escape( modifier || '' ) + '"><span>' + this.escape( label ) + '</span><input type="' + this.escape( type || 'text' ) + '" data-model="' + this.escape( model ) + '" value="' + this.escape( value ) + '"' + attrs + ' /></label>' + ( helpText ? '<span class="handik-field__help">' + this.escape( helpText ) + '</span>' : '' );
+			const isInvalid = String( modifier || '' ).split( /\s+/ ).includes( 'is-invalid' );
+			const id = this.instanceId + '-' + model.replace( /[^a-z0-9_-]/gi, '-' );
+			const errorId = id + '-error';
+			const describedBy = isInvalid && errorText ? ' aria-describedby="' + this.escape( errorId ) + '"' : '';
+			const invalidAttr = isInvalid ? ' aria-invalid="true"' : '';
+			return '<label class="handik-field ' + this.escape( modifier || '' ) + '"><span>' + this.escape( label ) + '</span><input id="' + this.escape( id ) + '" type="' + this.escape( type || 'text' ) + '" data-model="' + this.escape( model ) + '" value="' + this.escape( value ) + '"' + attrs + invalidAttr + describedBy + ' />' + ( helpText ? '<span class="handik-field__help">' + this.escape( helpText ) + '</span>' : '' ) + ( isInvalid && errorText ? '<span id="' + this.escape( errorId ) + '" class="handik-field__error" role="alert">' + this.escape( errorText ) + '</span>' : '' ) + '</label>';
 		}
 
 		inputAttrsForModel( model, type ) {
@@ -2457,7 +2610,9 @@
 			const addressAntiAutofillAttrs = ' autocomplete="new-password" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" data-form-type="other" name="handik_job_location_query"';
 			const unitAntiAutofillAttrs = ' autocomplete="new-password" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" data-form-type="other" name="handik_job_unit_detail"';
 			let savedAddressMarkup = '';
-			if ( addressOptions.length ) {
+			if ( isReturningProfile && this.state.savedAddressLoading ) {
+				savedAddressMarkup = '<div class="handik-saved-address-loading" role="status" aria-live="polite"><div class="handik-saved-address-loading__bar"></div><div class="handik-saved-address-loading__bar is-short"></div><span>' + this.escape( 'Checking saved addresses...' ) + '</span></div>';
+			} else if ( addressOptions.length ) {
 				savedAddressMarkup = '<label class="handik-field"><span>' + this.escape( config.strings.savedAddressLabel || 'Choose a saved address or enter a new one' ) + '</span><select id="handik-saved-address" autocomplete="off"><option value="">' + this.escape( config.strings.savedAddressPlaceholder || 'Choose saved address' ) + '</option>' + addressOptions.map( ( item ) => '<option value="' + item.id + '">' + this.escape( item.address_full ) + '</option>' ).join( '' ) + '</select></label>';
 			} else if ( isReturningProfile ) {
 				savedAddressMarkup = '<p class="handik-field__help handik-field__help--empty" role="status">' + this.escape( 'No saved addresses yet — enter the address below.' ) + '</p>';
@@ -2501,10 +2656,10 @@
 				this.prefillFromProfile();
 			}
 			return '<p class="handik-booking-app__intro">' + this.escape( config.strings.contactIntro || "Tell us how to reach you. If you've booked here before, we'll recognize you." ) + '</p>' +
-				this.input( 'Full name', 'contact.full_name', 'text', this.isFieldInvalid( 'full_name' ) ? 'is-invalid' : '', '' ) +
+				this.input( 'Full name', 'contact.full_name', 'text', this.isFieldInvalid( 'full_name' ) ? 'is-invalid' : '', '', this.contactFieldError( 'full_name' ) ) +
 				'<div class="handik-grid-2">' +
-				this.input( 'Email (optional)', 'contact.email', 'email', this.isFieldInvalid( 'email' ) ? 'is-invalid' : '', '' ) +
-				this.input( 'Phone', 'contact.phone', 'tel', this.isFieldInvalid( 'phone' ) ? 'is-invalid' : '', '' ) +
+				this.input( 'Phone', 'contact.phone', 'tel', this.isFieldInvalid( 'phone' ) ? 'is-invalid' : '', '', this.contactFieldError( 'phone' ) ) +
+				this.input( 'Email (optional)', 'contact.email', 'email', this.isFieldInvalid( 'email' ) ? 'is-invalid' : '', '', this.contactFieldError( 'email' ) ) +
 				'</div>' +
 				this.footerActions( 'back-contact', 'contact-next', this.escape( config.strings.contactContinue || 'Continue' ), '', { continueMuted: ! this.stepCanContinue( 'contact_details' ) } );
 		}
@@ -2681,7 +2836,6 @@
 					if ( 'contact.full_name' === model ) {
 						value = String( value || '' ).replace( /[^\p{L}\s'.-]/gu, '' ).replace( /\s{2,}/g, ' ' );
 						input.value = value;
-						this.state.touched.full_name = true;
 					}
 					if ( 'contact.phone' === model ) {
 						const allowed = String( value || '' ).replace( /[^0-9+\s()-]/g, '' );
@@ -2709,14 +2863,10 @@
 							// Some inputs (number, email) reject setSelectionRange — ignore.
 						}
 						value = formatted;
-						this.state.touched.phone = true;
 						if ( this.phoneDigits( value ) !== this.state.lastLookupPhone ) {
 							this.state.verifiedProfile = null;
 							this.state.isReturningClient = false;
 						}
-					}
-					if ( 'contact.email' === model ) {
-						this.state.touched.email = true;
 					}
 					if ( 'address.address_full' === model ) {
 						this.state.address.is_valid = false;
@@ -2732,17 +2882,23 @@
 				} );
 
 				const model = input.getAttribute( 'data-model' );
+				if ( 'contact.full_name' === model ) {
+					input.addEventListener( 'blur', () => {
+						this.state.touched.full_name = true;
+						this.render();
+					} );
+				}
 				if ( 'contact.phone' === model ) {
 					input.addEventListener( 'blur', () => {
 						this.state.touched.phone = true;
-						this.refreshFieldValidation( model, input );
+						this.render();
 						this.maybeLookupContact( true );
 					} );
 				}
 				if ( 'contact.email' === model ) {
 					input.addEventListener( 'blur', () => {
 						this.state.touched.email = true;
-						this.refreshFieldValidation( model, input );
+						this.render();
 					} );
 				}
 			} );
