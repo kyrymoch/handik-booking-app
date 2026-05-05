@@ -83,13 +83,18 @@ class Handik_Booking_App_Admin_System {
 		<section class="handik-admin-block">
 			<h2 class="handik-admin-section-title"><?php esc_html_e( 'Plugin', 'handik-booking-app' ); ?></h2>
 			<?php
+			$cron = wp_next_scheduled( 'handik_booking_app_dummy_cron' ) ? wp_date( 'Y-m-d H:i:s', wp_next_scheduled( 'handik_booking_app_dummy_cron' ) ) : __( 'No plugin cron jobs scheduled', 'handik-booking-app' );
+
 			echo Handik_Booking_App_Admin_Helpers::detail_list_markup( array(
 				__( 'Plugin version', 'handik-booking-app' )    => HANDIK_BOOKING_APP_VERSION,
 				__( 'DB schema version', 'handik-booking-app' ) => (string) get_option( Handik_Booking_App_Migrations::OPTION_NAME, '0.0.0' ),
+				__( 'Last migration ran', 'handik-booking-app' ) => (string) get_option( Handik_Booking_App_Migrations::LAST_RUN_OPTION, __( 'Never (or before 2.1.8.2)', 'handik-booking-app' ) ),
 				__( 'Required WP', 'handik-booking-app' )       => '6.4',
 				__( 'Required PHP', 'handik-booking-app' )      => '7.4',
 				__( 'Current PHP', 'handik-booking-app' )       => PHP_VERSION,
 				__( 'Current MySQL', 'handik-booking-app' )     => (string) $wpdb->db_version(),
+				__( 'WP version', 'handik-booking-app' )        => get_bloginfo( 'version' ),
+				__( 'Cron status', 'handik-booking-app' )       => $cron,
 				__( 'Site URL', 'handik-booking-app' )          => home_url(),
 			) );
 			?>
@@ -114,6 +119,28 @@ class Handik_Booking_App_Admin_System {
 					<button type="button" class="button" data-handik-action="clear-transients">🧹 <?php esc_html_e( 'Clear plugin transients', 'handik-booking-app' ); ?></button>
 				</p>
 			</div>
+		</section>
+
+		<section class="handik-admin-block">
+			<h2 class="handik-admin-section-title"><?php esc_html_e( 'Export tables to CSV', 'handik-booking-app' ); ?></h2>
+			<p class="handik-admin-muted"><?php esc_html_e( 'Each link downloads the entire table as CSV. Use this when sharing data with support or backing up before a risky change.', 'handik-booking-app' ); ?></p>
+			<p class="handik-admin-export-links">
+				<?php
+				$rest = trailingslashit( rest_url( 'handik-booking-app/v1' ) );
+				$nonce = wp_create_nonce( 'wp_rest' );
+				$tables = array(
+					'job_requests' => __( 'Job requests', 'handik-booking-app' ),
+					'bookings'     => __( 'Bookings', 'handik-booking-app' ),
+					'contacts'     => __( 'Contacts', 'handik-booking-app' ),
+					'addresses'    => __( 'Addresses', 'handik-booking-app' ),
+					'messages'     => __( 'Messages', 'handik-booking-app' ),
+				);
+				foreach ( $tables as $key => $label ) :
+					$url = add_query_arg( '_wpnonce', $nonce, $rest . 'admin/export/' . $key );
+				?>
+					<a class="button" href="<?php echo esc_url( $url ); ?>">⬇ <?php echo esc_html( $label ); ?></a>
+				<?php endforeach; ?>
+			</p>
 		</section>
 		<?php
 	}

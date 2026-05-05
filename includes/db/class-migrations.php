@@ -5,7 +5,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 class Handik_Booking_App_Migrations {
-	const OPTION_NAME = 'handik_booking_app_db_version';
+	const OPTION_NAME      = 'handik_booking_app_db_version';
+	const LAST_RUN_OPTION  = 'handik_booking_app_db_last_run';
 
 	/**
 	 * @var array<string, string>
@@ -33,6 +34,7 @@ class Handik_Booking_App_Migrations {
 			$migration = new $class_name();
 			$migration->up();
 			update_option( self::OPTION_NAME, $version, false );
+			update_option( self::LAST_RUN_OPTION, current_time( 'mysql' ), false );
 		}
 	}
 }

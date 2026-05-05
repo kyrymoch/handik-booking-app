@@ -392,6 +392,34 @@ class Handik_Booking_App_Job_Requests_Service {
 	}
 
 	/**
+	 * Count how many requests reference each given task id (for the catalog
+	 * editor "in use by N requests" badge). The match is substring-based on
+	 * the JSON column — false-positives are possible if a task id is a prefix
+	 * of another id, but it's good enough for an admin warning.
+	 *
+	 * @param array<int, string> $task_ids Task IDs.
+	 * @return array<string, int>
+	 */
+	public function count_references_for_tasks( array $task_ids ) {
+		global $wpdb;
+		$table = Handik_Booking_App_DB::table( 'job_requests' );
+		$out   = array();
+		foreach ( $task_ids as $task_id ) {
+			$tid = (string) $task_id;
+			if ( '' === $tid ) {
+				continue;
+			}
+			$out[ $tid ] = (int) $wpdb->get_var(
+				$wpdb->prepare(
+					"SELECT COUNT(*) FROM {$table} WHERE selected_tasks_json LIKE %s",
+					'%' . $wpdb->esc_like( '"' . $tid . '"' ) . '%'
+				)
+			);
+		}
+		return $out;
+	}
+
+	/**
 	 * @param int $contact_id Contact.
 	 * @return array<string, int>
 	 */

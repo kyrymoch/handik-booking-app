@@ -209,7 +209,7 @@ class Handik_Booking_App_Admin {
 	}
 
 	public function render_settings() {
-		$page = $this->page_settings ?: ( $this->page_settings = new Handik_Booking_App_Admin_Settings( $this->settings, $this->service_catalog ) );
+		$page = $this->page_settings ?: ( $this->page_settings = new Handik_Booking_App_Admin_Settings( $this->settings, $this->service_catalog, $this->job_requests ) );
 		$page->render();
 	}
 

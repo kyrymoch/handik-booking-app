@@ -47,6 +47,8 @@ class Handik_Booking_App_Migration_130 {
 		require_once ABSPATH . 'wp-admin/includes/upgrade.php';
 		$charset_collate = $wpdb->get_charset_collate();
 
+		// dbDelta is whitespace-sensitive — keep two spaces between PRIMARY KEY
+		// and "(id)", one column per line, no trailing whitespace.
 		$messages_sql = "CREATE TABLE {$messages} (
 			id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
 			request_id BIGINT(20) UNSIGNED NOT NULL DEFAULT 0,
@@ -55,7 +57,7 @@ class Handik_Booking_App_Migration_130 {
 			content LONGTEXT NOT NULL,
 			metadata LONGTEXT NULL DEFAULT NULL,
 			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			PRIMARY KEY (id),
+			PRIMARY KEY  (id),
 			KEY request_id_idx (request_id),
 			KEY thread_id_idx (thread_id),
 			KEY created_at_idx (created_at)

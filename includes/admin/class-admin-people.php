@@ -358,8 +358,16 @@ class Handik_Booking_App_Admin_People {
 			<?php else : ?>
 				<ul class="handik-admin-addr-list">
 					<?php foreach ( $addresses as $a ) : ?>
-						<li class="handik-admin-addr" data-address-id="<?php echo esc_attr( (string) (int) $a['id'] ); ?>">
+						<li class="handik-admin-addr"
+							data-address-id="<?php echo esc_attr( (string) (int) $a['id'] ); ?>"
+							data-label="<?php echo esc_attr( (string) ( $a['label'] ?? '' ) ); ?>"
+							data-address-full="<?php echo esc_attr( (string) ( $a['address_full'] ?? '' ) ); ?>"
+							data-address-unit="<?php echo esc_attr( (string) ( $a['address_unit'] ?? '' ) ); ?>"
+							data-city="<?php echo esc_attr( (string) ( $a['city'] ?? '' ) ); ?>"
+							data-state="<?php echo esc_attr( (string) ( $a['state'] ?? '' ) ); ?>"
+							data-zip="<?php echo esc_attr( (string) ( $a['zip_code'] ?? '' ) ); ?>">
 							<div class="handik-admin-addr__main">
+								<?php if ( ! empty( $a['label'] ) ) : ?><strong class="handik-admin-addr__label"><?php echo esc_html( (string) $a['label'] ); ?>:</strong> <?php endif; ?>
 								<strong><?php echo esc_html( (string) ( $a['address_full'] ?? '' ) ); ?></strong>
 								<?php if ( ! empty( $a['address_unit'] ) ) : ?><span class="handik-admin-muted">· <?php echo esc_html( (string) $a['address_unit'] ); ?></span><?php endif; ?>
 								<?php if ( ! empty( $a['is_primary'] ) ) : ?><span class="handik-admin-pill handik-admin-pill--info"><?php esc_html_e( 'primary', 'handik-booking-app' ); ?></span><?php endif; ?>

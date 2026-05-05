@@ -17,10 +17,13 @@ class Handik_Booking_App_Admin_Settings {
 	protected $settings;
 	/** @var Handik_Booking_App_Service_Catalog_Service */
 	protected $catalog;
+	/** @var Handik_Booking_App_Job_Requests_Service|null */
+	protected $job_requests;
 
-	public function __construct( $settings, $catalog ) {
-		$this->settings = $settings;
-		$this->catalog  = $catalog;
+	public function __construct( $settings, $catalog, $job_requests = null ) {
+		$this->settings     = $settings;
+		$this->catalog      = $catalog;
+		$this->job_requests = $job_requests;
 	}
 
 	public function render() {
@@ -262,6 +265,17 @@ class Handik_Booking_App_Admin_Settings {
 	protected function render_catalog_tab() {
 		$catalog = $this->catalog ? $this->catalog->get_catalog() : array();
 		$rest = trailingslashit( rest_url( 'handik-booking-app/v1' ) );
+
+		// Pre-compute "in use by X" counts for every task in one query batch.
+		$all_task_ids = array();
+		foreach ( $catalog as $g ) {
+			foreach ( ( $g['tasks'] ?? array() ) as $t ) {
+				if ( ! empty( $t['id'] ) ) {
+					$all_task_ids[] = (string) $t['id'];
+				}
+			}
+		}
+		$usage = ( $this->job_requests && $all_task_ids ) ? $this->job_requests->count_references_for_tasks( $all_task_ids ) : array();
 		?>
 		<p class="handik-admin-page-subtitle"><?php esc_html_e( 'Drag to reorder. Type to edit. Changes auto-save on blur.', 'handik-booking-app' ); ?></p>
 		<div class="handik-catalog-editor"
@@ -270,7 +284,7 @@ class Handik_Booking_App_Admin_Settings {
 			data-rest-nonce="<?php echo esc_attr( wp_create_nonce( 'wp_rest' ) ); ?>">
 			<div class="handik-catalog-editor__groups" data-handik-groups>
 				<?php foreach ( $catalog as $g_idx => $group ) : ?>
-					<?php echo $this->catalog_group_markup( $g_idx, $group ); ?>
+					<?php echo $this->catalog_group_markup( $g_idx, $group, $usage ); ?>
 				<?php endforeach; ?>
 			</div>
 			<p>
@@ -281,7 +295,7 @@ class Handik_Booking_App_Admin_Settings {
 		<?php
 	}
 
-	protected function catalog_group_markup( $g_idx, array $group ) {
+	protected function catalog_group_markup( $g_idx, array $group, array $usage = array() ) {
 		ob_start();
 		?>
 		<div class="handik-catalog-group" data-handik-group>
@@ -295,7 +309,7 @@ class Handik_Booking_App_Admin_Settings {
 			</div>
 			<div class="handik-catalog-group__tasks" data-handik-tasks>
 				<?php foreach ( ( $group['tasks'] ?? array() ) as $t_idx => $task ) : ?>
-					<?php echo $this->catalog_task_markup( $g_idx, $t_idx, $task ); ?>
+					<?php echo $this->catalog_task_markup( $g_idx, $t_idx, $task, $usage ); ?>
 				<?php endforeach; ?>
 			</div>
 			<p>
@@ -306,7 +320,9 @@ class Handik_Booking_App_Admin_Settings {
 		return (string) ob_get_clean();
 	}
 
-	protected function catalog_task_markup( $g_idx, $t_idx, array $task ) {
+	protected function catalog_task_markup( $g_idx, $t_idx, array $task, array $usage = array() ) {
+		$task_id = (string) ( $task['id'] ?? '' );
+		$ref_count = ( $task_id !== '' && isset( $usage[ $task_id ] ) ) ? (int) $usage[ $task_id ] : 0;
 		ob_start();
 		?>
 		<div class="handik-catalog-task" data-handik-task>
@@ -325,6 +341,11 @@ class Handik_Booking_App_Admin_Settings {
 				</label>
 			</div>
 			<div class="handik-catalog-task__actions">
+				<?php if ( $ref_count > 0 ) : ?>
+					<span class="handik-admin-pill handik-admin-pill--info" title="<?php esc_attr_e( 'This task is referenced by existing requests — deleting will not affect those rows but will remove it from the public app.', 'handik-booking-app' ); ?>">
+						<?php echo esc_html( sprintf( _n( 'in use by %d request', 'in use by %d requests', $ref_count, 'handik-booking-app' ), $ref_count ) ); ?>
+					</span>
+				<?php endif; ?>
 				<button type="button" class="button-link" data-handik-duplicate-task><?php esc_html_e( 'Duplicate', 'handik-booking-app' ); ?></button>
 				<button type="button" class="button-link-delete" data-handik-remove-task><?php esc_html_e( 'Remove', 'handik-booking-app' ); ?></button>
 			</div>

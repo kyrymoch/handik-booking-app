@@ -1324,6 +1324,40 @@ a.handik-admin-today-card-link:focus-visible .handik-admin-today-card {
 	object-fit: contain;
 }
 
+/* --------- Button spinner (F2) --------------------------------------- */
+
+.handik-admin-spinner {
+	display: inline-block;
+	width: 12px;
+	height: 12px;
+	border: 2px solid currentColor;
+	border-right-color: transparent;
+	border-radius: 50%;
+	animation: handik-spin 0.8s linear infinite;
+	vertical-align: middle;
+}
+
+.is-loading {
+	pointer-events: none;
+	opacity: 0.85;
+}
+
+@keyframes handik-spin {
+	to { transform: rotate(360deg); }
+}
+
+/* --------- Address admin labels -------------------------------------- */
+
+.handik-admin-addr__label {
+	color: #475569;
+}
+
+.handik-admin-export-links {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+}
+
 /* --------- Reduced motion -------------------------------------------- */
 
 @media (prefers-reduced-motion: reduce) {

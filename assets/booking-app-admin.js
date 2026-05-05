@@ -26,13 +26,14 @@
 		const opts = options || {};
 		const base = ctx && ctx.dataset.restBase ? ctx.dataset.restBase : config.restBase;
 		const nonce = ctx && ctx.dataset.restNonce ? ctx.dataset.restNonce : config.restNonce;
-		const headers = { 'Content-Type': 'application/json', 'X-WP-Nonce': nonce };
+		const headers = { 'X-WP-Nonce': nonce };
 		const init = {
 			method: opts.method || 'POST',
 			credentials: 'same-origin',
 			headers: headers
 		};
 		if ( opts.body ) {
+			headers['Content-Type'] = 'application/json';
 			init.body = JSON.stringify( opts.body );
 		}
 		return window.fetch( base + path, init ).then( function( response ) {
@@ -45,6 +46,25 @@
 				return payload;
 			} );
 		} );
+	}
+
+	// ============================================================
+	// Button loading state (F2)
+	// ============================================================
+
+	function withButtonLoading( btn, fn ) {
+		if ( ! btn ) { return Promise.resolve( fn() ); }
+		const original = btn.innerHTML;
+		btn.disabled = true;
+		btn.classList.add( 'is-loading' );
+		btn.innerHTML = '<span class="handik-admin-spinner" aria-hidden="true"></span> ' + ( i18n.placeholder || '…' );
+		return Promise.resolve()
+			.then( fn )
+			.finally( function() {
+				btn.disabled = false;
+				btn.classList.remove( 'is-loading' );
+				btn.innerHTML = original;
+			} );
 	}
 
 	// ============================================================
@@ -173,6 +193,65 @@
 		} );
 	}
 
+	function openAddressEditModal( values ) {
+		// Custom modal w/ several inputs. Returns Promise<{label, address_full, ...}|null>
+		return new Promise( function( resolve ) {
+			const backdrop = document.createElement( 'div' );
+			backdrop.className = 'handik-admin-modal-backdrop';
+			backdrop.innerHTML =
+				'<div class="handik-admin-modal" role="dialog" aria-modal="true">' +
+					'<h3>' + ( i18n.addressEdit || 'Edit address' ) + '</h3>' +
+					'<div class="handik-admin-modal__body">' +
+						'<label class="handik-admin-field"><span>Label (e.g. Home)</span><input type="text" data-field="label" value="' + escapeAttr( values.label ) + '" /></label>' +
+						'<label class="handik-admin-field"><span>Full address</span><input type="text" data-field="address_full" autocomplete="street-address" value="' + escapeAttr( values.address_full ) + '" /></label>' +
+						'<label class="handik-admin-field"><span>Unit / apt</span><input type="text" data-field="address_unit" autocomplete="address-line2" value="' + escapeAttr( values.address_unit ) + '" /></label>' +
+						'<div class="handik-admin-grid">' +
+							'<label class="handik-admin-field"><span>City</span><input type="text" data-field="city" autocomplete="address-level2" value="' + escapeAttr( values.city ) + '" /></label>' +
+							'<label class="handik-admin-field"><span>State</span><input type="text" data-field="state" autocomplete="address-level1" value="' + escapeAttr( values.state ) + '" /></label>' +
+							'<label class="handik-admin-field"><span>ZIP</span><input type="text" data-field="zip_code" autocomplete="postal-code" inputmode="numeric" value="' + escapeAttr( values.zip_code ) + '" /></label>' +
+						'</div>' +
+					'</div>' +
+					'<div class="handik-admin-modal__actions">' +
+						'<button type="button" class="button" data-action="cancel">' + ( i18n.cancel || 'Cancel' ) + '</button>' +
+						'<button type="button" class="button button-primary" data-action="save">' + ( i18n.save || 'Save' ) + '</button>' +
+					'</div>' +
+				'</div>';
+			function close( result ) {
+				if ( backdrop.parentNode ) { backdrop.parentNode.removeChild( backdrop ); }
+				document.removeEventListener( 'keydown', onKey, true );
+				resolve( result );
+			}
+			function onKey( event ) { if ( 'Escape' === event.key ) { close( null ); } }
+			document.addEventListener( 'keydown', onKey, true );
+			backdrop.addEventListener( 'click', function( event ) {
+				if ( event.target === backdrop ) { close( null ); return; }
+				const btn = event.target.closest( '[data-action]' );
+				if ( ! btn ) { return; }
+				if ( 'cancel' === btn.dataset.action ) {
+					close( null );
+				}
+				if ( 'save' === btn.dataset.action ) {
+					const out = {};
+					backdrop.querySelectorAll( '[data-field]' ).forEach( function( input ) {
+						out[ input.dataset.field ] = input.value;
+					} );
+					close( out );
+				}
+			} );
+			document.body.appendChild( backdrop );
+			window.setTimeout( function() {
+				const first = backdrop.querySelector( '[data-field="address_full"]' );
+				if ( first ) { first.focus(); }
+			}, 0 );
+		} );
+	}
+
+	function escapeAttr( s ) {
+		return String( s == null ? '' : s ).replace( /[&"<>]/g, function( c ) {
+			return ( { '&': '&amp;', '"': '&quot;', '<': '&lt;', '>': '&gt;' } )[ c ];
+		} );
+	}
+
 	// ============================================================
 	// Booking detail actions (B4)
 	// ============================================================
@@ -278,17 +357,18 @@
 						item.remove();
 					}
 					if ( 'addr-edit' === action ) {
-						const current = ( item.querySelector( '.handik-admin-addr__main strong' ) || {} ).textContent || '';
-						const value = await openModal( {
-							title: i18n.addressEdit || 'Edit address',
-							textarea: true,
-							defaultValue: current
+						const result = await openAddressEditModal( {
+							label:        item.dataset.label || '',
+							address_full: item.dataset.addressFull || '',
+							address_unit: item.dataset.addressUnit || '',
+							city:         item.dataset.city || '',
+							state:        item.dataset.state || '',
+							zip_code:     item.dataset.zip || ''
 						} );
-						if ( null === value ) { return; }
-						await adminFetch( ctx, 'admin/address/' + addressId, { method: 'POST', body: { address_full: value } } );
+						if ( null === result ) { return; }
+						await adminFetch( ctx, 'admin/address/' + addressId, { method: 'POST', body: result } );
 						toast( i18n.saved || 'Saved', 'success' );
-						const strong = item.querySelector( '.handik-admin-addr__main strong' );
-						if ( strong ) { strong.textContent = value; }
+						window.setTimeout( function() { window.location.reload(); }, 600 );
 					}
 				} catch ( err ) {
 					toast( i18n.saveFailed || 'Save failed', 'error', 3500 );
@@ -520,26 +600,25 @@
 
 	function initSystemTools() {
 		document.querySelectorAll( '[data-handik-system-tools]' ).forEach( function( ctx ) {
-			ctx.addEventListener( 'click', async function( event ) {
+			ctx.addEventListener( 'click', function( event ) {
 				const target = event.target.closest( '[data-handik-action]' );
 				if ( ! target ) { return; }
 				event.preventDefault();
 				const action = target.dataset.handikAction;
-				target.disabled = true;
-				try {
-					if ( 'run-migrations' === action ) {
-						const r = await adminFetch( ctx, 'admin/migrations/run', {} );
-						toast( 'DB version: ' + r.db_version, 'success' );
+				withButtonLoading( target, async function() {
+					try {
+						if ( 'run-migrations' === action ) {
+							const r = await adminFetch( ctx, 'admin/migrations/run', {} );
+							toast( 'DB version: ' + r.db_version, 'success' );
+						}
+						if ( 'clear-transients' === action ) {
+							await adminFetch( ctx, 'admin/transients/clear', {} );
+							toast( 'Transients cleared', 'success' );
+						}
+					} catch ( err ) {
+						toast( i18n.saveFailed || 'Failed', 'error' );
 					}
-					if ( 'clear-transients' === action ) {
-						await adminFetch( ctx, 'admin/transients/clear', {} );
-						toast( 'Transients cleared', 'success' );
-					}
-				} catch ( err ) {
-					toast( i18n.saveFailed || 'Failed', 'error' );
-				} finally {
-					target.disabled = false;
-				}
+				} );
 			} );
 		} );
 	}

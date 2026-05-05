@@ -200,6 +200,15 @@ class Handik_Booking_App_REST_API {
 				'permission_callback' => array( $this, 'admin_permission' ),
 			)
 		);
+		register_rest_route(
+			$namespace,
+			'/admin/export/(?P<table>[a-z_]+)',
+			array(
+				'methods'             => WP_REST_Server::READABLE,
+				'callback'            => array( $this, 'admin_export_table_csv' ),
+				'permission_callback' => array( $this, 'admin_permission' ),
+			)
+		);
 	}
 
 	/**
@@ -514,6 +523,46 @@ class Handik_Booking_App_REST_API {
 			$this->logger->info( 'Admin cleared plugin transients.', array( 'admin_id' => get_current_user_id() ) );
 		}
 		return rest_ensure_response( array( 'success' => true ) );
+	}
+
+	public function admin_export_table_csv( WP_REST_Request $request ) {
+		global $wpdb;
+		// Defence-in-depth — admin_permission already gated by capability,
+		// but for a public-link-style URL we also accept a wp_rest nonce in
+		// the query, mirroring how the logs CSV export verifies its nonce.
+		$nonce = $request->get_param( '_wpnonce' );
+		if ( $nonce && ! wp_verify_nonce( $nonce, 'wp_rest' ) ) {
+			return new WP_Error( 'handik_bad_nonce', __( 'Stale link — reopen the System info page and try again.', 'handik-booking-app' ), array( 'status' => 403 ) );
+		}
+		$table_short = sanitize_key( $request['table'] );
+		$allowed = array( 'job_requests', 'bookings', 'contacts', 'addresses', 'messages' );
+		if ( ! in_array( $table_short, $allowed, true ) ) {
+			return new WP_Error( 'handik_invalid_table', __( 'Table not allowed.', 'handik-booking-app' ), array( 'status' => 400 ) );
+		}
+		$table = Handik_Booking_App_DB::table( $table_short );
+		$exists = $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $table ) );
+		if ( ! $exists ) {
+			return new WP_Error( 'handik_no_table', __( 'Table missing — run migrations first.', 'handik-booking-app' ), array( 'status' => 404 ) );
+		}
+		$rows = $wpdb->get_results( "SELECT * FROM {$table} ORDER BY id ASC", ARRAY_A );
+		$rows = is_array( $rows ) ? $rows : array();
+
+		nocache_headers();
+		header( 'Content-Type: text/csv; charset=UTF-8' );
+		header( 'Content-Disposition: attachment; filename="handik-' . $table_short . '-' . gmdate( 'Y-m-d-His' ) . '.csv"' );
+		$out = fopen( 'php://output', 'w' );
+		if ( ! empty( $rows ) ) {
+			fputcsv( $out, array_keys( $rows[0] ) );
+			foreach ( $rows as $row ) {
+				fputcsv( $out, array_map( static function( $v ) {
+					return is_null( $v ) ? '' : (string) $v;
+				}, $row ) );
+			}
+		} else {
+			fputcsv( $out, array( 'empty' ) );
+		}
+		fclose( $out );
+		exit;
 	}
 
 	public function admin_migrations_run( WP_REST_Request $request ) {
