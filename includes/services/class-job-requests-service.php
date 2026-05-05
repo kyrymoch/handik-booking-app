@@ -269,6 +269,200 @@ class Handik_Booking_App_Job_Requests_Service {
 	}
 
 	/**
+	 * Drafts whose updated_at is older than $hours hours back.
+	 *
+	 * @return int
+	 */
+	public function count_drafts_older_than( $hours = 24 ) {
+		global $wpdb;
+		$table  = Handik_Booking_App_DB::table( 'job_requests' );
+		$cutoff = gmdate( 'Y-m-d H:i:s', time() - max( 1, (int) $hours ) * HOUR_IN_SECONDS );
+		return (int) $wpdb->get_var(
+			$wpdb->prepare( "SELECT COUNT(*) FROM {$table} WHERE status = 'draft' AND updated_at < %s", $cutoff )
+		);
+	}
+
+	/**
+	 * @return array<int, array<string, mixed>>
+	 */
+	public function list_drafts_older_than( $hours = 24, $limit = 50 ) {
+		global $wpdb;
+		$table  = Handik_Booking_App_DB::table( 'job_requests' );
+		$cutoff = gmdate( 'Y-m-d H:i:s', time() - max( 1, (int) $hours ) * HOUR_IN_SECONDS );
+		$rows   = $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT * FROM {$table} WHERE status = 'draft' AND updated_at < %s ORDER BY updated_at DESC LIMIT %d",
+				$cutoff,
+				max( 1, (int) $limit )
+			),
+			ARRAY_A
+		);
+		return is_array( $rows ) ? array_map( array( $this, 'hydrate_row' ), $rows ) : array();
+	}
+
+	/**
+	 * Requests in 'ready_for_booking' state but with no booking yet, within the last N days.
+	 *
+	 * @return int
+	 */
+	public function count_ready_not_booked( $days = 7 ) {
+		global $wpdb;
+		$jr   = Handik_Booking_App_DB::table( 'job_requests' );
+		$bk   = Handik_Booking_App_DB::table( 'bookings' );
+		$cut  = gmdate( 'Y-m-d H:i:s', time() - max( 1, (int) $days ) * DAY_IN_SECONDS );
+		return (int) $wpdb->get_var(
+			$wpdb->prepare(
+				"SELECT COUNT(*) FROM {$jr} jr LEFT JOIN {$bk} bk ON bk.job_request_id = jr.id WHERE jr.status = 'ready_for_booking' AND jr.updated_at >= %s AND bk.id IS NULL",
+				$cut
+			)
+		);
+	}
+
+	/**
+	 * @return array<int, array<string, mixed>>
+	 */
+	public function list_ready_not_booked( $days = 7, $limit = 50 ) {
+		global $wpdb;
+		$jr  = Handik_Booking_App_DB::table( 'job_requests' );
+		$bk  = Handik_Booking_App_DB::table( 'bookings' );
+		$cut = gmdate( 'Y-m-d H:i:s', time() - max( 1, (int) $days ) * DAY_IN_SECONDS );
+		$rows = $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT jr.* FROM {$jr} jr LEFT JOIN {$bk} bk ON bk.job_request_id = jr.id WHERE jr.status = 'ready_for_booking' AND jr.updated_at >= %s AND bk.id IS NULL ORDER BY jr.updated_at DESC LIMIT %d",
+				$cut,
+				max( 1, (int) $limit )
+			),
+			ARRAY_A
+		);
+		return is_array( $rows ) ? array_map( array( $this, 'hydrate_row' ), $rows ) : array();
+	}
+
+	/**
+	 * Unsafe routings flagged in the last N days.
+	 *
+	 * @return int
+	 */
+	public function count_unsafe_in_last_days( $days = 7 ) {
+		global $wpdb;
+		$table = Handik_Booking_App_DB::table( 'job_requests' );
+		$cut   = gmdate( 'Y-m-d H:i:s', time() - max( 1, (int) $days ) * DAY_IN_SECONDS );
+		return (int) $wpdb->get_var(
+			$wpdb->prepare( "SELECT COUNT(*) FROM {$table} WHERE unsafe_flag = 1 AND updated_at >= %s", $cut )
+		);
+	}
+
+	/**
+	 * @return array<int, array<string, mixed>>
+	 */
+	public function list_unsafe_in_last_days( $days = 7, $limit = 50 ) {
+		global $wpdb;
+		$table = Handik_Booking_App_DB::table( 'job_requests' );
+		$cut   = gmdate( 'Y-m-d H:i:s', time() - max( 1, (int) $days ) * DAY_IN_SECONDS );
+		$rows  = $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT * FROM {$table} WHERE unsafe_flag = 1 AND updated_at >= %s ORDER BY updated_at DESC LIMIT %d",
+				$cut,
+				max( 1, (int) $limit )
+			),
+			ARRAY_A
+		);
+		return is_array( $rows ) ? array_map( array( $this, 'hydrate_row' ), $rows ) : array();
+	}
+
+	/**
+	 * Sum of total_estimate_high (admin) for requests booked inside a window.
+	 *
+	 * @return float
+	 */
+	public function sum_estimate_high_for_bookings_in_window( $from_utc, $to_utc ) {
+		global $wpdb;
+		$jr = Handik_Booking_App_DB::table( 'job_requests' );
+		$bk = Handik_Booking_App_DB::table( 'bookings' );
+		$rows = $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT jr.app_state_json FROM {$jr} jr INNER JOIN {$bk} bk ON bk.job_request_id = jr.id WHERE bk.start_time >= %s AND bk.start_time < %s",
+				$from_utc,
+				$to_utc
+			),
+			ARRAY_A
+		);
+		$total = 0.0;
+		foreach ( (array) $rows as $row ) {
+			if ( empty( $row['app_state_json'] ) ) {
+				continue;
+			}
+			$decoded = json_decode( (string) $row['app_state_json'], true );
+			if ( ! is_array( $decoded ) ) {
+				continue;
+			}
+			$total += (float) ( $decoded['total_estimate_high'] ?? 0 );
+		}
+		return $total;
+	}
+
+	/**
+	 * Count how many requests reference each given task id (for the catalog
+	 * editor "in use by N requests" badge). The match is substring-based on
+	 * the JSON column — false-positives are possible if a task id is a prefix
+	 * of another id, but it's good enough for an admin warning.
+	 *
+	 * @param array<int, string> $task_ids Task IDs.
+	 * @return array<string, int>
+	 */
+	public function count_references_for_tasks( array $task_ids ) {
+		global $wpdb;
+		$table = Handik_Booking_App_DB::table( 'job_requests' );
+		$out   = array();
+		foreach ( $task_ids as $task_id ) {
+			$tid = (string) $task_id;
+			if ( '' === $tid ) {
+				continue;
+			}
+			$out[ $tid ] = (int) $wpdb->get_var(
+				$wpdb->prepare(
+					"SELECT COUNT(*) FROM {$table} WHERE selected_tasks_json LIKE %s",
+					'%' . $wpdb->esc_like( '"' . $tid . '"' ) . '%'
+				)
+			);
+		}
+		return $out;
+	}
+
+	/**
+	 * @param int $contact_id Contact.
+	 * @return array<string, int>
+	 */
+	public function counts_for_contact( $contact_id ) {
+		global $wpdb;
+		$contact_id = (int) $contact_id;
+		if ( $contact_id <= 0 ) {
+			return array( 'requests' => 0, 'bookings' => 0, 'addresses' => 0, 'last_seen' => 0 );
+		}
+		$jr  = Handik_Booking_App_DB::table( 'job_requests' );
+		$bk  = Handik_Booking_App_DB::table( 'bookings' );
+		$ad  = Handik_Booking_App_DB::table( 'addresses' );
+		$req = (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM {$jr} WHERE contact_id = %d", $contact_id ) );
+		$bk_count = (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM {$bk} bk INNER JOIN {$jr} jr ON jr.id = bk.job_request_id WHERE jr.contact_id = %d", $contact_id ) );
+		$addr = (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM {$ad} WHERE contact_id = %d AND ( deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00' )", $contact_id ) );
+		$last = (string) $wpdb->get_var(
+			$wpdb->prepare(
+				"SELECT GREATEST(
+					COALESCE( ( SELECT MAX( updated_at ) FROM {$jr} WHERE contact_id = %d ), '1970-01-01' ),
+					COALESCE( ( SELECT MAX( bk.updated_at ) FROM {$bk} bk INNER JOIN {$jr} jr ON jr.id = bk.job_request_id WHERE jr.contact_id = %d ), '1970-01-01' )
+				)",
+				$contact_id,
+				$contact_id
+			)
+		);
+		return array(
+			'requests'  => $req,
+			'bookings'  => $bk_count,
+			'addresses' => $addr,
+			'last_seen' => $last ? strtotime( $last ) : 0,
+		);
+	}
+
+	/**
 	 * @param int $contact_id Contact ID.
 	 * @param int $limit Limit.
 	 * @return array<int, array<string, mixed>>

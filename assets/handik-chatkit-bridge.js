@@ -276,6 +276,70 @@
 			}
 		};
 
+		// --- B3: chat transcript mirror ----------------------------------
+		// Send each user/assistant message we can detect to the admin's
+		// /messages/record endpoint so the booking detail can later show a
+		// real transcript instead of grepping plugin logs.
+		const recordedMessageHashes = new Set();
+		function shortHash( role, text ) {
+			let h = 5381;
+			const input = role + '' + text;
+			for ( let i = 0; i < input.length; i++ ) {
+				h = ( h * 33 ) ^ input.charCodeAt( i );
+			}
+			return ( h >>> 0 ).toString( 36 );
+		}
+		function extractMessageText( detail ) {
+			if ( ! detail || 'object' !== typeof detail ) {
+				return '';
+			}
+			const candidates = [
+				detail.content,
+				detail.text,
+				detail.message,
+				detail.body,
+				detail.data && detail.data.content,
+				detail.data && detail.data.text,
+				detail.data && detail.data.message,
+				Array.isArray( detail.content ) && detail.content.map( function( part ) {
+					return part && typeof part === 'object' ? ( part.text || part.content || '' ) : String( part || '' );
+				} ).join( ' ' )
+			];
+			for ( const candidate of candidates ) {
+				if ( typeof candidate === 'string' && candidate.trim() ) {
+					return candidate.trim();
+				}
+			}
+			return '';
+		}
+		function recordMessage( role, content, metadata ) {
+			if ( ! content ) {
+				return;
+			}
+			const config = window.HandikBookingAppConfig;
+			if ( ! config || ! config.restBase || ! record.options.requestId || ! record.options.draftToken ) {
+				return;
+			}
+			const text = String( content ).slice( 0, 16000 );
+			const hash = shortHash( role || 'unknown', text );
+			if ( recordedMessageHashes.has( hash ) ) {
+				return;
+			}
+			recordedMessageHashes.add( hash );
+			requestJson( config.restBase + 'messages/record', {
+				request_id:  record.options.requestId,
+				draft_token: record.options.draftToken,
+				role:        role || 'user',
+				content:     text,
+				thread_id:   record.latestThreadId || record.options.threadId || '',
+				metadata:    metadata || {}
+			} ).then( function() {
+				log( 'debug', 'Mirrored chat message to admin.', { role: role, length: text.length } );
+			} ).catch( function( error ) {
+				log( 'debug', 'Failed to mirror chat message.', { role: role, error: summarizeError( error ) } );
+			} );
+		}
+
 		const saveStructuredResult = function( result, source ) {
 			const normalized = normalizeResult( result );
 			const signature = JSON.stringify( normalized );
@@ -734,6 +798,15 @@
 						attachmentsCount: detail.data && detail.data.attachmentsCount ? detail.data.attachmentsCount : 0
 					} );
 				}
+				if ( 'composer.submit' === detail.name ) {
+					// detail.data here usually holds the user-typed string (or an array
+					// of content parts). recordMessage() de-dupes hashes so an extra
+					// fire of message-event later won't double-record.
+					const userText = extractMessageText( detail.data || detail );
+					if ( userText ) {
+						recordMessage( 'user', userText, { source: 'composer.submit' } );
+					}
+				}
 				const structured = extractStructuredResult( detail );
 				if ( structured ) {
 					saveStructuredResult( structured, 'log:' + ( detail.name || 'unknown' ) );
@@ -783,6 +856,13 @@
 				} );
 				if ( typeof record.options.onMessageActivity === 'function' ) {
 					record.options.onMessageActivity( detail );
+				}
+				const messageRole = ( detail.role === 'assistant' || detail.role === 'user' || detail.role === 'system' ) ? detail.role : '';
+				if ( messageRole ) {
+					const messageText = extractMessageText( detail );
+					if ( messageText ) {
+						recordMessage( messageRole, messageText, { source: 'chatkit.message', type: detail.type || '' } );
+					}
 				}
 				const structured = extractStructuredResult( detail );
 				if ( structured ) {

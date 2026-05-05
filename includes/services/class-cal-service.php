@@ -59,10 +59,12 @@ class Handik_Booking_App_Cal_Service {
 		if ( ! $request || empty( $request['booking_type'] ) ) {
 			return '';
 		}
+
 		$assistant_result = ! empty( $request['assistant_result'] ) && is_array( $request['assistant_result'] ) ? $request['assistant_result'] : array();
 		$app_state        = ! empty( $request['app_state'] ) && is_array( $request['app_state'] ) ? $request['app_state'] : array();
 		$suggested_duration = ! empty( $assistant_result['suggested_duration_hours'] ) ? (string) $assistant_result['suggested_duration_hours'] : (string) ( $app_state['suggested_duration_hours'] ?? '' );
 		$current_duration_minutes = $this->duration_minutes( $suggested_duration );
+
 		if ( ! empty( $request['cal_booking_url'] ) ) {
 			$stored_query = wp_parse_url( $request['cal_booking_url'], PHP_URL_QUERY );
 			$stored_args  = array();
@@ -101,20 +103,23 @@ class Handik_Booking_App_Cal_Service {
 				);
 			}
 		}
-		$map     = $this->event_map();
-		$base    = $map[ $request['booking_type'] ] ?? '';
+
+		$map  = $this->event_map();
+		$base = $map[ $request['booking_type'] ] ?? '';
 		if ( ! $base ) {
 			return '';
 		}
+
 		$contact = ! empty( $request['contact_id'] ) ? $this->contacts->get( (int) $request['contact_id'] ) : null;
-		$pricing_posture    = ! empty( $assistant_result['pricing_posture'] ) ? (string) $assistant_result['pricing_posture'] : (string) ( $app_state['pricing_posture'] ?? '' );
-		$attendee_phone     = ! empty( $contact['phone'] ) ? (string) $contact['phone'] : '';
-		$params  = array_filter(
+		$pricing_posture = ! empty( $assistant_result['pricing_posture'] ) ? (string) $assistant_result['pricing_posture'] : (string) ( $app_state['pricing_posture'] ?? '' );
+		$attendee_phone  = ! empty( $contact['phone'] ) ? (string) $contact['phone'] : '';
+		$notes           = $this->build_cal_notes( $request_id, $request, $contact );
+		$params          = array_filter(
 			array(
 				'name'                            => $contact['full_name'] ?? '',
 				'email'                           => $contact['email'] ?? '',
 				'attendeePhoneNumber'             => $attendee_phone,
-				'notes'                           => sprintf( "Alex will take care of it. Full details, photos, and the assistant's notes are saved in the admin dashboard (request #%d).", (int) $request_id ),
+				'notes'                           => $notes,
 				'metadata[handik_job_request_id]' => (string) $request_id,
 				'metadata[handik_booking_type]'   => (string) $request['booking_type'],
 				'metadata[handik_contact_id]'     => ! empty( $request['contact_id'] ) ? (string) $request['contact_id'] : '',
@@ -132,7 +137,8 @@ class Handik_Booking_App_Cal_Service {
 		if ( $duration_minutes > 0 ) {
 			$params['duration'] = (string) $duration_minutes;
 		}
-		$location_json = '';
+
+		$location_json    = '';
 		$location_address = trim( implode( ', ', array_filter( array( $request['address_full'] ?? '', $request['address_unit'] ?? '' ) ) ) );
 		if ( $location_address ) {
 			$location_json = wp_json_encode(
@@ -153,20 +159,21 @@ class Handik_Booking_App_Cal_Service {
 			);
 			$params['location'] = $location_json;
 		}
+
 		$url = $this->build_encoded_url( $base, $params );
 		$this->job_requests->set_booking_url( $request_id, $url, $request['booking_type'] );
 		if ( $this->logger ) {
 			$this->logger->debug(
 				'Cal URL encoded',
 				array(
-					'event_url'                  => $base,
-					'duration_minutes'           => $duration_minutes,
-					'suggested_duration_hours'   => $suggested_duration,
-					'has_attendee_phone_number'  => '' !== $attendee_phone,
-					'has_location'               => '' !== $location_json,
-					'final_url_length'           => strlen( $url ),
-					'location_json'              => $location_json,
-					'final_url'                  => $url,
+					'event_url'                 => $base,
+					'duration_minutes'          => $duration_minutes,
+					'suggested_duration_hours'  => $suggested_duration,
+					'has_attendee_phone_number' => '' !== $attendee_phone,
+					'has_location'              => '' !== $location_json,
+					'final_url_length'          => strlen( $url ),
+					'location_json'             => $location_json,
+					'final_url'                 => $url,
 				)
 			);
 			$this->logger->info(
@@ -234,5 +241,48 @@ class Handik_Booking_App_Cal_Service {
 
 		$query = http_build_query( $query_args, '', '&', PHP_QUERY_RFC1738 );
 		return $base . ( '' !== $query ? '?' . $query : '' ) . $fragment;
+	}
+
+	/**
+	 * Build the notes payload sent to Cal.com using the admin-editable template.
+	 *
+	 * @param int                       $request_id Request ID.
+	 * @param array<string, mixed>      $request Hydrated request row.
+	 * @param array<string, mixed>|null $contact Hydrated contact row.
+	 * @return string
+	 */
+	protected function build_cal_notes( $request_id, array $request, $contact ) {
+		$template = trim( (string) $this->settings->get( 'cal_confirmation_note', '' ) );
+		if ( '' === $template ) {
+			return sprintf( "Alex will take care of it. Full details, photos, and the assistant's notes are saved in the admin dashboard (request #%d).", (int) $request_id );
+		}
+
+		$assistant_summary = (string) ( $request['assistant_summary'] ?? '' );
+		$task_ids          = is_array( $request['selected_tasks'] ?? null ) ? $request['selected_tasks'] : array();
+		$task_summary      = '';
+		if ( ! empty( $task_ids ) && class_exists( 'Handik_Booking_App_Admin_Helpers' ) ) {
+			$plugin = function_exists( 'handik_booking_app' ) ? handik_booking_app() : null;
+			if ( $plugin && ! empty( $plugin->service_catalog ) ) {
+				$task_summary = Handik_Booking_App_Admin_Helpers::task_summary_text( $task_ids, $plugin->service_catalog, 99 );
+			}
+		}
+		if ( '' === $task_summary ) {
+			$task_summary = implode( ', ', array_map( 'strval', $task_ids ) );
+		}
+
+		$placeholders = array(
+			'request_id'        => (string) $request_id,
+			'customer_name'     => (string) ( $contact['full_name'] ?? '' ),
+			'address'           => (string) ( $request['address_full'] ?? '' ),
+			'task_summary'      => $task_summary,
+			'assistant_summary' => $assistant_summary,
+		);
+
+		$out = $template;
+		foreach ( $placeholders as $key => $value ) {
+			$out = str_replace( '{{' . $key . '}}', $value, $out );
+		}
+
+		return trim( $out );
 	}
 }

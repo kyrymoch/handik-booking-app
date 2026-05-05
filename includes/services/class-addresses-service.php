@@ -58,16 +58,113 @@ class Handik_Booking_App_Addresses_Service {
 	}
 
 	/**
-	 * @param int $contact_id Contact ID.
+	 * @param int  $contact_id Contact ID.
+	 * @param bool $include_deleted Include soft-deleted entries.
 	 * @return array<int, array<string, mixed>>
 	 */
-	public function list_for_contact( $contact_id ) {
+	public function list_for_contact( $contact_id, $include_deleted = false ) {
 		global $wpdb;
 		$table = Handik_Booking_App_DB::table( 'addresses' );
-		return $wpdb->get_results(
-			$wpdb->prepare( "SELECT * FROM {$table} WHERE contact_id = %d ORDER BY is_default DESC, updated_at DESC", $contact_id ),
-			ARRAY_A
+		$sql   = "SELECT * FROM {$table} WHERE contact_id = %d";
+		if ( ! $include_deleted ) {
+			$sql .= " AND ( deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00' )";
+		}
+		$sql .= ' ORDER BY is_primary DESC, is_default DESC, updated_at DESC';
+		return $wpdb->get_results( $wpdb->prepare( $sql, $contact_id ), ARRAY_A );
+	}
+
+	/**
+	 * @return int
+	 */
+	public function count_all() {
+		global $wpdb;
+		$table = Handik_Booking_App_DB::table( 'addresses' );
+		return (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$table} WHERE ( deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00' )" );
+	}
+
+	/**
+	 * Update editable fields on an address.
+	 *
+	 * @return bool
+	 */
+	public function admin_update( $address_id, array $patch ) {
+		global $wpdb;
+		$address_id = (int) $address_id;
+		if ( $address_id <= 0 ) {
+			return false;
+		}
+		$update = array();
+		foreach ( array( 'address_full', 'address_unit', 'city', 'state', 'zip_code', 'label' ) as $key ) {
+			if ( array_key_exists( $key, $patch ) ) {
+				$value = (string) $patch[ $key ];
+				$update[ $key ] = ( 'address_full' === $key ) ? sanitize_textarea_field( $value ) : sanitize_text_field( $value );
+			}
+		}
+		if ( empty( $update ) ) {
+			return false;
+		}
+		$wpdb->update( Handik_Booking_App_DB::table( 'addresses' ), $update, array( 'id' => $address_id ) );
+		return true;
+	}
+
+	/**
+	 * Mark an address as the primary one for its contact (sets is_primary on
+	 * this row and clears it on every other row of the same contact).
+	 *
+	 * @return bool
+	 */
+	public function set_primary( $address_id ) {
+		global $wpdb;
+		$address_id = (int) $address_id;
+		if ( $address_id <= 0 ) {
+			return false;
+		}
+		$row = $this->get( $address_id );
+		if ( ! $row ) {
+			return false;
+		}
+		$table = Handik_Booking_App_DB::table( 'addresses' );
+		$wpdb->update( $table, array( 'is_primary' => 0 ), array( 'contact_id' => (int) $row['contact_id'] ) );
+		$wpdb->update( $table, array( 'is_primary' => 1 ), array( 'id' => $address_id ) );
+		return true;
+	}
+
+	/**
+	 * Soft-delete an address.
+	 *
+	 * @return bool
+	 */
+	public function soft_delete( $address_id ) {
+		global $wpdb;
+		$address_id = (int) $address_id;
+		if ( $address_id <= 0 ) {
+			return false;
+		}
+		$wpdb->update(
+			Handik_Booking_App_DB::table( 'addresses' ),
+			array( 'deleted_at' => current_time( 'mysql' ) ),
+			array( 'id' => $address_id )
 		);
+		return true;
+	}
+
+	/**
+	 * Restore a soft-deleted address.
+	 *
+	 * @return bool
+	 */
+	public function restore( $address_id ) {
+		global $wpdb;
+		$address_id = (int) $address_id;
+		if ( $address_id <= 0 ) {
+			return false;
+		}
+		$wpdb->update(
+			Handik_Booking_App_DB::table( 'addresses' ),
+			array( 'deleted_at' => null ),
+			array( 'id' => $address_id )
+		);
+		return true;
 	}
 
 	/**
