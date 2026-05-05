@@ -1,740 +1,208 @@
-/**
- * Handik Booking App — admin styles (v2.1.8.2).
- *
- * Mobile-first: defaults assume <768px viewport, then add styles at the
- * 768px and 1024px breakpoints.
- */
-
-/* --------- Reset & common ------------------------------------------------ */
-
 .handik-admin-wrap {
-	max-width: 1280px;
-	padding-bottom: 80px; /* leave room for the bottom nav on mobile */
+	max-width: 1220px;
 }
 
-.handik-admin-page-header h1 {
-	font-size: 1.6rem;
-	margin: 0;
+.handik-admin-table-wrap {
+	overflow-x: auto;
 }
 
-.handik-admin-page-subtitle {
-	color: #475569;
-	margin: 4px 0 16px;
-	font-size: 0.95rem;
+.handik-admin-cards {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+	gap: 16px;
+	margin: 18px 0 24px;
 }
 
-.handik-admin-section-title {
-	font-size: 1.05rem;
-	margin: 0 0 12px;
-}
-
-.handik-admin-muted {
-	color: #64748b;
-}
-
-.handik-admin-empty {
-	background: #f8fafc;
-	border: 1px dashed #cbd5e1;
-	border-radius: 14px;
-	padding: 28px 18px;
-	text-align: center;
-	color: #64748b;
-}
-
-.handik-admin-callout {
-	background: #ecfeff;
-	border: 1px solid #67e8f9;
-	border-radius: 12px;
-	padding: 12px 16px;
-	margin: 12px 0;
-}
-
-.handik-admin-warning {
-	background: #fff7ed;
-	border: 1px solid #fdba74;
-	border-radius: 12px;
-	padding: 10px 14px;
-	margin: 10px 0;
-	color: #9a3412;
-}
-
-/* --------- Inputs & buttons (≥16px to avoid iOS zoom) ------------------- */
-
-.handik-admin-wrap input[type="text"],
-.handik-admin-wrap input[type="email"],
-.handik-admin-wrap input[type="tel"],
-.handik-admin-wrap input[type="number"],
-.handik-admin-wrap input[type="search"],
-.handik-admin-wrap input[type="password"],
-.handik-admin-wrap input[type="url"],
-.handik-admin-wrap textarea,
-.handik-admin-wrap select {
-	font-size: 16px !important;
-	min-height: 44px;
-	padding: 8px 12px;
-}
-
-.handik-admin-wrap textarea {
-	min-height: 80px;
-}
-
-.handik-admin-wrap .button,
-.handik-admin-wrap button {
-	min-height: 36px;
-}
-
-.handik-admin-wrap a.button,
-.handik-admin-wrap .button {
-	padding: 6px 14px;
-}
-
-/* --------- Cards / panels ----------------------------------------------- */
-
-.handik-admin-block,
-.handik-admin-panel,
-.handik-admin-card {
+.handik-admin-card,
+.handik-admin-panel {
 	background: #fff;
 	border: 1px solid #dbe3ea;
-	border-radius: 14px;
-	padding: 16px;
-	margin-bottom: 16px;
-	box-shadow: 0 6px 18px rgba(15, 23, 42, 0.04);
+	border-radius: 16px;
+	padding: 18px;
+	box-shadow: 0 10px 26px rgba(15, 23, 42, 0.06);
 }
 
 .handik-admin-card strong {
 	display: block;
-	font-size: 22px;
-	margin-bottom: 4px;
+	font-size: 24px;
+	margin-bottom: 6px;
 }
-
-/* --------- Grids -------------------------------------------------------- */
 
 .handik-admin-grid {
 	display: grid;
-	gap: 12px;
-	grid-template-columns: 1fr;
-	margin-bottom: 12px;
+	grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+	gap: 16px;
+	margin-bottom: 20px;
 }
 
-@media (min-width: 768px) {
-	.handik-admin-grid {
-		grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-	}
-}
-
-.handik-admin-field {
+.handik-admin-grid label {
 	display: flex;
 	flex-direction: column;
-	gap: 6px;
+	gap: 8px;
 	font-weight: 600;
 }
 
-.handik-admin-field__label {
-	font-size: 0.92rem;
+.handik-admin-grid input,
+.handik-admin-grid select {
+	width: 100%;
 }
-
-.handik-admin-field--textarea {
-	display: grid;
-	gap: 6px;
-}
-
-.handik-admin-field__help {
-	font-weight: normal;
-	color: #64748b;
-}
-
-.handik-admin-checkbox {
-	display: flex;
-	align-items: center;
-	gap: 10px;
-	padding: 8px 0;
-	cursor: pointer;
-}
-
-.handik-admin-checkbox input[type="checkbox"] {
-	width: 22px;
-	height: 22px;
-}
-
-/* --------- Tabs --------------------------------------------------------- */
 
 .handik-admin-tabs {
 	margin: 14px 0 18px;
-	overflow-x: auto;
-	white-space: nowrap;
-	-webkit-overflow-scrolling: touch;
-	display: block;
-	padding: 0;
-	border-bottom: 1px solid #cbd5e1;
 }
 
-.handik-admin-tab {
-	display: inline-block;
+.handik-catalog-editor {
+	display: grid;
+	gap: 18px;
 }
 
-/* --------- Detail list -------------------------------------------------- */
+.handik-catalog-group,
+.handik-catalog-task {
+	display: grid;
+	gap: 12px;
+	padding: 16px;
+	background: #f8fafc;
+	border: 1px solid #dbe3ea;
+	border-radius: 14px;
+}
+
+.handik-catalog-group__header {
+	display: flex;
+	gap: 16px;
+	align-items: end;
+	justify-content: space-between;
+}
+
+.handik-catalog-group__header label {
+	flex: 1;
+	display: grid;
+	gap: 8px;
+}
+
+.handik-catalog-group__tasks {
+	display: grid;
+	gap: 12px;
+}
+
+.handik-admin-detail-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+	gap: 16px;
+	margin-bottom: 18px;
+}
 
 .handik-admin-detail-list {
 	display: grid;
-	gap: 8px;
+	gap: 10px;
 	margin: 0;
 }
 
-.handik-admin-detail-list > div {
+.handik-admin-detail-list div {
 	padding: 10px 12px;
-	background: #f8fafc;
 	border: 1px solid #e2e8f0;
-	border-radius: 10px;
+	border-radius: 12px;
+	background: #f8fafc;
 }
 
 .handik-admin-detail-list dt {
 	font-weight: 700;
-	font-size: 0.85rem;
 	margin-bottom: 4px;
-	color: #334155;
 }
 
 .handik-admin-detail-list dd {
 	margin: 0;
+	color: #334155;
 	word-break: break-word;
 }
 
-/* --------- Pills -------------------------------------------------------- */
-
-.handik-admin-pill {
-	display: inline-flex;
-	align-items: center;
-	gap: 4px;
-	padding: 3px 10px;
-	border-radius: 999px;
-	font-size: 0.78rem;
-	font-weight: 600;
-	background: #e2e8f0;
-	color: #334155;
-	white-space: nowrap;
-}
-
-.handik-admin-pill--success { background: #dcfce7; color: #166534; }
-.handik-admin-pill--warning { background: #fef3c7; color: #92400e; }
-.handik-admin-pill--danger  { background: #fee2e2; color: #991b1b; }
-.handik-admin-pill--info    { background: #dbeafe; color: #1e3a8a; }
-.handik-admin-pill--muted   { background: #e2e8f0; color: #64748b; }
-.handik-admin-pill--neutral { background: #e2e8f0; color: #334155; }
-.handik-admin-pill--critical { background: #fecaca; color: #7f1d1d; border: 1px solid #b91c1c; }
-.handik-admin-pill--error   { background: #fee2e2; color: #991b1b; }
-.handik-admin-pill--notice  { background: #fef9c3; color: #854d0e; }
-.handik-admin-pill--debug   { background: #f1f5f9; color: #94a3b8; }
-
-/* --------- Chips (action-needed) ---------------------------------------- */
-
-.handik-admin-chip-row {
+.handik-admin-chip-list {
 	display: flex;
 	flex-wrap: wrap;
-	gap: 8px;
+	gap: 10px;
+	margin: 0 0 18px;
 }
 
 .handik-admin-chip {
 	display: inline-flex;
-	align-items: center;
-	gap: 6px;
-	padding: 8px 12px;
+	flex-direction: column;
+	gap: 2px;
+	padding: 10px 12px;
 	border-radius: 999px;
 	background: #fff;
 	border: 1px solid #cbd5e1;
-	text-decoration: none;
-	color: inherit;
-	min-height: 36px;
 }
 
-.handik-admin-chip strong {
-	font-size: 1.1rem;
-}
-
-.handik-admin-chip__dot {
-	width: 8px;
-	height: 8px;
-	border-radius: 50%;
-	background: currentColor;
-	display: inline-block;
-}
-
-.handik-admin-chip--warning { color: #b45309; border-color: #fcd34d; background: #fffbeb; }
-.handik-admin-chip--danger  { color: #b91c1c; border-color: #fca5a5; background: #fef2f2; }
-.handik-admin-chip.is-zero  { color: #94a3b8; border-color: #e2e8f0; background: #f8fafc; }
-.handik-admin-chip.is-zero strong { color: #94a3b8; }
-
-/* --------- Dashboard ---------------------------------------------------- */
-
-.handik-admin-dashboard__section {
-	margin-bottom: 18px;
-}
-
-.handik-admin-dashboard__section-header h2 {
-	margin: 0 0 10px;
-	font-size: 1.05rem;
-}
-
-.handik-admin-dashboard__cards {
-	display: grid;
-	gap: 12px;
-	grid-template-columns: 1fr;
-}
-
-@media (min-width: 768px) {
-	.handik-admin-dashboard__cards {
-		grid-template-columns: repeat(3, 1fr);
-	}
-}
-
-.handik-admin-today-card {
-	display: grid;
-	gap: 4px;
-	padding: 16px;
-	background: #fff;
-	border: 1px solid #dbe3ea;
-	border-radius: 14px;
-	min-height: 110px;
-}
-
-.handik-admin-today-card.is-empty {
-	background: #f8fafc;
-}
-
-.handik-admin-today-card__label {
-	font-size: 0.85rem;
+.handik-admin-chip em {
+	font-style: normal;
+	font-size: 12px;
 	color: #64748b;
-	text-transform: uppercase;
-	letter-spacing: 0.04em;
 }
 
-.handik-admin-today-card__count {
-	font-size: 2rem;
-	font-weight: 700;
-	color: #0f172a;
-}
-
-.handik-admin-today-card__preview {
-	font-size: 0.9rem;
+.handik-admin-note {
+	padding: 12px 14px;
+	border-radius: 12px;
+	background: #f8fafc;
+	border: 1px solid #e2e8f0;
+	line-height: 1.5;
 	color: #334155;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
 }
 
-.handik-admin-today-card__preview.is-empty {
-	color: #94a3b8;
-	font-style: italic;
+.handik-admin-note.is-warning {
+	background: #fff7ed;
+	border-color: #fed7aa;
+	color: #9a3412;
 }
 
-a.handik-admin-today-card-link {
-	text-decoration: none;
-	color: inherit;
-	display: block;
-}
-
-a.handik-admin-today-card-link:hover .handik-admin-today-card,
-a.handik-admin-today-card-link:focus-visible .handik-admin-today-card {
-	border-color: #94a3b8;
-	box-shadow: 0 6px 18px rgba(15, 23, 42, 0.08);
-}
-
-/* Visit list */
-
-.handik-admin-visit-list {
+.handik-admin-panel pre {
 	margin: 0;
-	padding: 0;
-	list-style: none;
-	display: grid;
-	gap: 8px;
-}
-
-.handik-admin-visit-row {
-	background: #fff;
-	border: 1px solid #dbe3ea;
-	border-radius: 12px;
-	padding: 0;
-}
-
-.handik-admin-visit-row__link {
-	display: grid;
-	gap: 4px;
 	padding: 12px 14px;
-	color: inherit;
-	text-decoration: none;
-	min-height: 44px;
-}
-
-@media (min-width: 768px) {
-	.handik-admin-visit-row__link {
-		grid-template-columns: 220px 1fr 1fr 110px 24px;
-		align-items: center;
-		gap: 12px;
-	}
-}
-
-.handik-admin-visit-row__when {
-	font-weight: 600;
-}
-
-.handik-admin-visit-row__what,
-.handik-admin-visit-row__city {
-	color: #475569;
-	font-size: 0.92rem;
-}
-
-/* Month stats */
-
-.handik-admin-month-stats {
-	display: grid;
-	gap: 10px;
-	grid-template-columns: 1fr;
-}
-
-@media (min-width: 540px) {
-	.handik-admin-month-stats {
-		grid-template-columns: repeat(3, 1fr);
-	}
-}
-
-.handik-admin-month-stat {
-	background: #fff;
-	border: 1px solid #dbe3ea;
 	border-radius: 12px;
-	padding: 14px;
-	text-align: center;
+	background: #0f172a;
+	color: #e2e8f0;
+	overflow: auto;
 }
 
-.handik-admin-month-stat strong {
-	font-size: 1.6rem;
-	display: block;
-	margin-bottom: 4px;
-}
-
-.handik-admin-month-stat span {
-	color: #64748b;
-	font-size: 0.88rem;
-}
-
-/* --------- Bookings list ----------------------------------------------- */
-
-.handik-admin-bookings-cards {
+.handik-admin-photo-grid {
 	display: grid;
-	gap: 10px;
-}
-
-@media (min-width: 1024px) {
-	.handik-admin-bookings-cards {
-		display: none;
-	}
-	.handik-admin-bookings-table {
-		display: table;
-	}
-}
-
-@media (max-width: 1023px) {
-	.handik-admin-bookings-table,
-	.handik-admin-table-wrap[data-handik-bookings-table] {
-		display: none;
-	}
-}
-
-.handik-admin-booking-card {
-	display: grid;
-	gap: 4px;
-	padding: 14px;
-	background: #fff;
-	border: 1px solid #dbe3ea;
-	border-radius: 12px;
-	color: inherit;
-	text-decoration: none;
-}
-
-.handik-admin-booking-card.is-past {
-	opacity: 0.7;
-	background: #f8fafc;
-}
-
-.handik-admin-booking-card__when {
-	font-weight: 600;
-	font-size: 1.05rem;
-}
-
-.handik-admin-booking-card__status {
-	margin-top: 4px;
-}
-
-.handik-admin-divider {
-	margin: 14px 0 6px;
-	color: #64748b;
-	font-size: 0.88rem;
-	display: flex;
-	align-items: center;
-	gap: 10px;
-}
-
-.handik-admin-divider::before,
-.handik-admin-divider::after {
-	content: '';
-	flex: 1 1 auto;
-	border-bottom: 1px dashed #cbd5e1;
-}
-
-.handik-admin-table-divider td {
-	background: #f8fafc;
-	color: #64748b;
-	font-style: italic;
-}
-
-/* --------- Filter bar --------------------------------------------------- */
-
-.handik-admin-filter-bar {
-	margin: 8px 0 16px;
-}
-
-.handik-admin-filter-row {
-	display: grid;
-	gap: 8px;
-	grid-template-columns: 1fr;
-	align-items: end;
-}
-
-@media (min-width: 768px) {
-	.handik-admin-filter-row {
-		grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)) auto auto;
-		align-items: end;
-	}
-}
-
-.handik-admin-filter {
-	display: flex;
-	flex-direction: column;
-	gap: 4px;
-	font-size: 0.85rem;
-	color: #475569;
-}
-
-.handik-admin-filter--search input {
-	min-width: 180px;
-}
-
-/* --------- Sticky action bar ------------------------------------------- */
-
-.handik-admin-sticky-bar {
-	position: -webkit-sticky;
-	position: sticky;
-	top: var(--wp-admin--admin-bar--height, 32px);
-	z-index: 50;
-	display: flex;
-	align-items: center;
-	gap: 8px;
-	padding: 10px 12px;
-	background: rgba(255,255,255,0.96);
-	backdrop-filter: saturate(140%) blur(8px);
-	border-bottom: 1px solid #cbd5e1;
-	margin: 0 -12px 14px;
-}
-
-.handik-admin-sticky-bar__back {
-	font-size: 1.2rem;
-	color: #0f172a;
-	text-decoration: none;
-	min-width: 40px;
-	min-height: 40px;
-	display: inline-flex;
-	align-items: center;
-	justify-content: center;
-}
-
-.handik-admin-sticky-bar__title {
-	flex: 1 1 auto;
-	font-weight: 600;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
-}
-
-.handik-admin-sticky-bar__actions {
-	display: flex;
-	gap: 8px;
-	flex-wrap: wrap;
-}
-
-.handik-admin-sticky-bar__cta {
-	display: inline-flex;
-	align-items: center;
-	gap: 6px;
-	padding: 8px 12px;
-	border-radius: 999px;
-	background: #f1f5f9;
-	color: #0f172a;
-	text-decoration: none;
-	min-height: 40px;
-	font-size: 0.9rem;
-}
-
-.handik-admin-sticky-bar__cta.is-call {
-	background: #166534;
-	color: #fff;
-}
-
-@media (max-width: 767px) {
-	.handik-admin-sticky-bar__cta span {
-		display: none;
-	}
-}
-
-/* --------- Booking detail blocks --------------------------------------- */
-
-.handik-admin-actions-bar {
-	display: flex;
-	flex-wrap: wrap;
-	gap: 8px;
-	margin: 0 0 16px;
-	align-items: center;
-}
-
-.handik-admin-current-status {
-	margin-left: auto;
-	color: #475569;
-	font-size: 0.9rem;
-}
-
-.handik-admin-glance__grid {
-	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
 	gap: 12px;
-	grid-template-columns: 1fr;
 }
 
-@media (min-width: 540px) {
-	.handik-admin-glance__grid {
-		grid-template-columns: 1fr 1fr;
-	}
-}
-
-@media (min-width: 1024px) {
-	.handik-admin-glance__grid {
-		grid-template-columns: repeat(4, 1fr);
-	}
-}
-
-.handik-admin-glance__cell {
-	background: #fff;
-	border: 1px solid #dbe3ea;
-	border-radius: 12px;
-	padding: 12px 14px;
+.handik-admin-photo {
 	display: grid;
-	gap: 4px;
+	gap: 8px;
+	text-decoration: none;
+	color: inherit;
 }
 
-.handik-admin-glance__label {
-	font-size: 0.78rem;
+.handik-admin-photo img,
+.handik-admin-photo video {
+	display: block;
+	width: 100%;
+	height: 150px;
+	object-fit: cover;
+	border-radius: 14px;
+	border: 1px solid #dbe3ea;
+	background: #0f172a;
+}
+
+.handik-admin-photo span {
+	font-size: 12px;
+	color: #475569;
+	word-break: break-word;
+}
+
+.handik-admin-photo em {
+	font-size: 11px;
+	font-style: normal;
 	color: #64748b;
 	text-transform: uppercase;
 	letter-spacing: 0.05em;
 }
 
-.handik-admin-glance__cell strong {
-	font-size: 1rem;
-	color: #0f172a;
-}
-
-.handik-admin-glance__cell span {
-	font-size: 0.92rem;
-	color: #334155;
-	display: flex;
-	align-items: center;
-	gap: 6px;
-	flex-wrap: wrap;
-}
-
-.handik-admin-copy-btn {
-	background: transparent;
-	border: 1px solid transparent;
-	cursor: pointer;
-	min-width: 28px;
-	min-height: 28px;
-	border-radius: 6px;
-	color: #94a3b8;
-}
-
-.handik-admin-copy-btn:hover {
-	background: #f1f5f9;
-	color: #0f172a;
-}
-
-/* --------- Photos grid ------------------------------------------------- */
-
-.handik-admin-photo-grid {
-	display: grid;
-	gap: 10px;
-	grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-}
-
-.handik-admin-photo {
-	display: grid;
-	gap: 6px;
-	text-decoration: none;
-	color: inherit;
-}
-
-.handik-admin-photo img {
-	display: block;
-	width: 100%;
-	min-height: 120px;
-	height: 130px;
-	object-fit: cover;
-	border-radius: 12px;
-	border: 1px solid #dbe3ea;
-}
-
-.handik-admin-photo__name {
-	font-size: 0.78rem;
-	color: #475569;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
-}
-
-/* --------- Transcript bubbles ----------------------------------------- */
-
-.handik-admin-transcript {
-	display: flex;
-	flex-direction: column;
-	gap: 8px;
-}
-
-.handik-admin-bubble {
-	max-width: 85%;
-	padding: 10px 14px;
-	border-radius: 14px;
-	background: #f1f5f9;
-	color: #0f172a;
-	font-size: 0.95rem;
-	line-height: 1.45;
-}
-
-.handik-admin-bubble--user {
-	align-self: flex-end;
-	background: #dbeafe;
-}
-
-.handik-admin-bubble--assistant {
-	align-self: flex-start;
-	background: #1e293b;
-	color: #f1f5f9;
-}
-
-.handik-admin-bubble__time {
-	font-size: 0.72rem;
-	margin-top: 4px;
-	opacity: 0.7;
-}
-
-/* --------- Map embed --------------------------------------------------- */
-
 .handik-admin-map-wrap {
-	margin: 12px 0 0;
-	border-radius: 14px;
+	margin: 14px 0;
+	border-radius: 16px;
 	overflow: hidden;
 	border: 1px solid #dbe3ea;
 }
@@ -742,627 +210,113 @@ a.handik-admin-today-card-link:focus-visible .handik-admin-today-card {
 .handik-admin-map-wrap iframe {
 	display: block;
 	width: 100%;
-	height: 320px;
+	height: 260px;
 	border: 0;
 }
 
-/* --------- Estimate / tasks ------------------------------------------- */
-
-.handik-admin-twocol {
+.handik-admin-chat-log {
 	display: grid;
-	gap: 14px;
-	grid-template-columns: 1fr;
+	gap: 12px;
 }
 
-@media (min-width: 768px) {
-	.handik-admin-twocol {
-		grid-template-columns: 1fr 1fr;
-	}
+.handik-admin-chat-log__item {
+	padding: 14px;
+	border: 1px solid #dbe3ea;
+	border-radius: 14px;
+	background: #f8fafc;
 }
 
-.handik-admin-prose {
-	color: #334155;
-	line-height: 1.5;
-}
-
-.handik-admin-estimate {
-	margin: 0;
-	display: grid;
-	gap: 6px;
-}
-
-.handik-admin-estimate > div {
+.handik-admin-chat-log__meta {
 	display: flex;
 	justify-content: space-between;
 	gap: 12px;
-	padding: 6px 0;
-	border-bottom: 1px dashed #e2e8f0;
-}
-
-.handik-admin-estimate dt {
+	font-size: 12px;
 	color: #64748b;
+	margin-bottom: 8px;
 }
 
-.handik-admin-estimate dd {
-	margin: 0;
+.handik-admin-chat-log__message {
 	font-weight: 600;
+	margin-bottom: 8px;
 }
 
-.handik-admin-task-list {
+.handik-admin-chat-log pre {
 	margin: 0;
-	padding: 0;
-	list-style: none;
-	display: grid;
-	gap: 6px;
-}
-
-.handik-admin-task-list li {
-	display: flex;
-	gap: 8px;
-	padding: 8px 12px;
-	background: #f8fafc;
-	border: 1px solid #e2e8f0;
-	border-radius: 10px;
-}
-
-.handik-admin-task-list__rate {
-	margin-left: auto;
-	color: #64748b;
-}
-
-.handik-admin-disclaimer {
-	font-size: 0.82rem;
-	color: #94a3b8;
-}
-
-/* --------- Details / collapse ----------------------------------------- */
-
-.handik-admin-details {
-	background: #fff;
-	border: 1px solid #dbe3ea;
+	padding: 10px 12px;
 	border-radius: 12px;
-	padding: 0;
-	margin-bottom: 12px;
+	background: #0f172a;
+	color: #e2e8f0;
+	overflow: auto;
+	font-size: 12px;
+	line-height: 1.45;
 }
 
-.handik-admin-details > summary {
-	padding: 12px 14px;
+.handik-admin-row-link {
 	cursor: pointer;
-	font-weight: 600;
 }
 
-.handik-admin-details__body {
-	padding: 12px 16px 16px;
+.handik-admin-row-link:focus {
+	outline: 2px solid #283618;
+	outline-offset: -2px;
+}
+
+.handik-admin-bookings-table td,
+.handik-admin-bookings-table th {
+	vertical-align: top;
+}
+
+.handik-admin-bookings-table tbody tr:hover {
+	background: #f7faf5;
+}
+
+.handik-admin-cards--booking-overview .handik-admin-card strong {
+	font-size: 16px;
+	line-height: 1.5;
+}
+
+.handik-admin-changelog-entry + .handik-admin-changelog-entry {
+	margin-top: 18px;
+	padding-top: 18px;
 	border-top: 1px solid #e2e8f0;
 }
 
-/* --------- People list ------------------------------------------------- */
-
-.handik-admin-people-list {
-	display: grid;
-	gap: 8px;
-}
-
-.handik-admin-person-row {
-	background: #fff;
-	border: 1px solid #dbe3ea;
-	border-radius: 12px;
-	padding: 14px;
-	color: inherit;
-	text-decoration: none;
-	display: grid;
-	gap: 6px;
-	min-height: 44px;
-}
-
-@media (min-width: 768px) {
-	.handik-admin-person-row {
-		grid-template-columns: 2fr 1fr 2fr 1fr 24px;
-		align-items: center;
-		gap: 14px;
-	}
-}
-
-.handik-admin-person-row.is-spam {
-	opacity: 0.5;
-}
-
-.handik-admin-person-row__name {
-	display: flex;
-	gap: 8px;
-	align-items: center;
-}
-
-.handik-admin-person-row__counts,
-.handik-admin-person-row__last,
-.handik-admin-person-row__phone {
-	color: #475569;
-	font-size: 0.9rem;
-}
-
-.handik-admin-segmented {
-	display: inline-flex;
-	flex-wrap: wrap;
-	gap: 6px;
-	padding: 4px;
-	background: #f1f5f9;
-	border-radius: 999px;
-	margin: 0 0 14px;
-}
-
-.handik-admin-segment {
-	padding: 6px 14px;
-	border-radius: 999px;
-	color: #475569;
-	text-decoration: none;
-	font-size: 0.88rem;
-	min-height: 32px;
-	display: inline-flex;
-	align-items: center;
-}
-
-.handik-admin-segment.is-active {
-	background: #fff;
-	color: #0f172a;
-	box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08);
-}
-
-/* --------- Person detail ---------------------------------------------- */
-
-.handik-admin-person-header {
-	display: flex;
-	flex-wrap: wrap;
-	gap: 10px;
-	align-items: center;
-	margin: 0 0 16px;
-}
-
-.handik-admin-person-header h2 {
-	margin: 0;
-	font-size: 1.4rem;
-}
-
-.handik-admin-back {
-	display: inline-flex;
-	align-items: center;
-	justify-content: center;
-	min-width: 40px;
-	min-height: 40px;
-	border-radius: 50%;
-	background: #f1f5f9;
-	text-decoration: none;
-	color: #0f172a;
-	margin-right: 6px;
-}
-
-.handik-admin-person-header__contacts {
-	margin-left: auto;
-	display: flex;
-	flex-wrap: wrap;
-	gap: 6px;
-}
-
-.handik-admin-addr-list {
-	margin: 0;
-	padding: 0;
-	list-style: none;
-	display: grid;
-	gap: 8px;
-}
-
-.handik-admin-addr {
-	display: flex;
-	flex-wrap: wrap;
-	gap: 10px;
-	align-items: center;
-	padding: 12px;
-	background: #f8fafc;
-	border: 1px solid #e2e8f0;
-	border-radius: 10px;
-}
-
-.handik-admin-addr__main {
-	flex: 1 1 200px;
-}
-
-.handik-admin-addr__actions {
-	display: flex;
-	gap: 8px;
-}
-
-/* --------- Request list ---------------------------------------------- */
-
-.handik-admin-request-list {
-	margin: 0;
-	padding: 0;
-	list-style: none;
-	display: grid;
-	gap: 6px;
-}
-
-.handik-admin-request-list a {
-	display: flex;
-	flex-wrap: wrap;
-	gap: 10px;
-	padding: 10px 12px;
-	background: #fff;
-	border: 1px solid #e2e8f0;
-	border-radius: 10px;
-	color: inherit;
-	text-decoration: none;
-	align-items: center;
-}
-
-/* --------- Catalog editor (D2) --------------------------------------- */
-
-.handik-catalog-editor__groups {
-	display: grid;
-	gap: 16px;
-	margin-bottom: 16px;
-}
-
-.handik-catalog-group {
-	border: 1px solid #cbd5e1;
-	border-radius: 14px;
-	background: #fff;
-	padding: 14px;
-}
-
-.handik-catalog-group__header {
-	display: flex;
-	gap: 12px;
-	align-items: end;
-	margin-bottom: 10px;
-}
-
-.handik-catalog-group__header label {
-	flex: 1 1 auto;
-}
-
-.handik-catalog-group__tasks {
-	display: grid;
-	gap: 10px;
-}
-
-.handik-catalog-task {
-	background: #f8fafc;
-	border: 1px solid #e2e8f0;
-	border-radius: 12px;
-	padding: 12px;
-	display: grid;
-	grid-template-columns: 24px 1fr;
-	gap: 10px;
-}
-
-.handik-catalog-task__fields {
-	display: grid;
-	gap: 8px;
-}
-
-.handik-catalog-task__actions {
-	grid-column: 1 / -1;
-	display: flex;
-	gap: 12px;
-	justify-content: flex-end;
-}
-
-.handik-catalog-handle {
-	cursor: grab;
-	color: #94a3b8;
-	font-weight: bold;
-	user-select: none;
-	font-size: 1.2rem;
-	display: inline-flex;
-	align-items: center;
-}
-
-.handik-catalog-handle:hover {
-	color: #475569;
-}
-
-.handik-catalog-task[data-handik-task].sortable-ghost,
-.handik-catalog-group[data-handik-group].sortable-ghost {
-	opacity: 0.4;
-}
-
-.handik-catalog-editor__status {
-	margin-left: 12px;
-	color: #64748b;
-	font-size: 0.88rem;
-}
-
-.handik-catalog-editor__status.is-saving { color: #b45309; }
-.handik-catalog-editor__status.is-saved  { color: #166534; }
-.handik-catalog-editor__status.is-failed { color: #b91c1c; }
-
-/* --------- Logs cards (E1) ------------------------------------------- */
-
-.handik-admin-log-cards {
-	margin: 0;
-	padding: 0;
-	list-style: none;
-	display: grid;
-	gap: 8px;
-}
-
-.handik-admin-log-card {
-	background: #fff;
-	border-left: 4px solid #cbd5e1;
-	border-radius: 8px;
-	padding: 10px 12px;
-	font-size: 0.92rem;
-}
-
-.handik-admin-log-card--debug    { border-color: #cbd5e1; opacity: 0.85; }
-.handik-admin-log-card--info     { border-color: #94a3b8; }
-.handik-admin-log-card--notice   { border-color: #facc15; }
-.handik-admin-log-card--warning  { border-color: #f97316; background: #fff7ed; }
-.handik-admin-log-card--error    { border-color: #dc2626; background: #fef2f2; }
-.handik-admin-log-card--critical { border-color: #7f1d1d; background: #fee2e2; }
-
-.handik-admin-log-card__head {
-	display: flex;
-	gap: 10px;
-	align-items: center;
-	margin-bottom: 4px;
-	color: #475569;
-	font-size: 0.85rem;
-}
-
-.handik-admin-log-card__message {
-	margin: 4px 0;
-	font-weight: 600;
-}
-
-.handik-admin-log-card__meta {
-	margin: 4px 0;
-	color: #475569;
-	font-size: 0.85rem;
-}
-
-.handik-admin-log-card__details summary {
-	cursor: pointer;
-	color: #64748b;
-	font-size: 0.85rem;
-	margin-top: 6px;
-}
-
-.handik-admin-log-card pre {
-	margin: 6px 0 0;
-	padding: 8px 10px;
-	background: #0f172a;
-	color: #e2e8f0;
-	border-radius: 8px;
-	font-size: 0.8rem;
-	overflow: auto;
-}
-
-/* --------- Bottom nav (mobile only) ----------------------------------- */
-
-.handik-admin-bottom-nav {
-	display: none;
-}
-
-@media (max-width: 767px) {
-	.handik-admin-bottom-nav {
-		position: fixed;
-		left: 0;
-		right: 0;
-		bottom: 0;
-		display: flex;
-		justify-content: space-around;
-		padding: 4px 4px calc(4px + env(safe-area-inset-bottom, 0px));
-		background: rgba(255,255,255,0.98);
-		backdrop-filter: saturate(160%) blur(10px);
-		border-top: 1px solid #cbd5e1;
-		z-index: 9990;
-	}
-
-	.handik-admin-bottom-nav__item {
-		flex: 1 1 auto;
-		display: grid;
-		justify-items: center;
-		align-content: center;
-		gap: 2px;
-		padding: 6px 4px;
-		text-decoration: none;
-		color: #64748b;
-		min-height: 52px;
-		font-size: 0.72rem;
-		text-align: center;
-	}
-
-	.handik-admin-bottom-nav__item.is-active {
-		color: #0f172a;
-	}
-
-	.handik-admin-bottom-nav__icon {
-		font-size: 1.2rem;
-	}
-
-	.handik-admin-bottom-nav__label {
-		font-size: 0.72rem;
-	}
-
-	.handik-admin-bottom-nav__item.is-active .handik-admin-bottom-nav__label {
-		font-weight: 600;
-	}
-
-	body.toplevel_page_handik-booking-app .wp-admin {
-		padding-bottom: 60px;
-	}
-
+@media (max-width: 900px) {
 	.handik-admin-wrap {
-		padding-bottom: 80px;
+		max-width: 100%;
 	}
-}
 
-/* --------- Toolbar / toggles ------------------------------------------ */
-
-.handik-admin-toolbar {
-	display: flex;
-	gap: 10px;
-	align-items: center;
-	flex-wrap: wrap;
-	margin-bottom: 14px;
-}
-
-.handik-admin-spam-toggle {
-	margin-top: 16px;
-}
-
-.handik-admin-address {
-	margin: 0 0 8px;
-	font-size: 1.05rem;
-}
-
-.handik-admin-address-links {
-	display: flex;
-	flex-wrap: wrap;
-	gap: 8px;
-}
-
-/* --------- Toasts (F2) ----------------------------------------------- */
-
-.handik-admin-toasts {
-	position: fixed;
-	right: 16px;
-	bottom: 80px;
-	display: grid;
-	gap: 8px;
-	z-index: 10000;
-	max-width: 320px;
-}
-
-@media (min-width: 768px) {
-	.handik-admin-toasts {
-		bottom: 16px;
+	.handik-admin-grid,
+	.handik-admin-detail-grid,
+	.handik-admin-cards {
+		grid-template-columns: 1fr;
 	}
-}
 
-.handik-admin-toast {
-	background: #0f172a;
-	color: #f1f5f9;
-	padding: 12px 14px;
-	border-radius: 12px;
-	box-shadow: 0 12px 32px rgba(15, 23, 42, 0.25);
-	font-size: 0.92rem;
-	animation: handik-toast-in 0.2s ease-out;
-}
+	.handik-admin-bookings-table thead {
+		display: none;
+	}
 
-.handik-admin-toast--success { background: #166534; }
-.handik-admin-toast--error   { background: #991b1b; }
+	.handik-admin-bookings-table,
+	.handik-admin-bookings-table tbody,
+	.handik-admin-bookings-table tr,
+	.handik-admin-bookings-table td {
+		display: block;
+		width: 100%;
+	}
 
-@keyframes handik-toast-in {
-	from { transform: translateY(8px); opacity: 0; }
-	to   { transform: translateY(0); opacity: 1; }
-}
+	.handik-admin-bookings-table tr {
+		margin-bottom: 12px;
+		border: 1px solid #dbe3ea;
+		border-radius: 14px;
+		overflow: hidden;
+		background: #fff;
+	}
 
-/* --------- Modal (F2) ------------------------------------------------- */
+	.handik-admin-bookings-table td {
+		padding: 12px 14px;
+		border-bottom: 1px solid #eef2f7;
+	}
 
-.handik-admin-modal-backdrop {
-	position: fixed;
-	inset: 0;
-	background: rgba(15, 23, 42, 0.6);
-	z-index: 9999;
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	padding: 16px;
-	animation: handik-fade-in 0.15s ease-out;
-}
-
-.handik-admin-modal {
-	background: #fff;
-	border-radius: 14px;
-	max-width: 420px;
-	width: 100%;
-	padding: 20px;
-	box-shadow: 0 30px 60px rgba(15, 23, 42, 0.3);
-}
-
-.handik-admin-modal h3 {
-	margin: 0 0 12px;
-}
-
-.handik-admin-modal__body {
-	margin-bottom: 14px;
-}
-
-.handik-admin-modal textarea {
-	width: 100%;
-	min-height: 120px;
-}
-
-.handik-admin-modal__actions {
-	display: flex;
-	gap: 8px;
-	justify-content: flex-end;
-}
-
-@keyframes handik-fade-in {
-	from { opacity: 0; }
-	to   { opacity: 1; }
-}
-
-/* --------- Lightbox --------------------------------------------------- */
-
-.handik-admin-lightbox-backdrop {
-	position: fixed;
-	inset: 0;
-	background: rgba(0,0,0,0.85);
-	z-index: 10001;
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	cursor: zoom-out;
-}
-
-.handik-admin-lightbox-backdrop img {
-	max-width: 95%;
-	max-height: 95%;
-	object-fit: contain;
-}
-
-/* --------- Button spinner (F2) --------------------------------------- */
-
-.handik-admin-spinner {
-	display: inline-block;
-	width: 12px;
-	height: 12px;
-	border: 2px solid currentColor;
-	border-right-color: transparent;
-	border-radius: 50%;
-	animation: handik-spin 0.8s linear infinite;
-	vertical-align: middle;
-}
-
-.is-loading {
-	pointer-events: none;
-	opacity: 0.85;
-}
-
-@keyframes handik-spin {
-	to { transform: rotate(360deg); }
-}
-
-/* --------- Address admin labels -------------------------------------- */
-
-.handik-admin-addr__label {
-	color: #475569;
-}
-
-.handik-admin-export-links {
-	display: flex;
-	flex-wrap: wrap;
-	gap: 8px;
-}
-
-/* --------- Reduced motion -------------------------------------------- */
-
-@media (prefers-reduced-motion: reduce) {
-	*, *::before, *::after {
-		animation-duration: 0.001ms !important;
-		transition-duration: 0.001ms !important;
+	.handik-admin-bookings-table td:last-child {
+		border-bottom: 0;
 	}
 }

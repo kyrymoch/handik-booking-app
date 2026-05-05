@@ -11,6 +11,16 @@ class Handik_Booking_App_Changelog_Service {
 	public function get_entries() {
 		return array(
 			array(
+				'version'      => '2.1.8.3',
+				'date'         => '2026-05-04',
+				'title'        => 'Restore Working App Backup',
+				'notes'        => array(
+					'Restored the last known working app backup from handik-booking-app-working-backup-20260504-225526-89afa72.zip.',
+					'Reverted the admin rewrite and DB 1.3.0 migration changes from the 2.1.8.2 release path.',
+					'Published the restored app as a newer rollback release so WordPress can update safely from 2.1.8.2.',
+				),
+			),
+			array(
 				'version'      => '2.1.8',
 				'date'         => '2026-05-03',
 				'title'        => 'Polish Booking UX And Assistant Gate',
