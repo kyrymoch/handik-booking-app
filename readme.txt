@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.1.3.11
+Stable tag: 2.1.8.2
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, returning-client auth, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,27 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.1.8.2 =
+* **Operational dashboard (A1)**: replaces the static metadata page. Five blocks — Today / Tomorrow / This week stat strip, Next 5 visits compact list, Action-needed chips (drafts / ready-not-booked / unsafe / errors), This-month-at-a-glance (count, revenue estimate, avg duration), and the changelog collapsed. All times in Eastern. Aggregate counts cached for 60 seconds via transient.
+* **Bookings list (B1)**: mobile cards on <1024px and a 5-column desktop table; filters Time/Status/Search persist in the URL; upcoming first, then a dated divider, then past bookings.
+* **Booking detail (B2)**: sticky top action bar with Call / Apple Maps / Cal.com link; new "At a glance" 4-cell grid; photos surfaced with lightbox; assistant summary + estimate as a printable-style block; Selected tasks as a labeled list; embedded map; Technical details and Chat-activity collapsed.
+* **Real chat transcript (B3)**: new `*_handik_messages` table (migration 1.3.0), `Messages_Service`, `/messages/record` REST endpoint, and ChatKit-bridge auto-mirroring of user/assistant messages with de-dupe. Booking detail now shows a real conversation in chat bubbles instead of grepped log entries.
+* **Booking actions (B4)**: Add private note (modal + textarea), Mark as cancelled, Mark as completed. New `bookings.admin_notes` and `bookings.admin_status_override` columns persist these — Cal.com webhook updates respect manual overrides.
+* **Unified People view (C1)**: one row per contact with addresses / requests / bookings counts and last-seen-relative time; filters All / With bookings / Drafts only / No address; debounced search by name/phone/email; new `contacts.is_spam` column with one-click hide and a "Show N hidden" toggle; legacy three-table-dump removed (lives in System info → Raw tables).
+* **Person detail (C1+C3)**: header with phone/email tap-actions, inline edit form (name, phone, email, notes, returning, spam), per-address actions (set primary, edit, soft-delete via `addresses.deleted_at`), and unified Requests/Bookings list. Phone changes log a warning entry.
+* **Request detail (C2)**: new page `?page=handik-booking-app-crm&request_id=N` with the same blocks as a booking minus Cal IDs; banner explaining where the customer dropped off; "Send the customer their booking link" mailto for ready-not-booked.
+* **Add person (C3)**: form to manually add a contact (and optional initial address) from the admin.
+* **App Setup re-org (D1-D4)**: 6 tabs — Booking flow / Appearance / Service catalog / Service area / Cal.com / Customer notifications. Each setting key now appears exactly once. Cal.com event URLs and the new fallback URL moved out of Integrations into App Setup. Removed the General tab; Behavior moved into Appearance.
+* **Service catalog editor (D2)**: drag-to-reorder via SortableJS, inline editing with auto-save (`POST /admin/catalog`), per-task Duplicate, soft-confirm Delete, "Saving / Saved / Failed" status indicator.
+* **Customer notifications (D4)**: editable Cal.com confirmation note and magic-link email subject/body with `{{placeholders}}` (`{{request_id}}`, `{{customer_name}}`, `{{address}}`, `{{task_summary}}`, `{{magic_link}}`, `{{site_name}}`).
+* **System info page (D5)**: plugin version, DB version, PHP/MySQL versions, total counts, "Run pending migrations" + "Clear plugin transients" buttons, and the legacy raw-tables view as a "Raw tables (debug)" tab. Log retention configurable here.
+* **Logs (E1+E2)**: full level set — `debug / info / notice / warning / error / critical` — with new `Logger::warning()`, `Logger::notice()`, `Logger::critical()` methods and per-level retention (default 2000 / 500). Card-list rendering with collapsible JSON details, filters by level / time / request_id / thread_id / search (URL-persistent), CSV export. `request_id` and `thread_id` in log entries are now clickable links to the right detail page.
+* **Mobile-first admin CSS (F1)**: responsive grids, ≥44px tap targets, ≥16px form inputs to prevent iOS zoom, sticky bars with `-webkit-sticky`, horizontally-scrolling tabs, tables that degrade to card lists at <1024px.
+* **Bottom nav on mobile (F1)**: fixed bar with Dashboard / Bookings / People / Setup / Logs visible only at <768px; safe-area-aware padding.
+* **Toasts, modals, lightbox (F2)**: replace native `confirm()` and silent saves; copy-on-tap for phone/email; debounced search forms.
+* **REST surface**: new admin endpoints (`/admin/booking/*/notes`, `/admin/booking/*/status`, `/admin/contact[/*]`, `/admin/address/*[/primary]`, `/admin/catalog`, `/admin/migrations/run`, `/admin/transients/clear`) — all gated behind `manage_options` and the `wp_rest` nonce.
+* **Reorganized PHP**: admin code split from a 1k-line monolith into `includes/admin/*` (helpers, dashboard, bookings, people, settings, logs, system, integrations) with a thin coordinator in `includes/class-admin.php`.
 
 = 2.1.3.11 =
 * Hardened the REST surface: Cal.com webhook now fails closed when no shared secret is configured, `/client-log` is rate limited (60 entries/min/IP) and trims oversized payloads, and every front-end fetch now sends the WordPress REST nonce.

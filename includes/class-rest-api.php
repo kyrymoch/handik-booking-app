@@ -26,16 +26,58 @@ class Handik_Booking_App_REST_API {
 	protected $webhook;
 
 	/**
-	 * @param Handik_Booking_App_Controller      $app App.
-	 * @param Handik_Booking_App_Auth_Service    $auth Auth.
-	 * @param Handik_Booking_App_ChatKit_Service $chatkit ChatKit.
-	 * @param Handik_Booking_App_Webhook_Service $webhook Webhook.
+	 * @var Handik_Booking_App_Messages_Service
 	 */
-	public function __construct( $app, $auth, $chatkit, $webhook ) {
-		$this->app     = $app;
-		$this->auth    = $auth;
-		$this->chatkit = $chatkit;
-		$this->webhook = $webhook;
+	protected $messages;
+
+	/**
+	 * @var Handik_Booking_App_Bookings_Service
+	 */
+	protected $bookings;
+
+	/**
+	 * @var Handik_Booking_App_Contacts_Service
+	 */
+	protected $contacts;
+
+	/**
+	 * @var Handik_Booking_App_Addresses_Service
+	 */
+	protected $addresses;
+
+	/**
+	 * @var Handik_Booking_App_Settings
+	 */
+	protected $settings;
+
+	/**
+	 * @var Handik_Booking_App_Logger
+	 */
+	protected $logger;
+
+	/**
+	 * @var Handik_Booking_App_Job_Requests_Service
+	 */
+	protected $job_requests;
+
+	/**
+	 * @var Handik_Booking_App_Service_Catalog_Service
+	 */
+	protected $service_catalog;
+
+	public function __construct( $app, $auth, $chatkit, $webhook, $messages = null, $bookings = null, $contacts = null, $addresses = null, $settings = null, $logger = null, $job_requests = null, $service_catalog = null ) {
+		$this->app             = $app;
+		$this->auth            = $auth;
+		$this->chatkit         = $chatkit;
+		$this->webhook         = $webhook;
+		$this->messages        = $messages;
+		$this->bookings        = $bookings;
+		$this->contacts        = $contacts;
+		$this->addresses       = $addresses;
+		$this->settings        = $settings;
+		$this->logger          = $logger;
+		$this->job_requests    = $job_requests;
+		$this->service_catalog = $service_catalog;
 
 		add_action( 'rest_api_init', array( $this, 'register_routes' ) );
 	}
@@ -60,6 +102,116 @@ class Handik_Booking_App_REST_API {
 		$this->route( $namespace, '/booking-capture', array( $this, 'booking_capture' ), WP_REST_Server::CREATABLE );
 		$this->route( $namespace, '/booking-complete', array( $this, 'booking_complete' ), WP_REST_Server::CREATABLE );
 		$this->route( $namespace, '/cal-webhook', array( $this, 'cal_webhook' ), WP_REST_Server::CREATABLE );
+
+		// --- Public chat-mirror endpoint (B3): the bridge calls this from the
+		// customer's browser to persist the conversation. Auth is the same
+		// draft_token + request_id pair the rest of the public API uses.
+		$this->route( $namespace, '/messages/record', array( $this, 'messages_record' ), WP_REST_Server::CREATABLE );
+
+		// --- Admin endpoints. All gated behind manage_options (see
+		// admin_permission()) and a wp_rest nonce.
+		register_rest_route(
+			$namespace,
+			'/admin/booking/(?P<id>\d+)/notes',
+			array(
+				'methods'             => WP_REST_Server::EDITABLE,
+				'callback'            => array( $this, 'admin_booking_notes' ),
+				'permission_callback' => array( $this, 'admin_permission' ),
+			)
+		);
+		register_rest_route(
+			$namespace,
+			'/admin/booking/(?P<id>\d+)/status',
+			array(
+				'methods'             => WP_REST_Server::EDITABLE,
+				'callback'            => array( $this, 'admin_booking_status' ),
+				'permission_callback' => array( $this, 'admin_permission' ),
+			)
+		);
+		register_rest_route(
+			$namespace,
+			'/admin/contact',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( $this, 'admin_contact_create' ),
+				'permission_callback' => array( $this, 'admin_permission' ),
+			)
+		);
+		register_rest_route(
+			$namespace,
+			'/admin/contact/(?P<id>\d+)',
+			array(
+				'methods'             => WP_REST_Server::EDITABLE,
+				'callback'            => array( $this, 'admin_contact_update' ),
+				'permission_callback' => array( $this, 'admin_permission' ),
+			)
+		);
+		register_rest_route(
+			$namespace,
+			'/admin/address/(?P<id>\d+)',
+			array(
+				'methods'             => WP_REST_Server::EDITABLE,
+				'callback'            => array( $this, 'admin_address_update' ),
+				'permission_callback' => array( $this, 'admin_permission' ),
+			)
+		);
+		register_rest_route(
+			$namespace,
+			'/admin/address/(?P<id>\d+)',
+			array(
+				'methods'             => WP_REST_Server::DELETABLE,
+				'callback'            => array( $this, 'admin_address_delete' ),
+				'permission_callback' => array( $this, 'admin_permission' ),
+			)
+		);
+		register_rest_route(
+			$namespace,
+			'/admin/address/(?P<id>\d+)/primary',
+			array(
+				'methods'             => WP_REST_Server::EDITABLE,
+				'callback'            => array( $this, 'admin_address_primary' ),
+				'permission_callback' => array( $this, 'admin_permission' ),
+			)
+		);
+		register_rest_route(
+			$namespace,
+			'/admin/catalog',
+			array(
+				'methods'             => WP_REST_Server::EDITABLE,
+				'callback'            => array( $this, 'admin_catalog_save' ),
+				'permission_callback' => array( $this, 'admin_permission' ),
+			)
+		);
+		register_rest_route(
+			$namespace,
+			'/admin/transients/clear',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( $this, 'admin_transients_clear' ),
+				'permission_callback' => array( $this, 'admin_permission' ),
+			)
+		);
+		register_rest_route(
+			$namespace,
+			'/admin/migrations/run',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( $this, 'admin_migrations_run' ),
+				'permission_callback' => array( $this, 'admin_permission' ),
+			)
+		);
+	}
+
+	/**
+	 * Admin permission gate: manage_options + wp_rest nonce.
+	 *
+	 * @return bool|WP_Error
+	 */
+	public function admin_permission() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			return new WP_Error( 'handik_admin_forbidden', __( 'You do not have permission to do that.', 'handik-booking-app' ), array( 'status' => 403 ) );
+		}
+		return true;
 	}
 
 	protected function route( $namespace, $route, $callback, $methods ) {
@@ -217,6 +369,167 @@ class Handik_Booking_App_REST_API {
 
 	public function cal_webhook( WP_REST_Request $request ) {
 		return $this->respond( $this->webhook->handle_cal_webhook( $request ) );
+	}
+
+	/**
+	 * Public endpoint: bridge → admin DB chat mirror.
+	 * Auth is via the customer's draft_token (same gate as the rest of the public API).
+	 */
+	public function messages_record( WP_REST_Request $request ) {
+		$request_id  = absint( $request->get_param( 'request_id' ) );
+		$draft_token = sanitize_text_field( (string) $request->get_param( 'draft_token' ) );
+		$role        = sanitize_key( (string) $request->get_param( 'role' ) );
+		$content     = (string) $request->get_param( 'content' );
+		$thread_id   = sanitize_text_field( (string) $request->get_param( 'thread_id' ) );
+		$metadata    = (array) $request->get_param( 'metadata' );
+
+		if ( ! $request_id || ! $draft_token || ! $this->job_requests || ! $this->job_requests->verify_draft_token( $request_id, $draft_token ) ) {
+			return new WP_Error( 'handik_messages_forbidden', __( 'Invalid request token.', 'handik-booking-app' ), array( 'status' => 403 ) );
+		}
+		if ( ! $this->messages ) {
+			return new WP_Error( 'handik_messages_unavailable', __( 'Message store unavailable.', 'handik-booking-app' ), array( 'status' => 503 ) );
+		}
+		$id = $this->messages->record( $request_id, $thread_id, $role, $content, $metadata );
+		return rest_ensure_response( array( 'success' => true, 'id' => $id ) );
+	}
+
+	// --- Admin handlers ---------------------------------------------------
+
+	public function admin_booking_notes( WP_REST_Request $request ) {
+		if ( ! $this->bookings ) {
+			return $this->admin_unavailable();
+		}
+		$id    = absint( $request['id'] );
+		$notes = (string) $request->get_param( 'admin_notes' );
+		$ok    = $this->bookings->update_admin_fields( $id, array( 'admin_notes' => $notes ) );
+		return rest_ensure_response( array( 'success' => $ok ) );
+	}
+
+	public function admin_booking_status( WP_REST_Request $request ) {
+		if ( ! $this->bookings ) {
+			return $this->admin_unavailable();
+		}
+		$id     = absint( $request['id'] );
+		$status = sanitize_key( (string) $request->get_param( 'status' ) );
+		$allowed = array( 'cancelled', 'completed', 'rescheduled', 'no_show', '' );
+		if ( ! in_array( $status, $allowed, true ) ) {
+			return new WP_Error( 'handik_invalid_status', __( 'Status not allowed.', 'handik-booking-app' ), array( 'status' => 400 ) );
+		}
+		$ok = $this->bookings->update_admin_fields( $id, array( 'admin_status_override' => '' === $status ? null : $status ) );
+		return rest_ensure_response( array( 'success' => $ok, 'status' => $status ) );
+	}
+
+	public function admin_contact_create( WP_REST_Request $request ) {
+		if ( ! $this->contacts ) {
+			return $this->admin_unavailable();
+		}
+		$payload = array(
+			'full_name' => (string) $request->get_param( 'full_name' ),
+			'phone'     => (string) $request->get_param( 'phone' ),
+			'email'     => (string) $request->get_param( 'email' ),
+			'notes'     => (string) $request->get_param( 'notes' ),
+		);
+		$contact_id = $this->contacts->admin_create( $payload );
+		if ( ! $contact_id ) {
+			return new WP_Error( 'handik_contact_invalid', __( 'Need at least a name plus phone or email.', 'handik-booking-app' ), array( 'status' => 400 ) );
+		}
+
+		// Optional initial address.
+		$address_full = trim( (string) $request->get_param( 'address_full' ) );
+		if ( '' !== $address_full && $this->addresses ) {
+			$this->addresses->sync(
+				$contact_id,
+				array(
+					'address_full'   => $address_full,
+					'address_line_1' => (string) $request->get_param( 'address_line_1' ),
+					'address_unit'   => (string) $request->get_param( 'address_unit' ),
+					'city'           => (string) $request->get_param( 'city' ),
+					'state'          => (string) $request->get_param( 'state' ),
+					'zip_code'       => (string) $request->get_param( 'zip_code' ),
+					'is_default'     => true,
+				)
+			);
+		}
+
+		return rest_ensure_response( array( 'success' => true, 'contact_id' => $contact_id ) );
+	}
+
+	public function admin_contact_update( WP_REST_Request $request ) {
+		if ( ! $this->contacts ) {
+			return $this->admin_unavailable();
+		}
+		$id    = absint( $request['id'] );
+		$patch = array_intersect_key(
+			$request->get_params(),
+			array_flip( array( 'full_name', 'email', 'phone', 'notes', 'is_returning', 'is_spam' ) )
+		);
+		$ok = $this->contacts->admin_update( $id, $patch );
+		return rest_ensure_response( array( 'success' => $ok ) );
+	}
+
+	public function admin_address_update( WP_REST_Request $request ) {
+		if ( ! $this->addresses ) {
+			return $this->admin_unavailable();
+		}
+		$id    = absint( $request['id'] );
+		$patch = array_intersect_key(
+			$request->get_params(),
+			array_flip( array( 'address_full', 'address_unit', 'city', 'state', 'zip_code', 'label' ) )
+		);
+		$ok = $this->addresses->admin_update( $id, $patch );
+		return rest_ensure_response( array( 'success' => $ok ) );
+	}
+
+	public function admin_address_delete( WP_REST_Request $request ) {
+		if ( ! $this->addresses ) {
+			return $this->admin_unavailable();
+		}
+		$id = absint( $request['id'] );
+		$ok = $this->addresses->soft_delete( $id );
+		return rest_ensure_response( array( 'success' => $ok ) );
+	}
+
+	public function admin_address_primary( WP_REST_Request $request ) {
+		if ( ! $this->addresses ) {
+			return $this->admin_unavailable();
+		}
+		$id = absint( $request['id'] );
+		$ok = $this->addresses->set_primary( $id );
+		return rest_ensure_response( array( 'success' => $ok ) );
+	}
+
+	public function admin_catalog_save( WP_REST_Request $request ) {
+		if ( ! $this->settings ) {
+			return $this->admin_unavailable();
+		}
+		$groups = (array) $request->get_param( 'groups' );
+		$this->settings->update( array( 'service_catalog_groups' => $groups ) );
+		return rest_ensure_response( array( 'success' => true ) );
+	}
+
+	public function admin_transients_clear( WP_REST_Request $request ) {
+		global $wpdb;
+		$wpdb->query( "DELETE FROM {$wpdb->options} WHERE option_name LIKE '\\_transient\\_handik\\_%' OR option_name LIKE '\\_transient\\_timeout\\_handik\\_%'" );
+		if ( $this->logger ) {
+			$this->logger->info( 'Admin cleared plugin transients.', array( 'admin_id' => get_current_user_id() ) );
+		}
+		return rest_ensure_response( array( 'success' => true ) );
+	}
+
+	public function admin_migrations_run( WP_REST_Request $request ) {
+		$migrations = new Handik_Booking_App_Migrations();
+		$migrations->migrate();
+		if ( $this->logger ) {
+			$this->logger->info( 'Admin re-ran migrations.', array( 'admin_id' => get_current_user_id() ) );
+		}
+		return rest_ensure_response( array(
+			'success'    => true,
+			'db_version' => (string) get_option( Handik_Booking_App_Migrations::OPTION_NAME, '0.0.0' ),
+		) );
+	}
+
+	protected function admin_unavailable() {
+		return new WP_Error( 'handik_admin_unavailable', __( 'Admin services are not wired.', 'handik-booking-app' ), array( 'status' => 503 ) );
 	}
 
 	/**

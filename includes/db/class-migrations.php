@@ -14,6 +14,7 @@ class Handik_Booking_App_Migrations {
 		'1.0.0' => 'Handik_Booking_App_Migration_100',
 		'1.1.0' => 'Handik_Booking_App_Migration_110',
 		'1.2.0' => 'Handik_Booking_App_Migration_120',
+		'1.3.0' => 'Handik_Booking_App_Migration_130',
 	);
 
 	public function migrate() {
