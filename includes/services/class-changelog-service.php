@@ -11,6 +11,23 @@ class Handik_Booking_App_Changelog_Service {
 	public function get_entries() {
 		return array(
 			array(
+				'version'      => '2.1.8.5',
+				'date'         => '2026-05-05',
+				'title'        => 'Operational Admin Rewrite',
+				'notes'        => array(
+					'Replaced the Dashboard with an operational view: Today / Tomorrow / This week strip, Next 5 visits, action-needed chips, this-month stats; aggregate counts cached for 60s.',
+					'Bookings list now renders cards on mobile (<1024px) with URL-persistent Time / Status / Search filters; booking detail has a sticky Call / Maps / Cal.com action bar.',
+					'Real chat transcript: new handik_messages table (DB 1.3.0), Messages_Service, /messages/record endpoint, ChatKit-bridge mirroring of user/assistant messages.',
+					'Booking actions: private notes, mark cancelled, mark completed; admin_notes / admin_status_override columns survive Cal.com webhook updates.',
+					'Unified People view (one row per contact, addresses/requests/bookings counts), Person detail with inline edit + per-address management, Request detail page for drafts and ready-not-booked, Add-person form. Spam flag + soft-deleted addresses.',
+					'App Setup re-organised into 6 tabs (Booking flow / Appearance / Service catalog / Service area / Cal.com / Customer notifications); each setting key appears once. Service catalog editor now drag-and-drop with auto-save and "in-use by N requests" badges.',
+					'Editable Cal.com note and magic-link email templates with {{placeholders}} actually wired into class-cal-service and class-auth-service.',
+					'Logs gain notice / warning / critical levels, per-level retention, URL-filterable cards, CSV export, clickable request_id / thread_id links.',
+					'Mobile-first admin CSS pass: ≥44px tap targets, ≥16px inputs (no iOS zoom), tables → cards <1024px, fixed bottom nav <768px.',
+					'F2: hand-rolled toast / modal / photo lightbox / copy-on-tap / debounced search / in-button spinners.',
+				),
+			),
+			array(
 				'version'      => '2.1.8',
 				'date'         => '2026-05-03',
 				'title'        => 'Polish Booking UX And Assistant Gate',

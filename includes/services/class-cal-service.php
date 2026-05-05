@@ -114,7 +114,7 @@ class Handik_Booking_App_Cal_Service {
 				'name'                            => $contact['full_name'] ?? '',
 				'email'                           => $contact['email'] ?? '',
 				'attendeePhoneNumber'             => $attendee_phone,
-				'notes'                           => sprintf( "Alex will take care of it. Full details, photos, and the assistant's notes are saved in the admin dashboard (request #%d).", (int) $request_id ),
+				'notes'                           => $this->build_cal_notes( $request_id, $request, $contact ),
 				'metadata[handik_job_request_id]' => (string) $request_id,
 				'metadata[handik_booking_type]'   => (string) $request['booking_type'],
 				'metadata[handik_contact_id]'     => ! empty( $request['contact_id'] ) ? (string) $request['contact_id'] : '',
@@ -234,5 +234,52 @@ class Handik_Booking_App_Cal_Service {
 
 		$query = http_build_query( $query_args, '', '&', PHP_QUERY_RFC1738 );
 		return $base . ( '' !== $query ? '?' . $query : '' ) . $fragment;
+	}
+
+	/**
+	 * Build the `notes` payload sent to Cal.com using the admin-editable
+	 * cal_confirmation_note template (D4). Falls back to the v2.1.8 default
+	 * (the "Alex will take care of it" message) when the template is empty.
+	 *
+	 * @param int                  $request_id Request ID.
+	 * @param array<string, mixed> $request    Hydrated request row.
+	 * @param array<string, mixed>|null $contact Hydrated contact row.
+	 * @return string
+	 */
+	protected function build_cal_notes( $request_id, array $request, $contact ) {
+		$template = trim( (string) $this->settings->get( 'cal_confirmation_note', '' ) );
+		$default  = sprintf(
+			"Alex will take care of it. Full details, photos, and the assistant's notes are saved in the admin dashboard (request #%d).",
+			(int) $request_id
+		);
+		if ( '' === $template ) {
+			return $default;
+		}
+
+		$task_ids = is_array( $request['selected_tasks'] ?? null ) ? $request['selected_tasks'] : array();
+		$task_summary = '';
+		if ( ! empty( $task_ids ) && class_exists( 'Handik_Booking_App_Admin_Helpers' ) ) {
+			$plugin = function_exists( 'handik_booking_app' ) ? handik_booking_app() : null;
+			if ( $plugin && ! empty( $plugin->service_catalog ) ) {
+				$task_summary = Handik_Booking_App_Admin_Helpers::task_summary_text( $task_ids, $plugin->service_catalog, 99 );
+			}
+		}
+		if ( '' === $task_summary ) {
+			$task_summary = implode( ', ', array_map( 'strval', $task_ids ) );
+		}
+
+		$placeholders = array(
+			'request_id'        => (string) $request_id,
+			'customer_name'     => (string) ( $contact['full_name'] ?? '' ),
+			'address'           => (string) ( $request['address_full'] ?? '' ),
+			'task_summary'      => $task_summary,
+			'assistant_summary' => (string) ( $request['assistant_summary'] ?? '' ),
+		);
+
+		$out = $template;
+		foreach ( $placeholders as $key => $value ) {
+			$out = str_replace( '{{' . $key . '}}', $value, $out );
+		}
+		return trim( $out );
 	}
 }
