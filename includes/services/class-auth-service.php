@@ -410,16 +410,29 @@ class Handik_Booking_App_Auth_Service {
 			);
 			add_filter( 'wp_mail_from', array( $this, 'mail_from' ) );
 			add_filter( 'wp_mail_from_name', array( $this, 'mail_from_name' ) );
-			wp_mail(
-				$email,
-				__( 'Your Handik sign-in code', 'handik-booking-app' ),
-				sprintf(
-					"Hi %s,\n\nYour Handik one-time code is: %s\n\nSign in with this secure link:\n%s\n\nThis code expires in 15 minutes.",
-					! empty( $contact['full_name'] ) ? $contact['full_name'] : __( 'there', 'handik-booking-app' ),
-					$code,
-					$magic_link
-				)
+
+			$customer_name = ! empty( $contact['full_name'] ) ? (string) $contact['full_name'] : __( 'there', 'handik-booking-app' );
+			$placeholders = array(
+				'customer_name' => $customer_name,
+				'magic_link'    => $magic_link,
+				'code'          => $code,
+				'site_name'     => (string) get_bloginfo( 'name' ),
 			);
+
+			$default_subject = __( 'Your Handik sign-in code', 'handik-booking-app' );
+			$default_body    = "Hi {{customer_name}},\n\nYour Handik one-time code is: {{code}}\n\nSign in with this secure link:\n{{magic_link}}\n\nThis code expires in 15 minutes.";
+
+			$subject_template = trim( (string) $this->settings->get( 'magic_link_email_subject', '' ) );
+			$body_template    = trim( (string) $this->settings->get( 'magic_link_email_body', '' ) );
+			$subject = '' !== $subject_template ? $subject_template : $default_subject;
+			$body    = '' !== $body_template    ? $body_template    : $default_body;
+
+			foreach ( $placeholders as $key => $value ) {
+				$subject = str_replace( '{{' . $key . '}}', (string) $value, $subject );
+				$body    = str_replace( '{{' . $key . '}}', (string) $value, $body );
+			}
+
+			wp_mail( $email, $subject, $body );
 			remove_filter( 'wp_mail_from', array( $this, 'mail_from' ) );
 			remove_filter( 'wp_mail_from_name', array( $this, 'mail_from_name' ) );
 			return;

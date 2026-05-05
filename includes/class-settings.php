@@ -147,6 +147,17 @@ class Handik_Booking_App_Settings {
 			'ui_booking_confirmed'      => 'Your time slot is booked. Finishing your request now...',
 			'ui_booking_cancelled'      => 'This booking was cancelled. You can choose another slot below.',
 			'ui_address_placeholder'    => 'Start typing the address of the job',
+
+			// --- v2.1.8.5 admin additions ---------------------------------
+			// Comma- or newline-separated list of allowed ZIPs (5-digit US codes).
+			'service_area_zips'                 => '',
+			// Customer-facing emails / Cal.com notes (D4).
+			'cal_confirmation_note'             => 'Booking #{{request_id}} for {{customer_name}} at {{address}}. Tasks: {{task_summary}}.',
+			'magic_link_email_subject'          => 'Your Handik booking link',
+			'magic_link_email_body'             => "Hi {{customer_name}},\n\nUse the link below to continue your Handik booking:\n{{magic_link}}\n\nThe link expires in 15 minutes.",
+			// Log retention (E1) — 0 means use defaults.
+			'log_max_entries_info'              => '2000',
+			'log_max_entries_debug'             => '500',
 		);
 	}
 
@@ -240,6 +251,15 @@ class Handik_Booking_App_Settings {
 					break;
 				case 'email_from_address':
 					$output[ $key ] = sanitize_email( $value );
+					break;
+				case 'service_area_zips':
+				case 'cal_confirmation_note':
+				case 'magic_link_email_body':
+					$output[ $key ] = trim( str_replace( "\0", '', (string) $value ) );
+					break;
+				case 'log_max_entries_info':
+				case 'log_max_entries_debug':
+					$output[ $key ] = (string) max( 100, absint( $value ) );
 					break;
 				case 'debug_mode':
 					$output[ $key ] = empty( $value ) ? 0 : 1;

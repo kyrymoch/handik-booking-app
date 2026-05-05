@@ -87,6 +87,111 @@ class Handik_Booking_App_Bookings_Service {
 	}
 
 	/**
+	 * Effective status taking the manual admin override into account.
+	 *
+	 * @param array<string, mixed> $booking Booking row.
+	 * @return string
+	 */
+	public function effective_status( array $booking ) {
+		if ( ! empty( $booking['admin_status_override'] ) ) {
+			return (string) $booking['admin_status_override'];
+		}
+		return (string) ( $booking['status'] ?? '' );
+	}
+
+	/**
+	 * @param string $from_utc DATETIME string in UTC (inclusive).
+	 * @param string $to_utc   DATETIME string in UTC (exclusive).
+	 * @param int|null $limit  Max rows or null for unlimited.
+	 * @return array<int, array<string, mixed>>
+	 */
+	public function list_in_window( $from_utc, $to_utc, $limit = null ) {
+		global $wpdb;
+		$table = Handik_Booking_App_DB::table( 'bookings' );
+		$sql   = "SELECT * FROM {$table} WHERE start_time >= %s AND start_time < %s ORDER BY start_time ASC";
+		if ( null !== $limit ) {
+			$sql .= ' LIMIT ' . max( 1, (int) $limit );
+		}
+		return $wpdb->get_results( $wpdb->prepare( $sql, $from_utc, $to_utc ), ARRAY_A );
+	}
+
+	public function count_in_window( $from_utc, $to_utc ) {
+		global $wpdb;
+		$table = Handik_Booking_App_DB::table( 'bookings' );
+		return (int) $wpdb->get_var(
+			$wpdb->prepare( "SELECT COUNT(*) FROM {$table} WHERE start_time >= %s AND start_time < %s", $from_utc, $to_utc )
+		);
+	}
+
+	public function avg_duration_in_window( $from_utc, $to_utc ) {
+		global $wpdb;
+		$table = Handik_Booking_App_DB::table( 'bookings' );
+		$avg   = $wpdb->get_var(
+			$wpdb->prepare( "SELECT AVG(duration_minutes) FROM {$table} WHERE start_time >= %s AND start_time < %s AND duration_minutes > 0", $from_utc, $to_utc )
+		);
+		return null === $avg ? 0.0 : (float) $avg;
+	}
+
+	public function list_upcoming( $limit = 5 ) {
+		global $wpdb;
+		$table = Handik_Booking_App_DB::table( 'bookings' );
+		return $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT * FROM {$table} WHERE start_time >= %s ORDER BY start_time ASC LIMIT %d",
+				gmdate( 'Y-m-d H:i:s' ),
+				max( 1, (int) $limit )
+			),
+			ARRAY_A
+		);
+	}
+
+	/**
+	 * Update admin-only fields on a booking. Logs the change.
+	 *
+	 * @param int                  $booking_id Booking ID.
+	 * @param array<string, mixed> $patch      Allowed keys: admin_notes, admin_status_override.
+	 * @return bool
+	 */
+	public function update_admin_fields( $booking_id, array $patch ) {
+		global $wpdb;
+		$booking_id = (int) $booking_id;
+		if ( $booking_id <= 0 ) {
+			return false;
+		}
+		$update = array();
+		if ( array_key_exists( 'admin_notes', $patch ) ) {
+			$update['admin_notes'] = is_null( $patch['admin_notes'] ) ? null : sanitize_textarea_field( (string) $patch['admin_notes'] );
+		}
+		if ( array_key_exists( 'admin_status_override', $patch ) ) {
+			$value = $patch['admin_status_override'];
+			if ( is_null( $value ) || '' === $value ) {
+				$update['admin_status_override'] = null;
+			} else {
+				$allowed = array( 'cancelled', 'completed', 'rescheduled', 'no_show' );
+				$value   = sanitize_key( (string) $value );
+				$update['admin_status_override'] = in_array( $value, $allowed, true ) ? $value : null;
+			}
+		}
+		if ( empty( $update ) ) {
+			return false;
+		}
+		$wpdb->update(
+			Handik_Booking_App_DB::table( 'bookings' ),
+			$update,
+			array( 'id' => $booking_id )
+		);
+		$this->logger->info(
+			'Admin updated booking fields.',
+			array(
+				'booking_id' => $booking_id,
+				'fields'     => array_keys( $update ),
+				'admin_id'   => get_current_user_id(),
+			)
+		);
+		return true;
+	}
+
+	/**
 	 * @param int $booking_id Booking ID.
 	 * @return array<string, mixed>|null
 	 */
