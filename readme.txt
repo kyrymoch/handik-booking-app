@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.1.8.2
+Stable tag: 2.1.8.3
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, returning-client auth, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,12 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.1.8.3 =
+* **Test infrastructure**: introduced PHPUnit (17 unit tests across `Logger::sanitize_context` and `Api_Response`) and Jest (42 unit tests across the validation/phone-formatting helpers used by the booking SPA). Both suites are wired into the GitHub Actions CI pipeline as required (non-soft-fail) jobs.
+* **Refactor**: extracted the pure validation/phone helpers (`validateFullName`, `validateEmail`, `phoneDigits`, `formatPhoneDisplay`, `phoneApiValue`, `validatePhone`) from `assets/booking-app.js` into a standalone `assets/booking-validators.js` UMD module so they can be unit-tested in Node without jsdom. The booking SPA now delegates to this module via `window.HandikBookingValidators`.
+* **Composer**: added `phpunit/phpunit ^9.6` to `require-dev` and a `composer test` script.
+* **NPM**: added `jest ^29.7` to `devDependencies` and `npm test` / `npm run test:watch` scripts.
 
 = 2.1.8.2 =
 * **Operational dashboard (A1)**: replaces the static metadata page. Five blocks — Today / Tomorrow / This week stat strip, Next 5 visits compact list, Action-needed chips (drafts / ready-not-booked / unsafe / errors), This-month-at-a-glance (count, revenue estimate, avg duration), and the changelog collapsed. All times in Eastern. Aggregate counts cached for 60 seconds via transient.

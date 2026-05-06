@@ -2,6 +2,7 @@
 	'use strict';
 
 	const config = window.HandikBookingAppConfig || {};
+	const validators = window.HandikBookingValidators || {};
 	const GOOGLE_SCRIPT_ID = 'handik-google-maps-places';
 	const CAL_EMBED_SCRIPT_ID = 'handik-cal-embed-script';
 	const DRAFT_STORAGE_KEY = 'handik_booking_app_draft_v1';
@@ -736,52 +737,27 @@
 		}
 
 		validateFullName( value ) {
-			const normalized = String( value || '' ).trim();
-			return /^[\p{L}][\p{L}\s'-]*$/u.test( normalized );
+			return validators.validateFullName( value );
 		}
 
 		validateEmail( value ) {
-			return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test( String( value || '' ).trim() );
+			return validators.validateEmail( value );
 		}
 
 		phoneDigits( value ) {
-			let digits = String( value || '' ).replace( /\D/g, '' );
-			if ( digits.length > 10 && '1' === digits.charAt( 0 ) ) {
-				digits = digits.slice( 1 );
-			}
-			return digits.slice( 0, 10 );
+			return validators.phoneDigits( value );
 		}
 
 		formatPhoneDisplay( value ) {
-			const digits = this.phoneDigits( value );
-			if ( ! digits ) {
-				return '';
-			}
-
-			const parts = [];
-			if ( digits.length > 0 ) {
-				parts.push( digits.slice( 0, Math.min( 3, digits.length ) ) );
-			}
-			if ( digits.length > 3 ) {
-				parts.push( digits.slice( 3, Math.min( 6, digits.length ) ) );
-			}
-			if ( digits.length > 6 ) {
-				parts.push( digits.slice( 6, Math.min( 8, digits.length ) ) );
-			}
-			if ( digits.length > 8 ) {
-				parts.push( digits.slice( 8, Math.min( 10, digits.length ) ) );
-			}
-
-			return '+1 ' + parts.join( ' ' );
+			return validators.formatPhoneDisplay( value );
 		}
 
 		phoneApiValue( value ) {
-			const digits = this.phoneDigits( value );
-			return 10 === digits.length ? '+1' + digits : '';
+			return validators.phoneApiValue( value );
 		}
 
 		validatePhone( value ) {
-			return 10 === this.phoneDigits( value ).length;
+			return validators.validatePhone( value );
 		}
 
 		validateContactFields() {

@@ -41,6 +41,34 @@ jobs:
         continue-on-error: true
         run: ./vendor/bin/phpstan analyse --no-progress
 
+  php-test:
+    name: PHPUnit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          # PHPUnit 9 still runs cleanly under 7.4 — keep the floor consistent
+          # with the plugin's `Requires PHP` so we catch syntax regressions.
+          php-version: '7.4'
+          coverage: none
+          tools: composer:v2
+
+      - name: Cache Composer
+        uses: actions/cache@v4
+        with:
+          path: ~/.composer/cache
+          key: composer-${{ runner.os }}-${{ hashFiles('composer.json') }}
+          restore-keys: composer-${{ runner.os }}-
+
+      - name: Install Composer deps
+        run: composer install --prefer-dist --no-progress --no-interaction
+
+      - name: Run PHPUnit
+        run: ./vendor/bin/phpunit
+
   js-lint:
     name: ESLint
     runs-on: ubuntu-latest
@@ -60,3 +88,21 @@ jobs:
         # Soft-fail until existing code is cleaned up.
         continue-on-error: true
         run: npm run lint:js
+
+  js-test:
+    name: Jest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install npm deps
+        run: npm install --no-audit --no-fund --no-progress
+
+      - name: Run Jest
+        run: npm test --silent

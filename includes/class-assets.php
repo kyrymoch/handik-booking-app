@@ -31,7 +31,8 @@ class Handik_Booking_App_Assets {
 		wp_register_style( 'handik-booking-app', HANDIK_BOOKING_APP_URL . 'assets/booking-app.css', array(), HANDIK_BOOKING_APP_VERSION );
 		wp_register_script( 'handik-booking-app-chatkit-hosted', 'https://cdn.platform.openai.com/deployments/chatkit/chatkit.js', array(), null, true );
 		wp_register_script( 'handik-booking-app-chatkit-bridge', $this->bridge_url(), array( 'handik-booking-app-chatkit-hosted' ), HANDIK_BOOKING_APP_VERSION, true );
-		wp_register_script( 'handik-booking-app', HANDIK_BOOKING_APP_URL . 'assets/booking-app.js', array( 'handik-booking-app-chatkit-bridge' ), HANDIK_BOOKING_APP_VERSION, true );
+		wp_register_script( 'handik-booking-app-validators', HANDIK_BOOKING_APP_URL . 'assets/booking-validators.js', array(), HANDIK_BOOKING_APP_VERSION, true );
+		wp_register_script( 'handik-booking-app', HANDIK_BOOKING_APP_URL . 'assets/booking-app.js', array( 'handik-booking-app-chatkit-bridge', 'handik-booking-app-validators' ), HANDIK_BOOKING_APP_VERSION, true );
 	}
 
 	public function register_admin_assets() {
