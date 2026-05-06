@@ -243,8 +243,18 @@
 			sessionReadyFired: false,
 			element: null,
 			session: null,
-			lastStructuredPayload: null
+			lastStructuredPayload: null,
+			cachedSession: null
 		};
+
+		// Sprint 1 A3: if booking-app prewarmed a session, seed cachedSession so
+		// the very first getClientSecret() callback returns synchronously. The
+		// existing flow (lines around 670 in this file) is already wired to
+		// consume record.cachedSession and clear it after use.
+		if ( options.prewarmedSession && typeof options.prewarmedSession === 'object' ) {
+			record.cachedSession = options.prewarmedSession;
+			record.session = options.prewarmedSession;
+		}
 
 		BRIDGE_CACHE.set( cacheKey, record );
 

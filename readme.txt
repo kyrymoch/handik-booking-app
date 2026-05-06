@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.1.8.5
+Stable tag: 2.1.8.7
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, silent returning-client recognition, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,16 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.1.8.7 =
+* **A1 — Non-blocking photo analysis on save_assistant_routing_result.** `save_assistant_result` no longer waits up to 45 seconds on a fresh OpenAI Vision call; it uses the cached analysis and schedules a single async refresh via `wp_schedule_single_event` when the cache is empty. -3…-15 sec on cold-cache turns.
+* **A3 — Prewarmed ChatKit session is actually used.** The session payload that booking-app.js fetches on the Address details step is now stashed and handed to the ChatKit bridge through a new `prewarmedSession` mount option, so the very first `getClientSecret()` returns synchronously instead of doing another create-session round-trip. -600…-1500 ms on first mount.
+* **B1 — verify_draft_token memoization.** `wp_check_password` is intentionally slow (50–200 ms). One assistant turn hits 6+ REST endpoints that all verify the same draft token. Result is now cached for the lifetime of the PHP process. -300…-1000 ms per turn.
+* **E3 — HTTP/1.1 keep-alive.** All OpenAI ChatKit, OpenAI Vision, and Twilio Verify wp_remote_post calls now request `httpversion => '1.1'` so cURL reuses the TLS connection across multiple OpenAI requests in the same PHP process.
+* **A5 — get_request_photo_context never blocks on a cold cache.** Same pattern as A1: the tool returns whatever cached_analysis has and schedules a background refresh, so the assistant tool round-trip is always fast.
+* **A6 — Photo analysis model auto-downgrades to gpt-4.1-nano for ≤2 photos.** Three or more photos still go to gpt-4.1-mini. -30…-50% wall-clock for typical 1–2 photo handyman uploads.
+* **B2 — Photo + pricing context prefetched into ChatKit `state_variables`.** When the session is created, the plugin builds the same payloads `get_request_photo_context` and `get_request_pricing_context` would return and embeds them in `state_variables.photo_context` / `state_variables.pricing_context`. The Classification Agent can read those state values on turn 1 without firing those tools, saving 2 client-tool round-trips per first turn.
+* **E4 — Logger buffers entries and flushes once on shutdown.** Per-turn 5–15 `info` entries used to be 5–15 separate `update_option` calls (= 5–15 DB writes + autoload cache invalidations). Now they're collected in memory and flushed once via the WordPress `shutdown` action. Errors and criticals still flush immediately to survive fatal exits.
 
 = 2.1.8.5 =
 * **Operational dashboard (A1)**: replaces the static metadata page. Five blocks — Today / Tomorrow / This week stat strip, Next 5 visits compact list, Action-needed chips (drafts / ready-not-booked / unsafe / errors), This-month-at-a-glance (count, revenue estimate, avg duration), and the changelog collapsed. All times in Eastern. Aggregate counts cached for 60 seconds.

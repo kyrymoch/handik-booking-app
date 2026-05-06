@@ -505,13 +505,33 @@ class Handik_Booking_App_Job_Requests_Service {
 	}
 
 	/**
+	 * Sprint 1 B1: per-request memoization. wp_check_password runs PHPass which is
+	 * intentionally slow (50–200 ms). One assistant turn hits 6+ REST endpoints,
+	 * each verifying the same draft token — that's 300–1200 ms of pure CPU on the
+	 * exact same comparison. Cache the result for the lifetime of this PHP process.
+	 *
+	 * @var array<string, bool>
+	 */
+	protected $verified_token_cache = array();
+
+	/**
 	 * @param int    $request_id Request.
 	 * @param string $draft_token Token.
 	 * @return bool
 	 */
 	public function verify_draft_token( $request_id, $draft_token ) {
-		$row = $this->get( $request_id );
-		return $row && ! empty( $row['draft_token_hash'] ) && ! empty( $draft_token ) && wp_check_password( $draft_token, $row['draft_token_hash'] );
+		$rid = (int) $request_id;
+		if ( $rid <= 0 || '' === (string) $draft_token ) {
+			return false;
+		}
+		$key = $rid . '|' . md5( (string) $draft_token );
+		if ( array_key_exists( $key, $this->verified_token_cache ) ) {
+			return $this->verified_token_cache[ $key ];
+		}
+		$row = $this->get( $rid );
+		$ok  = (bool) ( $row && ! empty( $row['draft_token_hash'] ) && wp_check_password( $draft_token, $row['draft_token_hash'] ) );
+		$this->verified_token_cache[ $key ] = $ok;
+		return $ok;
 	}
 
 	/**

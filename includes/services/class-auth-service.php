@@ -601,8 +601,9 @@ class Handik_Booking_App_Auth_Service {
 		$response = wp_remote_post(
 			$url,
 			array(
-				'timeout' => 20,
-				'headers' => array(
+				'timeout'     => 20,
+				'httpversion' => '1.1', // Sprint 1 E3: keep-alive for Twilio.
+				'headers'     => array(
 					'Authorization' => 'Basic ' . base64_encode( $account_sid . ':' . $auth_token ),
 					'Content-Type'  => 'application/x-www-form-urlencoded',
 				),

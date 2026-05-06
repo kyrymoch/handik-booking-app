@@ -5,7 +5,12 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 class Handik_Booking_App_Photo_Analysis_Service {
+	// Sprint 2 A6: nano handles 1–2 typical handyman photos at detail=low fast
+	// enough to drop ~30–50% wall-clock vs mini. Anything more we still send
+	// to mini for headroom on long descriptions.
+	const FAST_MODEL    = 'gpt-4.1-nano';
 	const DEFAULT_MODEL = 'gpt-4.1-mini';
+	const FAST_MODEL_PHOTO_THRESHOLD = 2;
 
 	/**
 	 * @var Handik_Booking_App_Settings
@@ -31,6 +36,28 @@ class Handik_Booking_App_Photo_Analysis_Service {
 		$this->settings     = $settings;
 		$this->logger       = $logger;
 		$this->job_requests = $job_requests;
+
+		// Sprint 1 A1: the assistant save path no longer blocks on a fresh Vision
+		// call. When cache is empty but photos exist, save_assistant_result
+		// schedules this single event which runs the slow analysis out of band.
+		add_action( 'handik_booking_app_photo_analysis_refresh', array( $this, 'cron_refresh_analysis' ), 10, 1 );
+	}
+
+	/**
+	 * Cron callback: refresh photo analysis for a request out of band.
+	 *
+	 * @param int $request_id Request ID.
+	 */
+	public function cron_refresh_analysis( $request_id ) {
+		$request_id = (int) $request_id;
+		if ( $request_id <= 0 ) {
+			return;
+		}
+		$request = $this->job_requests->get( $request_id );
+		if ( ! $request ) {
+			return;
+		}
+		$this->analyze_request( $request, true );
 	}
 
 	/**
@@ -141,14 +168,18 @@ class Handik_Booking_App_Photo_Analysis_Service {
 			$headers['OpenAI-Organization'] = $organization_id;
 		}
 
+		// Sprint 2 A6: pick the smaller model for short photo sets.
+		$model = ( count( $photos ) <= self::FAST_MODEL_PHOTO_THRESHOLD ) ? self::FAST_MODEL : self::DEFAULT_MODEL;
+
 		$response = wp_remote_post(
 			$api_base . '/v1/chat/completions',
 			array(
-				'headers' => $headers,
-				'timeout' => 45,
-				'body'    => wp_json_encode(
+				'headers'     => $headers,
+				'timeout'     => 45,
+				'httpversion' => '1.1', // Sprint 1 E3: keep-alive for cURL.
+				'body'        => wp_json_encode(
 					array(
-						'model'       => self::DEFAULT_MODEL,
+						'model'       => $model,
 						'temperature' => 0.2,
 						'messages'    => array(
 							array(
