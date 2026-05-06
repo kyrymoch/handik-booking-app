@@ -753,12 +753,20 @@
 	outline: none;
 }
 
-/* Issue 3 — assistant overlay visibility toggle without DOM injection. */
-.handik-booking-app__loading-overlay--assistant {
+/* Issue 3 — assistant overlay visibility toggle without DOM injection.
+ *
+ * IMPORTANT: a generic .handik-booking-app__loading-overlay rule lives
+ * later in this file (~line 1099) with `display: grid`. CSS cascade gives
+ * later rules priority at equal specificity, so we MUST stack two class
+ * selectors to win specificity. Otherwise the assistant overlay is always
+ * visible and the user sees infinite loading.
+ */
+.handik-booking-app__loading-overlay.handik-booking-app__loading-overlay--assistant {
 	display: none;
 }
-.handik-booking-app__screen-body.is-assistant-preparing .handik-booking-app__loading-overlay--assistant {
-	display: flex;
+.handik-booking-app__screen-body.is-assistant-preparing
+	.handik-booking-app__loading-overlay.handik-booking-app__loading-overlay--assistant {
+	display: grid;
 }
 
 /* Respect users who turn off motion. */

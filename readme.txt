@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.1.8.9
+Stable tag: 2.1.9.0
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, silent returning-client recognition, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,12 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.1.9.0 =
+* **HOTFIX — infinite "Loading…" on Virtual assistant.** The 2.1.8.9 refactor accidentally let a generic `.handik-booking-app__loading-overlay { display: grid }` rule (further down in the stylesheet) win the cascade against the new `.handik-booking-app__loading-overlay--assistant { display: none }` rule, because both selectors had the same specificity. Result: the overlay was permanently visible and `setAssistantPreparingState(false)` had no effect. The fix raises specificity (`.handik-booking-app__loading-overlay.handik-booking-app__loading-overlay--assistant`) so the toggle works correctly.
+* **HOTFIX — bridge prewarm regression.** The Sprint-1 prewarm helper used to set `record.session = options.prewarmedSession` immediately, which made `markChatActive()` think the session was already ready and skip the recovery `emitSessionReady('timeout')`. The bridge now only seeds `cachedSession` (used by `getClientSecret`) and lets the real session land in `record.session` when the API resolves.
+* **HOTFIX — safety timer.** If the ChatKit element silently fails to report ready within 14 seconds, the assistant overlay is force-dismissed and the existing Plan-B banner is surfaced. The user is never stranded on a spinner.
+* **HOTFIX — English-only public copy.** The assistant overlay, the bridge `loadingTitle`, and the "Book a time / Loading…" busy-button label no longer pull from the `ui_loading_*` settings. They use hardcoded English strings so a stale Russian saved value cannot leak into the public app. Owner-customizable copy (assistantContinue, assistantThinking, stuck banner) still works via admin settings.
 
 = 2.1.8.9 =
 * **Task screen reorder.** "Free Consultation" (rebrand of "Larger-Scale Work") is now the third card after "Choose Specific Tasks". Description is now "A free on-site visit to assess larger, multi-step, or unclear work before any quote or scheduling." with a "Free" price badge.
