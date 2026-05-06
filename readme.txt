@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.1.9.0
+Stable tag: 2.1.9.1
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, silent returning-client recognition, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,16 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.1.9.1 =
+* **NEW MODULE — Additional Booking Forms.** Adds two new lightweight public booking flows that share the existing CRM (contacts/addresses/logs) but bypass the AI assistant. Embed via shortcode `[handik_booking_form preset="standard-visit-60"]` or auto-generated route `/booking/{preset_slug}`.
+* **Direct Visit forms (8 presets).** Standard / Extended / Large visits with locked durations (60/120/180/240/300/360/420/480 minutes). Flow: Contact → Address → Cal.com iframe with the duration pre-selected. Uses RFC-3986-encoded URL parameters with `attendeePhoneNumber=%2B…`, JSON `location`, and metadata so Cal.com webhooks identify the source.
+* **Project Work Days forms (5 presets).** For approved larger-scale projects of 2–6 days. Flow: Contact → Address → Multi-day picker → Review → Confirm. The plugin acts as the orchestrator: it loads slots from the Cal.com v2 API, lets the customer pick exactly N days, re-checks availability on confirm, then creates N separate Cal.com bookings server-side. Idempotency-keyed POSTs prevent double-bookings. If any day fails after others succeed, the plugin automatically rolls back the created bookings via the cancel API and tells the customer to pick replacements.
+* **Webhook routing.** `cal-webhook` now dispatches by `metadata.handik_booking_source` (after HMAC verification): `direct_booking_form` → `handik_direct_booking_requests` row, `project_work_days_form` → matching `handik_project_work_days` row. Main AI flow is unchanged.
+* **Schema (migration 1.4.0).** Adds 4 tables: `form_presets` (13 default presets seeded on first run), `direct_booking_requests`, `project_scheduling_requests` (with unguessable `public_token`), `project_work_days`.
+* **Admin → Additional Forms.** Three tabs — Presets list (with copy-friendly shortcode + public URL), Direct Submissions, Project Schedules with day-level detail.
+* **Settings → App Setup → Cal.com.** New "Cal.com API (Project Work Days)" section: API key (Bearer), base URL (default `https://api.cal.com/v2`), version header (default `2024-08-13`), default timezone (default `America/New_York`). Override via `HANDIK_BOOKING_APP_CAL_API_KEY` constant in `wp-config.php` for stricter security.
+* **Architecture.** New `includes/forms/` namespace keeps the module isolated: `class-cal-api-service.php`, `class-booking-presets-service.php`, `class-direct-booking-service.php`, `class-project-schedule-service.php`, `class-forms-rest-api.php`, `class-forms-router.php`. Plus admin renderer `includes/admin/class-admin-additional-forms.php`. Frontend is a single `assets/booking-forms.js` (mobile-first, vanilla JS, no build step) + `assets/booking-forms.css`.
 
 = 2.1.9.0 =
 * **HOTFIX — infinite "Loading…" on Virtual assistant.** The 2.1.8.9 refactor accidentally let a generic `.handik-booking-app__loading-overlay { display: grid }` rule (further down in the stylesheet) win the cascade against the new `.handik-booking-app__loading-overlay--assistant { display: none }` rule, because both selectors had the same specificity. Result: the overlay was permanently visible and `setAssistantPreparingState(false)` had no effect. The fix raises specificity (`.handik-booking-app__loading-overlay.handik-booking-app__loading-overlay--assistant`) so the toggle works correctly.

@@ -415,6 +415,17 @@ class Handik_Booking_App_Admin_Settings {
 			<?php Handik_Booking_App_Admin_Helpers::field( 'cal_webhook_secret', __( 'Webhook secret', 'handik-booking-app' ), $s['cal_webhook_secret'], 'password' ); ?>
 			<p class="handik-admin-muted"><?php esc_html_e( 'Required: webhook will reject unsigned requests when no secret is set.', 'handik-booking-app' ); ?></p>
 		<?php $this->section_close(); ?>
+
+		<?php $this->section_open( __( 'Cal.com API (Project Work Days)', 'handik-booking-app' ) ); ?>
+			<p class="handik-admin-muted"><?php esc_html_e( 'Used by the Project Work Days forms to fetch slots and create bookings server-side. Direct visit forms still use the public Cal.com iframe and do not require the API key.', 'handik-booking-app' ); ?></p>
+			<?php Handik_Booking_App_Admin_Helpers::field( 'cal_api_key', __( 'API key (Bearer)', 'handik-booking-app' ), $s['cal_api_key'], 'password' ); ?>
+			<div class="handik-admin-grid">
+				<?php Handik_Booking_App_Admin_Helpers::field( 'cal_api_base', __( 'API base URL', 'handik-booking-app' ), $s['cal_api_base'] ); ?>
+				<?php Handik_Booking_App_Admin_Helpers::field( 'cal_api_version', __( 'API version header', 'handik-booking-app' ), $s['cal_api_version'] ); ?>
+				<?php Handik_Booking_App_Admin_Helpers::field( 'cal_api_timezone', __( 'Default timezone', 'handik-booking-app' ), $s['cal_api_timezone'] ); ?>
+			</div>
+			<p class="handik-admin-muted"><?php esc_html_e( 'Defaults: api.cal.com/v2 · 2024-08-13 · America/New_York. Override the version header only if Cal.com bumps the contract.', 'handik-booking-app' ); ?></p>
+		<?php $this->section_close(); ?>
 		<?php
 	}
 

@@ -1,0 +1,261 @@
+/**
+ * Public styles for Additional Booking Forms.
+ *
+ * Mobile-first, accessible, no theme dependency. Uses the same design tokens
+ * as the main booking app where possible (--handik-* CSS variables) so
+ * embedded forms inherit the host site's accent color when one is set.
+ */
+
+.handik-booking-form {
+	box-sizing: border-box;
+	max-width: 720px;
+	margin: 0 auto;
+	padding: 24px 16px;
+	color: var( --handik-text, #0f172a );
+	font-family: inherit;
+	line-height: 1.45;
+}
+
+.handik-booking-form *,
+.handik-booking-form *::before,
+.handik-booking-form *::after {
+	box-sizing: border-box;
+}
+
+.handik-booking-form__title h2 {
+	font-size: clamp( 1.4rem, 4vw, 1.85rem );
+	margin: 0 0 16px;
+	color: var( --handik-text, #0f172a );
+	font-weight: 600;
+}
+
+.handik-booking-form__error,
+.handik-booking-form__warning {
+	background: #fef2f2;
+	color: #991b1b;
+	border: 1px solid #fecaca;
+	border-radius: 8px;
+	padding: 10px 14px;
+	margin-bottom: 16px;
+	font-size: 0.95rem;
+}
+.handik-booking-form__warning {
+	background: #fff7ed;
+	color: #9a3412;
+	border-color: #fed7aa;
+}
+
+.handik-booking-form__form {
+	display: flex;
+	flex-direction: column;
+	gap: 16px;
+}
+
+.handik-booking-form__field {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+
+.handik-booking-form__label {
+	font-size: 0.92rem;
+	font-weight: 500;
+	color: var( --handik-muted-text, #475569 );
+}
+
+.handik-booking-form__field input {
+	width: 100%;
+	font-size: 16px;
+	padding: 12px 14px;
+	border: 1px solid var( --handik-border, #cbd5e1 );
+	border-radius: 8px;
+	background: #fff;
+	color: var( --handik-text, #0f172a );
+	transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.handik-booking-form__field input:focus {
+	outline: none;
+	border-color: var( --handik-accent, #2563eb );
+	box-shadow: 0 0 0 3px rgba( 37, 99, 235, 0.18 );
+}
+
+.handik-booking-form__field-error {
+	color: #b91c1c;
+	font-size: 0.85rem;
+}
+
+.handik-booking-form__actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 12px;
+	align-items: center;
+	margin-top: 12px;
+}
+
+.handik-booking-form__btn {
+	font: inherit;
+	border: 0;
+	border-radius: 8px;
+	padding: 12px 20px;
+	font-weight: 600;
+	cursor: pointer;
+	transition: background 0.15s ease, opacity 0.15s ease;
+	min-height: 44px;
+	min-width: 120px;
+}
+.handik-booking-form__btn--primary {
+	background: var( --handik-accent, #2563eb );
+	color: #fff;
+}
+.handik-booking-form__btn--primary:hover:not([disabled]) {
+	background: var( --handik-accent-hover, #1d4ed8 );
+}
+.handik-booking-form__btn--secondary {
+	background: transparent;
+	color: var( --handik-text, #0f172a );
+	border: 1px solid var( --handik-border, #cbd5e1 );
+}
+.handik-booking-form__btn[disabled],
+.handik-booking-form__btn[aria-disabled="true"] {
+	opacity: 0.5;
+	cursor: not-allowed;
+}
+
+.handik-booking-form__hint {
+	color: var( --handik-muted-text, #475569 );
+	margin: 0 0 12px;
+}
+
+.handik-booking-form__loading {
+	color: var( --handik-muted-text, #475569 );
+	padding: 32px 0;
+	text-align: center;
+}
+
+/* Slot picker */
+.handik-booking-form__slots {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 16px;
+}
+.handik-booking-form__slot-day {
+	background: #f8fafc;
+	border: 1px solid var( --handik-border, #e2e8f0 );
+	border-radius: 12px;
+	padding: 14px 16px;
+}
+.handik-booking-form__slot-day-label {
+	font-weight: 600;
+	margin-bottom: 8px;
+	color: var( --handik-text, #0f172a );
+}
+.handik-booking-form__slot-row {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+}
+.handik-booking-form__slot {
+	border: 1px solid var( --handik-border, #cbd5e1 );
+	background: #fff;
+	color: var( --handik-text, #0f172a );
+	padding: 10px 14px;
+	border-radius: 999px;
+	font-size: 0.95rem;
+	cursor: pointer;
+	min-height: 40px;
+	transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+.handik-booking-form__slot:hover {
+	border-color: var( --handik-accent, #2563eb );
+}
+.handik-booking-form__slot.is-selected {
+	background: var( --handik-accent, #2563eb );
+	color: #fff;
+	border-color: var( --handik-accent, #2563eb );
+}
+
+.handik-booking-form__counter {
+	margin-left: auto;
+	font-weight: 500;
+	color: var( --handik-muted-text, #475569 );
+}
+
+/* Review */
+.handik-booking-form__review {
+	display: grid;
+	grid-template-columns: max-content 1fr;
+	gap: 6px 16px;
+	margin: 0 0 16px;
+	padding: 12px 14px;
+	background: #f8fafc;
+	border-radius: 10px;
+	border: 1px solid var( --handik-border, #e2e8f0 );
+}
+.handik-booking-form__review dt {
+	font-size: 0.85rem;
+	color: var( --handik-muted-text, #475569 );
+	font-weight: 500;
+}
+.handik-booking-form__review dd {
+	margin: 0;
+	font-size: 0.95rem;
+}
+
+.handik-booking-form__review-days,
+.handik-booking-form__success-days {
+	margin: 12px 0;
+	padding-left: 22px;
+}
+.handik-booking-form__review-days li,
+.handik-booking-form__success-days li {
+	margin: 4px 0;
+}
+
+/* Success */
+.handik-booking-form__success {
+	background: #ecfdf5;
+	color: #065f46;
+	border: 1px solid #a7f3d0;
+	border-radius: 10px;
+	padding: 16px 18px;
+	font-size: 1.05rem;
+}
+
+/* Cal iframe */
+.handik-booking-form__cal-wrap {
+	margin-top: 8px;
+	border-radius: 12px;
+	overflow: hidden;
+	border: 1px solid var( --handik-border, #e2e8f0 );
+}
+.handik-booking-form__cal-wrap iframe {
+	display: block;
+}
+
+/* Responsive */
+@media ( max-width: 540px ) {
+	.handik-booking-form {
+		padding: 16px 12px;
+	}
+	.handik-booking-form__btn {
+		flex: 1 1 100%;
+	}
+	.handik-booking-form__counter {
+		flex: 1 1 100%;
+		margin-left: 0;
+		text-align: center;
+	}
+}
+
+@media ( prefers-reduced-motion: reduce ) {
+	.handik-booking-form *,
+	.handik-booking-form *::before,
+	.handik-booking-form *::after {
+		transition-duration: 0.001ms !important;
+		animation-duration: 0.001ms !important;
+	}
+}
