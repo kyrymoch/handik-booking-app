@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.1.9.1
+Stable tag: 2.1.9.2
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, silent returning-client recognition, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,10 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.1.9.2 =
+* Fixed a public Additional Forms JavaScript error: `this.render is not a function`.
+* Keeps the Additional Booking Forms module on DB schema `1.4.0`; no new migration beyond 1.4.0 is required.
 
 = 2.1.9.1 =
 * **NEW MODULE — Additional Booking Forms.** Adds two new lightweight public booking flows that share the existing CRM (contacts/addresses/logs) but bypass the AI assistant. Embed via shortcode `[handik_booking_form preset="standard-visit-60"]` or auto-generated route `/booking/{preset_slug}`.

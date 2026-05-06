@@ -13,19 +13,6 @@
 ( function ( window, document ) {
 	'use strict';
 
-	var roots = document.querySelectorAll( '[data-handik-booking-form]' );
-	if ( ! roots || ! roots.length ) {
-		return;
-	}
-	roots.forEach( function ( root ) {
-		try {
-			new HandikBookingForm( root ); // eslint-disable-line no-new, no-use-before-define
-		} catch ( err ) {
-			// Surface fatal init errors to the user instead of a blank page.
-			root.innerHTML = '<p class="handik-booking-form__error">' + escapeHtml( String( err && err.message ? err.message : err ) ) + '</p>';
-		}
-	} );
-
 	function HandikBookingForm( root ) {
 		this.root = root;
 		var configNode = root.querySelector( '[data-handik-booking-form-config]' );
@@ -700,5 +687,31 @@
 		var day = formatDayLabelET( startIso, timezone );
 		var time = formatTimeRangeET( startIso, endIso, timezone );
 		return day + ' · ' + time;
+	}
+
+	// Bootstrap. Runs only after all prototype methods + helpers above have
+	// been registered (the `this.render is not a function` bug from 2.1.9.1
+	// was caused by hoisting the constructor call above the prototype
+	// assignments). Defer to DOMContentLoaded if the script lands before the
+	// markup, otherwise run immediately.
+	function init() {
+		var roots = document.querySelectorAll( '[data-handik-booking-form]' );
+		if ( ! roots || ! roots.length ) {
+			return;
+		}
+		roots.forEach( function ( root ) {
+			try {
+				// eslint-disable-next-line no-new
+				new HandikBookingForm( root );
+			} catch ( err ) {
+				root.innerHTML = '<p class="handik-booking-form__error">' + escapeHtml( String( err && err.message ? err.message : err ) ) + '</p>';
+			}
+		} );
+	}
+
+	if ( 'loading' === document.readyState ) {
+		document.addEventListener( 'DOMContentLoaded', init );
+	} else {
+		init();
 	}
 } )( window, document );

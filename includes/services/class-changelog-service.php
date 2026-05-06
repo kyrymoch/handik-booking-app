@@ -11,6 +11,25 @@ class Handik_Booking_App_Changelog_Service {
 	public function get_entries() {
 		return array(
 			array(
+				'version'      => '2.1.9.2',
+				'date'         => '2026-05-06',
+				'title'        => 'Additional Forms Public Page Hotfix',
+				'notes'        => array(
+					'Fixed a public Additional Forms JavaScript error: this.render is not a function.',
+					'Kept the Additional Booking Forms module on DB schema 1.4.0; no new migration beyond 1.4.0 is required.',
+				),
+			),
+			array(
+				'version'      => '2.1.9.1',
+				'date'         => '2026-05-06',
+				'title'        => 'Additional Booking Forms Module',
+				'notes'        => array(
+					'Added Additional Booking Forms for Direct visit and Project work days public flows.',
+					'Added migration 1.4.0 with form presets, direct booking requests, project scheduling requests, and project work day tables.',
+					'Added admin screens for form presets, direct submissions, and project schedules.',
+				),
+			),
+			array(
 				'version'      => '2.1.9.0',
 				'date'         => '2026-05-07',
 				'title'        => 'Hotfix — Infinite Loading & English Copy',
