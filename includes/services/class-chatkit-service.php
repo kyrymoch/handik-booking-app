@@ -104,9 +104,10 @@ class Handik_Booking_App_ChatKit_Service {
 		$response = wp_remote_post(
 			$api_base . '/v1/chatkit/sessions',
 			array(
-				'headers' => $headers,
-				'timeout' => 15,
-				'body'    => wp_json_encode(
+				'headers'     => $headers,
+				'timeout'     => 15,
+				'httpversion' => '1.1', // Sprint 1 E3: enable keep-alive on cURL.
+				'body'        => wp_json_encode(
 					array(
 						'user'     => $user_id,
 						'workflow' => array( 'id' => $workflow ),
@@ -174,13 +175,22 @@ class Handik_Booking_App_ChatKit_Service {
 		$draft_context                  = $this->job_requests->build_context( $request_id );
 		$draft_context['photo_analysis'] = $this->photo_analysis->cached_analysis( $request );
 
+		// Sprint 2 B2: prefetch photo + pricing context into state_variables so the
+		// classification agent can read them without two extra tool round-trips on
+		// turn 1. The agent's prompt already says "use the available state
+		// variables before calling tools"; this populates them. Tools remain
+		// available for later turns where the user changed details.
+		$state_variables               = $this->state_variables( $request );
+		$state_variables['photo_context']   = $this->build_photo_context_payload( $request, is_array( $draft_context['photo_analysis'] ?? null ) ? $draft_context['photo_analysis'] : array() );
+		$state_variables['pricing_context'] = $this->build_pricing_context_payload( $request );
+
 		return array(
 			'client_secret'   => $client_secret,
 			'clientSecret'    => $client_secret,
 			'expires_after'   => $payload['expires_after'] ?? null,
 			'user_id'         => $user_id,
 			'workflow_id'     => $workflow,
-			'state_variables' => $this->state_variables( $request ),
+			'state_variables' => $state_variables,
 			'draft_context'   => $draft_context,
 			'file_upload'     => is_array( $payload['chatkit_configuration']['file_upload'] ?? null ) ? $payload['chatkit_configuration']['file_upload'] : null,
 		);
@@ -229,14 +239,18 @@ class Handik_Booking_App_ChatKit_Service {
 		$analysis   = array();
 
 		if ( $has_photos ) {
-			$analysis = $this->photo_analysis->analyze_request( $request, false );
-			$request  = $this->job_requests->get( $request_id );
-			if ( ! $request ) {
-				return array( 'error' => __( 'Draft request not found.', 'handik-booking-app' ), 'status' => 404 );
-			}
-
+			// Sprint 2 A5: never block this tool call on a fresh Vision API call.
+			// The warm path (warm_photo_analysis) already runs from booking-app.js
+			// when the assistant step is being prepared, so by the time the agent
+			// invokes get_request_photo_context the cache is usually warm. If the
+			// cache is empty, schedule an async refresh and return the empty
+			// payload — the prompt instructs the assistant to handle that case.
+			$analysis = $this->photo_analysis->cached_analysis( $request );
 			if ( empty( $analysis ) ) {
-				$analysis = $this->photo_analysis->cached_analysis( $request );
+				$cron_args = array( (int) $request_id );
+				if ( ! wp_next_scheduled( 'handik_booking_app_photo_analysis_refresh', $cron_args ) ) {
+					wp_schedule_single_event( time() + 1, 'handik_booking_app_photo_analysis_refresh', $cron_args );
+				}
 			}
 		}
 
@@ -443,7 +457,18 @@ class Handik_Booking_App_ChatKit_Service {
 			);
 		}
 
-		$photo_analysis = $this->photo_analysis->analyze_request( $request, false );
+		// Sprint 1 A1: never block the save_assistant_routing_result tool on a fresh
+		// Vision API call. analyze_request() can take 5–15 sec on a cold cache and
+		// the assistant has already produced its reply by this point. Use whatever
+		// is in the cache and schedule a single async refresh if we have photos
+		// but no analysis yet. The next turn (or the next save) picks it up.
+		$photo_analysis = $this->photo_analysis->cached_analysis( $request );
+		if ( empty( $photo_analysis ) && ! empty( $request['photos'] ) && is_array( $request['photos'] ) ) {
+			$cron_args = array( (int) $request_id );
+			if ( ! wp_next_scheduled( 'handik_booking_app_photo_analysis_refresh', $cron_args ) ) {
+				wp_schedule_single_event( time() + 1, 'handik_booking_app_photo_analysis_refresh', $cron_args );
+			}
+		}
 		$assistant      = $this->merge_assistant_result(
 			$stored_assistant,
 			$this->sanitize_assistant_result( $this->inject_photo_analysis_into_result( $assistant_result, $photo_analysis ) )

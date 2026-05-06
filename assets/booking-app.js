@@ -43,6 +43,8 @@
 			this.assistantMountPromise = null;
 			this.assistantSessionPrewarmPromise = null;
 			this.assistantSessionPrewarmedRequestId = 0;
+			this.assistantPrewarmedSession = null;
+			this.assistantPrewarmedRequestId = 0;
 			this.pendingAssistantContextAnalysis = null;
 			this.notificationTimers = new Map();
 			this.assistantBridge = null;
@@ -1279,6 +1281,8 @@
 			this.savedAddressLoadingProfileKey = '';
 			this.assistantSessionPrewarmPromise = null;
 			this.assistantSessionPrewarmedRequestId = 0;
+			this.assistantPrewarmedSession = null;
+			this.assistantPrewarmedRequestId = 0;
 					this.clearDraftStorage();
 					if ( window.HandikChatKitBridge && typeof window.HandikChatKitBridge.reset === 'function' && this.state.requestId ) {
 						window.HandikChatKitBridge.reset( 'request_' + String( this.state.requestId ) );
@@ -1638,9 +1642,16 @@
 				request_id: this.state.requestId,
 				draft_token: this.state.draftToken
 			} ).then( ( payload ) => {
+				// Sprint 1 A3: stash the payload so mountAssistant can hand it
+				// straight to the bridge — saves a full create-session round-trip
+				// on the very first getClientSecret() call.
+				if ( payload && ( payload.client_secret || payload.clientSecret ) ) {
+					this.assistantPrewarmedSession = payload;
+					this.assistantPrewarmedRequestId = requestId;
+				}
 				this.logClient( 'info', 'ChatKit session prewarmed before assistant step.', {
 					request_id: this.state.requestId,
-					has_client_secret: !! ( payload && payload.client_secret )
+					has_client_secret: !! ( payload && ( payload.client_secret || payload.clientSecret ) )
 				} );
 				return payload;
 			} ).catch( ( error ) => {
@@ -2309,11 +2320,23 @@
 				this.logClient( 'info', 'Assistant mounted.', {
 					request_id: this.state.requestId
 				} );
+				// Sprint 1 A3: hand the prewarmed session payload to the bridge so
+				// the very first getClientSecret() returns synchronously instead
+				// of doing another create-session round-trip.
+				const prewarmedRequestId = Number( this.assistantPrewarmedRequestId ) || 0;
+				const prewarmedSession = ( prewarmedRequestId === Number( this.state.requestId ) )
+					? this.assistantPrewarmedSession
+					: null;
+				if ( prewarmedSession ) {
+					this.assistantPrewarmedSession = null;
+					this.assistantPrewarmedRequestId = 0;
+				}
 				this.assistantBridge = window.HandikChatKitBridge.mount( {
 					container: container,
 					requestId: this.state.requestId,
 					draftToken: this.state.draftToken,
 					cacheKey: 'request_' + String( this.state.requestId ),
+					prewarmedSession: prewarmedSession,
 					initialThreadId: this.state.assistantThreadId,
 					startScreenGreeting: config.strings.assistantGreeting || 'Describe the job.',
 					composerPlaceholder: config.strings.assistantGreeting || 'Describe the job.',

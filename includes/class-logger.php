@@ -165,6 +165,23 @@ class Handik_Booking_App_Logger {
 	 * @param string $message Message.
 	 * @param array  $context Context.
 	 */
+	/**
+	 * Sprint 2 E4: buffer log entries in-memory and flush once on shutdown.
+	 *
+	 * One assistant turn writes 5–15 info/debug entries; each direct
+	 * update_option() is a DB write + autoload cache invalidation. Buffering
+	 * and flushing once at request shutdown drops that to a single write.
+	 *
+	 * @var array<int, array<string, mixed>>
+	 */
+	protected $pending_logs = array();
+
+	/** @var bool Whether the shutdown flush hook has been registered. */
+	protected $shutdown_registered = false;
+
+	/** @var bool Errors and criticals also force an immediate flush. */
+	protected $flush_immediately_for_severe = true;
+
 	protected function write( $level, $message, array $context ) {
 		$entry = array(
 			'time'    => current_time( 'mysql' ),
@@ -173,14 +190,43 @@ class Handik_Booking_App_Logger {
 			'context' => $this->sanitize_context( $context ),
 		);
 
+		// Always mirror to PHP error_log immediately — that's the eyeballs path
+		// for sysadmins, and it's cheap.
 		error_log( '[Handik Booking App] ' . wp_json_encode( $entry ) ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
 
-		$logs   = $this->get_logs();
-		$logs[] = $entry;
+		$this->pending_logs[] = $entry;
 
-		// Per-level retention: keep up to debug-cap debug entries and info-cap of
-		// everything else (notice/warning/error/critical). This way a flood of
-		// debug spam never wipes useful errors.
+		// Errors / criticals: flush right away so we don't lose them if the
+		// process dies before shutdown (fatal, OOM, etc.).
+		$is_severe = ( 'error' === $entry['level'] ) || ( 'critical' === $entry['level'] );
+		if ( $is_severe && $this->flush_immediately_for_severe ) {
+			$this->flush_pending();
+			return;
+		}
+
+		if ( ! $this->shutdown_registered ) {
+			$this->shutdown_registered = true;
+			add_action( 'shutdown', array( $this, 'flush_pending' ), 99 );
+		}
+	}
+
+	/**
+	 * Apply per-level retention and write everything pending in one
+	 * update_option call. Idempotent — safe to call repeatedly.
+	 */
+	public function flush_pending() {
+		if ( empty( $this->pending_logs ) ) {
+			return;
+		}
+
+		$logs    = $this->get_logs();
+		$pending = $this->pending_logs;
+		$this->pending_logs = array();
+
+		foreach ( $pending as $entry ) {
+			$logs[] = $entry;
+		}
+
 		$info_cap  = (int) $this->settings->get( 'log_max_entries_info', self::DEFAULT_INFO_CAP );
 		$debug_cap = (int) $this->settings->get( 'log_max_entries_debug', self::DEFAULT_DEBUG_CAP );
 		$info_cap  = $info_cap > 0 ? $info_cap : self::DEFAULT_INFO_CAP;
@@ -201,7 +247,6 @@ class Handik_Booking_App_Logger {
 		if ( count( $other_entries ) > $info_cap ) {
 			$other_entries = array_slice( $other_entries, -1 * $info_cap );
 		}
-		// Re-merge keeping chronological order — sort by time ASC.
 		$logs = array_merge( $debug_entries, $other_entries );
 		usort(
 			$logs,

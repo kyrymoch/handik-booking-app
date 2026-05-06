@@ -11,6 +11,21 @@ class Handik_Booking_App_Changelog_Service {
 	public function get_entries() {
 		return array(
 			array(
+				'version'      => '2.1.8.7',
+				'date'         => '2026-05-06',
+				'title'        => 'Assistant Latency Sprints 1 + 2',
+				'notes'        => array(
+					'A1: save_assistant_routing_result no longer blocks on a fresh Vision call; cached analysis + async refresh via wp_schedule_single_event saves 3–15 seconds on cold-cache turns.',
+					'A3: prewarmed ChatKit session is now passed into the bridge mount via a new prewarmedSession option, eliminating a duplicate create-session round-trip on the first assistant view.',
+					'B1: verify_draft_token is memoized per PHP request; the 6+ REST endpoints that hit the same token within one assistant turn no longer each pay the wp_check_password cost.',
+					'E3: ChatKit, Vision, and Twilio outbound HTTP requests now opt into HTTP/1.1 keep-alive so cURL reuses TLS across the same PHP process.',
+					'A5: get_request_photo_context tool returns cached photo analysis only and schedules an async refresh, so the assistant tool round-trip stays fast even on cold caches.',
+					'A6: photo analysis auto-downgrades to gpt-4.1-nano for 1–2 photos, keeping gpt-4.1-mini only when 3+ photos.',
+					'B2: photo + pricing context are prefetched into state_variables when the ChatKit session is created, so the Classification agent can answer turn 1 without two extra client tool round-trips.',
+					'E4: plugin logger buffers entries in-memory and flushes once on the shutdown action; errors / critical still flush immediately. Drops 5–15 update_option calls per turn down to one.',
+				),
+			),
+			array(
 				'version'      => '2.1.8.5',
 				'date'         => '2026-05-05',
 				'title'        => 'Operational Admin Rewrite',
