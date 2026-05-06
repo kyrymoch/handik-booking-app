@@ -247,13 +247,16 @@
 			cachedSession: null
 		};
 
-		// Sprint 1 A3: if booking-app prewarmed a session, seed cachedSession so
-		// the very first getClientSecret() callback returns synchronously. The
-		// existing flow (lines around 670 in this file) is already wired to
-		// consume record.cachedSession and clear it after use.
+		// Sprint 1 A3 (revised): seed only cachedSession so the first
+		// getClientSecret() returns synchronously. Do NOT prefill record.session
+		// — that field is the canonical session-ready signal and prefilling it
+		// makes markChatActive emit session-ready prematurely while the
+		// ChatKit element is still booting. v2.1.8.9 saw infinite-loading
+		// regressions because of that. The real session lands in
+		// record.session a few ms later when waitForChatKitElement().then(...)
+		// resolves.
 		if ( options.prewarmedSession && typeof options.prewarmedSession === 'object' ) {
 			record.cachedSession = options.prewarmedSession;
-			record.session = options.prewarmedSession;
 		}
 
 		BRIDGE_CACHE.set( cacheKey, record );

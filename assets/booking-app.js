@@ -699,8 +699,10 @@
 				const canContinue = this.assistantCanContinue();
 				const shouldDisable = !! isBusy || ! canContinue;
 				button.disabled = !! isBusy;
+				// Hardcoded English: critical CTA copy must not surface a stale
+				// localized "Loading..." setting inside the public app.
 				button.textContent = isBusy
-					? ( config.strings.loading || 'Loading...' )
+					? 'Loading…'
 					: ( config.strings.assistantContinue || 'Book a time' );
 				button.classList.remove( 'is-pending' );
 				button.classList.remove( 'is-primary' );
@@ -1629,8 +1631,41 @@
 			} );
 
 			this.setAssistantPreparingState( ! this.assistantBridge );
+			// Hotfix: hard-stop the loading state after 14s no matter what the
+			// ChatKit bridge reports. Even when the element is silently stuck,
+			// the user is unblocked: they can either wait + retry or use Plan B.
+			this.startAssistantPreparingSafetyTimer();
 
 			return this.assistantPreparationPromise;
+		}
+
+		startAssistantPreparingSafetyTimer() {
+			this.stopAssistantPreparingSafetyTimer();
+			this.assistantPreparingSafetyTimer = window.setTimeout( () => {
+				this.assistantPreparingSafetyTimer = null;
+				if ( ! this.state.assistantPreparing ) {
+					return;
+				}
+				// Force-dismiss the overlay so the user can interact (or fall
+				// back to the booking link). We do this even if the bridge
+				// hasn't reported ready — better the user sees something than
+				// stares at a spinner.
+				this.logClient( 'warn', 'Assistant preparing safety timer expired, force-dismissing overlay.', {
+					request_id: this.state.requestId,
+					has_bridge: !! this.assistantBridge
+				} );
+				this.setAssistantPreparingState( false );
+				if ( ! this.assistantBridge ) {
+					this.showAssistantStuckBanner( 'preparing-timeout' );
+				}
+			}, 14000 );
+		}
+
+		stopAssistantPreparingSafetyTimer() {
+			if ( this.assistantPreparingSafetyTimer ) {
+				window.clearTimeout( this.assistantPreparingSafetyTimer );
+				this.assistantPreparingSafetyTimer = null;
+			}
 		}
 
 		prewarmAssistantSession() {
@@ -2432,8 +2467,11 @@
 					initialThreadId: this.state.assistantThreadId,
 					startScreenGreeting: config.strings.assistantGreeting || 'Describe the job.',
 					composerPlaceholder: config.strings.assistantGreeting || 'Describe the job.',
-					loadingTitle: config.strings.loadingAssistant || 'Loading virtual assistant...',
-					loadingSubtitle: config.strings.loadingAssistantSubtext || 'Charging the tiny robot brain for your next step.',
+					// Hardcoded English: keep the bridge loader copy out of the
+					// stale-localization path. Owner can still customize the
+					// assistant intro / greeting through admin settings.
+					loadingTitle: 'Loading virtual assistant…',
+					loadingSubtitle: '',
 					endpoints: {
 						createSession: config.restBase + 'chatkit-session',
 						requestPhotoContext: config.restBase + 'request-photo-context',
@@ -2611,12 +2649,13 @@
 		screen( title, body, modifier ) {
 			// Generic loader overlay for non-assistant blocking states.
 			const genericOverlayNeeded = this.state.loading || this.state.photoUploading;
-			const genericOverlay = genericOverlayNeeded ? '<div class="handik-booking-app__loading-overlay" aria-live="polite">' + this.loaderMarkup( config.strings.loadingTitle || 'Loading' ) + '</div>' : '';
-			// Issue 3 fix: assistant step always carries its own overlay in DOM
-			// from the start; we just toggle is-assistant-preparing on body
-			// based on the bridge readiness, no DOM injection race anymore.
+			const genericOverlay = genericOverlayNeeded ? '<div class="handik-booking-app__loading-overlay" aria-live="polite">' + this.loaderMarkup( 'Loading' ) + '</div>' : '';
+			// Issue 3 fix: assistant overlay is always rendered in DOM and
+			// toggled via .is-assistant-preparing on the body. The label is
+			// hardcoded English here on purpose — the public app must not
+			// surface a stale Russian "ui_loading_assistant_title" setting.
 			const isAssistantStep = 'assistant' === this.state.step;
-			const assistantOverlay = isAssistantStep ? '<div class="handik-booking-app__loading-overlay handik-booking-app__loading-overlay--assistant" data-assistant-preparing-overlay="1" aria-live="polite">' + this.loaderMarkup( config.strings.loadingAssistant || 'Loading virtual assistant…' ) + '</div>' : '';
+			const assistantOverlay = isAssistantStep ? '<div class="handik-booking-app__loading-overlay handik-booking-app__loading-overlay--assistant" data-assistant-preparing-overlay="1" aria-live="polite">' + this.loaderMarkup( 'Loading virtual assistant…' ) + '</div>' : '';
 			const bodyClass = 'handik-booking-app__screen-body' + ( isAssistantStep && this.state.assistantPreparing ? ' is-assistant-preparing' : '' );
 			const stepClass = 'handik-booking-app__screen--' + String( this.state.step || 'unknown' ).replace( /[^a-z0-9_-]/gi, '-' ).toLowerCase();
 			return '<section class="handik-booking-app__screen ' + stepClass + ' ' + ( modifier || '' ) + '"><div class="handik-booking-app__screen-header"><h2>' + this.escape( title ) + '</h2></div><div class="' + bodyClass + '">' + body + assistantOverlay + genericOverlay + '</div></section>';

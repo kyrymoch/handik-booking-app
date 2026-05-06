@@ -11,6 +11,17 @@ class Handik_Booking_App_Changelog_Service {
 	public function get_entries() {
 		return array(
 			array(
+				'version'      => '2.1.9.0',
+				'date'         => '2026-05-07',
+				'title'        => 'Hotfix — Infinite Loading & English Copy',
+				'notes'        => array(
+					'Fixed an infinite "Loading…" state on the Virtual assistant step caused by a CSS cascade specificity bug introduced in 2.1.8.9 — the assistant overlay is now reliably hidden once ChatKit is ready.',
+					'Removed an early `record.session = prewarmedSession` assignment in the bridge that prevented the safety `emitSessionReady` from firing on stuck mounts.',
+					'Added a 14-second safety timer that force-dismisses the assistant overlay and surfaces the Plan-B banner if ChatKit never reports ready.',
+					'Forced the public-facing assistant overlay copy and the busy-button "Loading…" label to be hardcoded English so stale Russian values saved in settings cannot leak into the customer-facing flow. Admin-editable copy (greeting, intro, Plan-B banner) still respects settings.',
+				),
+			),
+			array(
 				'version'      => '2.1.8.9',
 				'date'         => '2026-05-06',
 				'title'        => 'Task Screen Reorder + Assistant UX Polish',
