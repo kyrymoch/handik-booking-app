@@ -37,6 +37,13 @@ class Handik_Booking_App_Plugin {
 	public $rest_api;
 	public $admin;
 	public $widget_registry;
+	public $cal_api;
+	public $booking_presets;
+	public $direct_booking;
+	public $project_schedule;
+	public $forms_rest_api;
+	public $forms_router;
+	public $admin_additional_forms;
 
 	/**
 	 * @return Handik_Booking_App_Plugin
@@ -65,7 +72,16 @@ class Handik_Booking_App_Plugin {
 		$this->photo_analysis = new Handik_Booking_App_Photo_Analysis_Service( $this->settings, $this->logger, $this->job_requests );
 		$this->chatkit        = new Handik_Booking_App_ChatKit_Service( $this->settings, $this->logger, $this->job_requests, $this->routing, $this->cal, $this->photo_analysis );
 		$this->updater        = new Handik_Booking_App_Updater_Service( $this->settings, $this->logger );
-		$this->webhook        = new Handik_Booking_App_Webhook_Service( $this->settings, $this->logger, $this->job_requests, $this->bookings );
+		// Additional Forms module — instantiate before webhook so it can route by metadata.
+		$this->cal_api          = new Handik_Booking_App_Cal_Api_Service( $this->settings, $this->logger );
+		$this->booking_presets  = new Handik_Booking_App_Booking_Presets_Service( $this->logger );
+		$this->direct_booking   = new Handik_Booking_App_Direct_Booking_Service( $this->booking_presets, $this->contacts, $this->addresses, $this->settings, $this->logger );
+		$this->project_schedule = new Handik_Booking_App_Project_Schedule_Service( $this->booking_presets, $this->cal_api, $this->contacts, $this->addresses, $this->logger );
+		$this->forms_rest_api   = new Handik_Booking_App_Forms_Rest_Api( $this->booking_presets, $this->direct_booking, $this->project_schedule, $this->logger );
+		$this->forms_router     = new Handik_Booking_App_Forms_Router( $this->booking_presets, $this->project_schedule, $this->settings );
+		$this->admin_additional_forms = new Handik_Booking_App_Admin_Additional_Forms( $this->booking_presets, $this->direct_booking, $this->project_schedule, $this->contacts, $this->addresses );
+
+		$this->webhook        = new Handik_Booking_App_Webhook_Service( $this->settings, $this->logger, $this->job_requests, $this->bookings, $this->direct_booking, $this->project_schedule );
 		$this->appearance     = new Handik_Booking_App_Appearance_Service( $this->settings );
 		$this->service_catalog = new Handik_Booking_App_Service_Catalog_Service( $this->settings );
 		$this->changelog      = new Handik_Booking_App_Changelog_Service();
@@ -77,7 +93,7 @@ class Handik_Booking_App_Plugin {
 		$this->frontend_app   = new Handik_Booking_App_Frontend_App( $this->assets, $this->appearance );
 		$this->shortcode      = new Handik_Booking_App_Shortcode( $this->frontend_app );
 		$this->rest_api       = new Handik_Booking_App_REST_API( $this->app_controller, $this->auth, $this->chatkit, $this->webhook, $this->messages, $this->bookings, $this->contacts, $this->addresses, $this->settings, $this->logger, $this->job_requests, $this->service_catalog );
-		$this->admin          = new Handik_Booking_App_Admin( $this->settings, $this->assets, $this->contacts, $this->addresses, $this->job_requests, $this->bookings, $this->logger, $this->changelog, $this->service_catalog, $this->messages );
+		$this->admin          = new Handik_Booking_App_Admin( $this->settings, $this->assets, $this->contacts, $this->addresses, $this->job_requests, $this->bookings, $this->logger, $this->changelog, $this->service_catalog, $this->messages, $this->admin_additional_forms );
 		$this->widget_registry = new Handik_Booking_App_Widget_Registry();
 
 		add_action( 'template_redirect', array( $this, 'maybe_process_magic_link' ) );

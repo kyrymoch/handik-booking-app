@@ -37,6 +37,8 @@ class Handik_Booking_App_Admin {
 	protected $service_catalog;
 	/** @var Handik_Booking_App_Messages_Service|null */
 	protected $messages;
+	/** @var Handik_Booking_App_Admin_Additional_Forms|null */
+	protected $page_additional_forms;
 
 	// Page renderers (lazy-instantiated in render_*).
 	/** @var Handik_Booking_App_Admin_Dashboard|null */
@@ -54,7 +56,7 @@ class Handik_Booking_App_Admin {
 	/** @var Handik_Booking_App_Admin_Logs|null */
 	protected $page_logs;
 
-	public function __construct( $settings, $assets, $contacts, $addresses, $job_requests, $bookings, $logger, $changelog, $service_catalog, $messages = null ) {
+	public function __construct( $settings, $assets, $contacts, $addresses, $job_requests, $bookings, $logger, $changelog, $service_catalog, $messages = null, $additional_forms = null ) {
 		$this->settings        = $settings;
 		$this->assets          = $assets;
 		$this->contacts        = $contacts;
@@ -65,6 +67,7 @@ class Handik_Booking_App_Admin {
 		$this->changelog       = $changelog;
 		$this->service_catalog = $service_catalog;
 		$this->messages        = $messages;
+		$this->page_additional_forms = $additional_forms;
 
 		add_action( 'admin_menu', array( $this, 'register_menu' ) );
 		add_action( 'admin_init', array( $this, 'maybe_save_settings' ) );
@@ -96,6 +99,9 @@ class Handik_Booking_App_Admin {
 		add_submenu_page( 'handik-booking-app', __( 'Bookings', 'handik-booking-app' ), __( 'Bookings', 'handik-booking-app' ), $cap, 'handik-booking-app-bookings', array( $this, 'render_bookings' ) );
 		add_submenu_page( 'handik-booking-app', __( 'People & Requests', 'handik-booking-app' ), __( 'People', 'handik-booking-app' ), $cap, 'handik-booking-app-crm', array( $this, 'render_people' ) );
 		add_submenu_page( 'handik-booking-app', __( 'App Setup', 'handik-booking-app' ), __( 'Setup', 'handik-booking-app' ), $cap, 'handik-booking-app-settings', array( $this, 'render_settings' ) );
+		if ( $this->page_additional_forms ) {
+			add_submenu_page( 'handik-booking-app', __( 'Additional Forms', 'handik-booking-app' ), __( 'Additional Forms', 'handik-booking-app' ), $cap, Handik_Booking_App_Admin_Additional_Forms::PAGE_SLUG, array( $this, 'render_additional_forms' ) );
+		}
 		add_submenu_page( 'handik-booking-app', __( 'Integrations & Logs', 'handik-booking-app' ), __( 'Logs', 'handik-booking-app' ), $cap, 'handik-booking-app-operations', array( $this, 'render_operations' ) );
 		add_submenu_page( 'handik-booking-app', __( 'System info', 'handik-booking-app' ), __( 'System', 'handik-booking-app' ), $cap, 'handik-booking-app-system', array( $this, 'render_system' ) );
 	}
@@ -220,6 +226,14 @@ class Handik_Booking_App_Admin {
 			$this->logs_page()
 		) );
 		$page->render();
+	}
+
+	public function render_additional_forms() {
+		if ( ! $this->page_additional_forms ) {
+			echo '<div class="wrap"><p>' . esc_html__( 'Additional Forms module is not loaded.', 'handik-booking-app' ) . '</p></div>';
+			return;
+		}
+		$this->page_additional_forms->render();
 	}
 
 	public function render_system() {

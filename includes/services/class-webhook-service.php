@@ -26,16 +26,30 @@ class Handik_Booking_App_Webhook_Service {
 	protected $bookings;
 
 	/**
+	 * @var Handik_Booking_App_Direct_Booking_Service|null
+	 */
+	protected $direct;
+
+	/**
+	 * @var Handik_Booking_App_Project_Schedule_Service|null
+	 */
+	protected $project;
+
+	/**
 	 * @param Handik_Booking_App_Settings             $settings Settings.
 	 * @param Handik_Booking_App_Logger               $logger Logger.
 	 * @param Handik_Booking_App_Job_Requests_Service $job_requests Requests.
 	 * @param Handik_Booking_App_Bookings_Service     $bookings Bookings.
+	 * @param Handik_Booking_App_Direct_Booking_Service|null   $direct   Direct booking service.
+	 * @param Handik_Booking_App_Project_Schedule_Service|null $project  Project schedule service.
 	 */
-	public function __construct( $settings, $logger, $job_requests, $bookings ) {
+	public function __construct( $settings, $logger, $job_requests, $bookings, $direct = null, $project = null ) {
 		$this->settings     = $settings;
 		$this->logger       = $logger;
 		$this->job_requests = $job_requests;
 		$this->bookings     = $bookings;
+		$this->direct       = $direct;
+		$this->project      = $project;
 	}
 
 	/**
@@ -80,6 +94,17 @@ class Handik_Booking_App_Webhook_Service {
 				$metadata = is_array( $decoded ) ? $decoded : array();
 			}
 		}
+		// Route to the Additional Booking Forms module before falling back to
+		// the main AI flow. We only dispatch here AFTER signature verification
+		// so a forged metadata payload cannot mutate state.
+		$booking_source = isset( $metadata['handik_booking_source'] ) ? sanitize_key( (string) $metadata['handik_booking_source'] ) : '';
+		if ( 'direct_booking_form' === $booking_source && $this->direct ) {
+			return $this->dispatch_direct( $event, $data, $metadata );
+		}
+		if ( 'project_work_days_form' === $booking_source && $this->project ) {
+			return $this->dispatch_project( $event, $data, $metadata );
+		}
+
 		$request_id = ! empty( $metadata['handik_job_request_id'] ) ? absint( $metadata['handik_job_request_id'] ) : 0;
 
 		if ( ! $request_id ) {
@@ -150,6 +175,77 @@ class Handik_Booking_App_Webhook_Service {
 			$signature = substr( $signature, 7 );
 		}
 		return hash_equals( hash_hmac( 'sha256', $raw_body, $secret ), $signature );
+	}
+
+	/**
+	 * @param string               $event    Normalized event.
+	 * @param array<string, mixed> $data     Cal payload data.
+	 * @param array<string, mixed> $metadata Cal metadata.
+	 * @return array{success?: true, status?: string, error?: string, http_status?: int}
+	 */
+	protected function dispatch_direct( $event, array $data, array $metadata ) {
+		$booking_id  = (string) ( $data['uid'] ?? $data['bookingUid'] ?? $data['id'] ?? $data['bookingId'] ?? '' );
+		$status      = $this->map_status( $event );
+		$direct_id   = isset( $metadata['handik_direct_request_id'] )
+			? absint( $metadata['handik_direct_request_id'] )
+			: 0;
+
+		if ( $direct_id ) {
+			global $wpdb;
+			$wpdb->update(
+				Handik_Booking_App_DB::table( 'direct_booking_requests' ),
+				array(
+					'status'         => sanitize_key( $status ),
+					'cal_booking_id' => $booking_id,
+					'cal_booking_uid' => (string) ( $data['uid'] ?? $data['bookingUid'] ?? '' ),
+				),
+				array( 'id' => $direct_id )
+			);
+		} elseif ( '' !== $booking_id ) {
+			$row = $this->direct->find_by_cal_booking_id( $booking_id );
+			if ( $row ) {
+				$this->direct->update_status_by_uid( (string) ( $data['uid'] ?? $data['bookingUid'] ?? $row['cal_booking_uid'] ), $status );
+			}
+		}
+
+		$this->logger->info(
+			'Cal webhook routed to direct booking form.',
+			array(
+				'event'             => $event,
+				'direct_request_id' => $direct_id,
+				'cal_booking_id'    => $booking_id,
+				'status'            => $status,
+			)
+		);
+		return array( 'success' => true, 'status' => $status );
+	}
+
+	/**
+	 * @param string               $event    Normalized event.
+	 * @param array<string, mixed> $data     Cal payload data.
+	 * @param array<string, mixed> $metadata Cal metadata.
+	 * @return array{success?: true, status?: string, error?: string, http_status?: int}
+	 */
+	protected function dispatch_project( $event, array $data, array $metadata ) {
+		$uid    = (string) ( $data['uid'] ?? $data['bookingUid'] ?? '' );
+		$status = $this->map_status( $event );
+		// For projects we map "booked" → "confirmed" only at the day level;
+		// other events ("cancelled", "rescheduled") flow through unchanged.
+		$day_status = ( 'booked' === $status ) ? Handik_Booking_App_Project_Schedule_Service::DAY_STATUS_CONFIRMED : $status;
+		if ( '' !== $uid ) {
+			$this->project->update_day_status_by_uid( $uid, $day_status );
+		}
+		$this->logger->info(
+			'Cal webhook routed to project work days.',
+			array(
+				'event'      => $event,
+				'cal_uid'    => $uid,
+				'day_status' => $day_status,
+				'schedule_id' => isset( $metadata['handik_project_schedule_id'] ) ? absint( $metadata['handik_project_schedule_id'] ) : 0,
+				'day_index'   => isset( $metadata['handik_project_day_index'] ) ? absint( $metadata['handik_project_day_index'] ) : 0,
+			)
+		);
+		return array( 'success' => true, 'status' => $status );
 	}
 
 	protected function map_status( $event ) {
