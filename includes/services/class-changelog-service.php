@@ -11,6 +11,15 @@ class Handik_Booking_App_Changelog_Service {
 	public function get_entries() {
 		return array(
 			array(
+				'version'      => '2.1.8.8',
+				'date'         => '2026-05-06',
+				'title'        => 'Hide Booking URL From Chat Replies',
+				'notes'        => array(
+					'Kept booking_url internal to the app after save_assistant_routing_result so ChatKit cannot add a redundant Book the appointment link inside the assistant reply.',
+					'The Book a time CTA remains the only customer-facing booking action from the assistant step.',
+				),
+			),
+			array(
 				'version'      => '2.1.8.7',
 				'date'         => '2026-05-06',
 				'title'        => 'Assistant Latency Sprints 1 + 2',

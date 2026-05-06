@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.1.8.7
+Stable tag: 2.1.8.8
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, silent returning-client recognition, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,10 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.1.8.8 =
+* Kept the final Cal.com booking URL internal to the app after `save_assistant_routing_result`, so ChatKit cannot surface a redundant booking link inside the assistant reply.
+* The existing Book a time button remains the only customer-facing booking action from the assistant step.
 
 = 2.1.8.7 =
 * **A1 — Non-blocking photo analysis on save_assistant_routing_result.** `save_assistant_result` no longer waits up to 45 seconds on a fresh OpenAI Vision call; it uses the cached analysis and schedules a single async refresh via `wp_schedule_single_event` when the cache is empty. -3…-15 sec on cold-cache turns.

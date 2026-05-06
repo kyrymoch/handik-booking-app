@@ -621,8 +621,7 @@
 						mismatch_notes: assistantResult.mismatch_notes || '',
 						unsafe_flag: !! ( payload && payload.unsafe_flag ),
 						unsafe_reason: payload && payload.unsafe_reason ? String( payload.unsafe_reason ) : '',
-						booking_url_ready: !! ( payload && payload.booking_url_ready && payload.booking_url ),
-						booking_url: payload && payload.booking_url ? String( payload.booking_url ) : ''
+						booking_url_ready: !! ( payload && payload.booking_url_ready && payload.booking_url )
 					};
 					log( 'info', 'ChatKit routing result tool save completed.', {
 						name: name,
