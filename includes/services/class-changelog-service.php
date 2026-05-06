@@ -11,6 +11,19 @@ class Handik_Booking_App_Changelog_Service {
 	public function get_entries() {
 		return array(
 			array(
+				'version'      => '2.1.8.9',
+				'date'         => '2026-05-06',
+				'title'        => 'Task Screen Reorder + Assistant UX Polish',
+				'notes'        => array(
+					'Swapped task screen order so Choose Specific Tasks is second, and rebranded the third card from Larger-Scale Work to Free Consultation with a clear "Free" badge and "free on-site visit to assess larger or unclear work before booking" description. Default service catalog updated to match.',
+					'Fixed an inconsistent loading state on the Virtual assistant step: the overlay is now part of the rendered markup from the moment the step opens (race condition with the previous DOM-injection approach removed). Always visible until ChatKit reports ready.',
+					'Typing indicator now reads "Thinking…" with three bouncing dots and a role="status" live region — hidden as soon as the assistant produces output, shown again on every subsequent user message.',
+					'Plan B for stuck assistant: if no reply arrives within 30 seconds (or the bridge fails to mount), a soft banner appears with an "Open the booking page directly" CTA pointing at the configured Cal.com fallback. Click is logged so admins can monitor how often it triggers.',
+					'Bigger mobile tap targets on task chips and choice cards (≥44px), with prefers-reduced-motion support for the new animations.',
+					'Three new admin-editable strings under Setup → Booking flow → Step 5: Assistant for the Thinking… label and the Plan-B banner title/body/CTA.',
+				),
+			),
+			array(
 				'version'      => '2.1.8.8',
 				'date'         => '2026-05-06',
 				'title'        => 'Hide Booking URL From Chat Replies',

@@ -148,6 +148,11 @@ class Handik_Booking_App_Assets {
 					'assistantTitle'     => (string) $this->settings->get( 'ui_assistant_title', 'Virtual assistant' ),
 					'assistantIntro'     => $assistant_intro,
 					'assistantContinue'  => $assistant_continue,
+					// v2.1.8.9 UX: thinking indicator + Plan-B copy.
+					'assistantThinking'  => (string) $this->settings->get( 'ui_assistant_thinking', 'Thinking…' ),
+					'assistantStuckTitle' => (string) $this->settings->get( 'ui_assistant_stuck_title', 'The assistant is taking longer than usual' ),
+					'assistantStuckBody'  => (string) $this->settings->get( 'ui_assistant_stuck_body', 'You can keep waiting, or open the booking page directly and Alex will sort out the details on site.' ),
+					'assistantStuckCta'   => (string) $this->settings->get( 'ui_assistant_stuck_cta', 'Open the booking page directly →' ),
 					'contactContinue'    => $contact_continue,
 					'contactIntro'       => $contact_intro,
 					'projectNotice'      => (string) $this->settings->get( 'ui_project_notice', 'Project / Large Job means a bigger scope that usually needs a consultation-style visit before the work is scheduled.' ),

@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.1.8.8
+Stable tag: 2.1.8.9
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, silent returning-client recognition, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,15 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.1.8.9 =
+* **Task screen reorder.** "Free Consultation" (rebrand of "Larger-Scale Work") is now the third card after "Choose Specific Tasks". Description is now "A free on-site visit to assess larger, multi-step, or unclear work before any quote or scheduling." with a "Free" price badge.
+* **Assistant loading flicker fixed.** The "Loading virtual assistant…" overlay is now part of the rendered markup from the moment the user enters the assistant step — visibility is toggled via a CSS class. Removes the race condition where the overlay sometimes failed to appear and the user saw a blank panel for a few seconds.
+* **"Thinking…" indicator on every reply.** The typing indicator now shows three bouncing dots plus a "Thinking…" label, as a `role="status"` live region for screen readers. Visible after every user message, hidden as soon as the assistant produces output. Label is admin-editable.
+* **Plan B for stuck assistant.** If 30 seconds pass after a message without an assistant reply (or if the bridge fails to mount entirely), a soft warning banner appears with a direct "Open the booking page directly →" CTA pointing at the configured Cal.com fallback URL. Admin-editable copy. Click is logged so admins can see how often Plan B is used.
+* **Bigger tap targets on mobile.** Task chips (`.handik-task`) now use 12px×14px padding, ≥44px min-height, and 0.92rem font on mobile (was 8px×10px / 0.78rem) so they're easier to thumb-press. Choice cards have a min-height floor too.
+* **`prefers-reduced-motion` support.** Typing dots, stuck-banner reveal, and tap scale honor the OS reduce-motion preference.
+* **Admin Setup → Booking flow → Step 5: Assistant.** Three new editable strings ("Thinking…" label, Plan-B title, body, and CTA) so the owner can tune copy without redeploying.
 
 = 2.1.8.8 =
 * Kept the final Cal.com booking URL internal to the app after `save_assistant_routing_result`, so ChatKit cannot surface a redundant booking link inside the assistant reply.
