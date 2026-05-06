@@ -54,6 +54,9 @@
 			this.assistantContextDispatchPromise = null;
 			this.assistantUnlockTimer = null;
 			this.assistantTypingTimer = null;
+			// Issue 5: safety timers for the assistant pipeline.
+			this.assistantPreparingSafetyTimer = null;
+			this.assistantResponseSafetyTimer = null;
 			this.savedAddressLoadingTimer = null;
 			this.savedAddressLoadingProfileKey = '';
 			this.state = {
@@ -286,6 +289,10 @@
 		}
 
 		setAssistantPreparingState( isPreparing ) {
+			// Issue 3 fix: the previous version DOM-injected the overlay only
+			// for the assistant step, which was a race condition with render().
+			// Now the overlay is always part of the rendered markup (see
+			// assistantMarkup() / screen()) and we just toggle visibility.
 			this.state.assistantPreparing = !! isPreparing;
 			if ( 'assistant' !== this.state.step ) {
 				return;
@@ -295,20 +302,12 @@
 			if ( ! body ) {
 				return;
 			}
+			body.classList.toggle( 'is-assistant-preparing', !! isPreparing );
 
-			let overlay = body.querySelector( '[data-assistant-preparing-overlay]' );
-			if ( isPreparing ) {
-				if ( ! overlay ) {
-					const wrapper = document.createElement( 'div' );
-					wrapper.innerHTML = '<div class="handik-booking-app__loading-overlay" data-assistant-preparing-overlay="1" aria-live="polite">' + this.loaderMarkup( 'Loading' ) + '</div>';
-					overlay = wrapper.firstChild;
-					body.appendChild( overlay );
-				}
-				return;
-			}
-
-			if ( overlay ) {
-				overlay.remove();
+			// Stop the safety timer if the assistant is now ready.
+			if ( ! isPreparing && this.assistantPreparingSafetyTimer ) {
+				window.clearTimeout( this.assistantPreparingSafetyTimer );
+				this.assistantPreparingSafetyTimer = null;
 			}
 		}
 
@@ -928,6 +927,12 @@
 			}
 			if ( 'address_details' !== step ) {
 				this.stopSavedAddressLoading( false );
+			}
+			// Issue 3 fix: when entering the assistant step without a ready bridge,
+			// pre-set assistantPreparing so the rendered markup ships the overlay
+			// in its visible state immediately. No DOM injection race.
+			if ( 'assistant' === step && previousStep !== step && ! this.assistantBridge ) {
+				this.state.assistantPreparing = true;
 			}
 			this.render();
 			this.scrollStepIntoView();
@@ -1670,14 +1675,25 @@
 				return;
 			}
 			let indicator = host.querySelector( '.handik-assistant-typing-indicator' );
+			const labelText = config.strings.assistantThinking || 'Thinking…';
 			if ( indicator ) {
+				const label = indicator.querySelector( '.handik-assistant-typing-indicator__label' );
+				if ( label ) {
+					label.textContent = labelText;
+				}
 				indicator.classList.add( 'is-visible' );
 				return;
 			}
 			indicator = document.createElement( 'div' );
 			indicator.className = 'handik-assistant-typing-indicator';
-			indicator.setAttribute( 'aria-hidden', 'true' );
-			indicator.innerHTML = '<span></span><span></span><span></span>';
+			indicator.setAttribute( 'role', 'status' );
+			indicator.setAttribute( 'aria-live', 'polite' );
+			// Issue 4: positive "thinking" indicator with label, three bouncing
+			// dots, and ARIA-friendly status role. Visible after every user turn,
+			// hidden as soon as the assistant produces an output token.
+			indicator.innerHTML =
+				'<span class="handik-assistant-typing-indicator__dots" aria-hidden="true"><span></span><span></span><span></span></span>' +
+				'<span class="handik-assistant-typing-indicator__label">' + this.escape( labelText ) + '</span>';
 			host.appendChild( indicator );
 			window.requestAnimationFrame( () => {
 				indicator.classList.add( 'is-visible' );
@@ -1700,6 +1716,82 @@
 				}
 				this.assistantTypingTimer = null;
 			}, 180 );
+		}
+
+		// Issue 5 — assistant safety net.
+		//
+		// startAssistantResponseSafetyTimer fires shortly after the user sends a
+		// message. If the assistant has NOT produced an output token within the
+		// timeout window, we surface a Plan-B banner with a direct booking link.
+		// stopAssistantResponseSafetyTimer cancels it on every assistant token.
+		// clearAssistantStuckBanner removes any previously shown banner and
+		// resets the related state.
+
+		startAssistantResponseSafetyTimer() {
+			this.stopAssistantResponseSafetyTimer();
+			const grace = 30000; // 30s — typical first-token P95 is well under this
+			this.assistantResponseSafetyTimer = window.setTimeout( () => {
+				this.assistantResponseSafetyTimer = null;
+				if ( ! this.state.assistantResponseSeen && this.state.assistantAwaitingResponse ) {
+					this.showAssistantStuckBanner( 'response-timeout' );
+				}
+			}, grace );
+		}
+
+		stopAssistantResponseSafetyTimer() {
+			if ( this.assistantResponseSafetyTimer ) {
+				window.clearTimeout( this.assistantResponseSafetyTimer );
+				this.assistantResponseSafetyTimer = null;
+			}
+		}
+
+		showAssistantStuckBanner( reason ) {
+			const host = this.root.querySelector( '.handik-booking-app__assistant-host' );
+			if ( ! host ) {
+				return;
+			}
+			if ( host.querySelector( '.handik-assistant-stuck-banner' ) ) {
+				return; // already shown
+			}
+			const fallbackUrl = this.directBookingUrl();
+			const banner = document.createElement( 'div' );
+			banner.className = 'handik-assistant-stuck-banner';
+			banner.setAttribute( 'role', 'alert' );
+			banner.setAttribute( 'data-handik-stuck-reason', String( reason || 'unknown' ) );
+			const title = config.strings.assistantStuckTitle || 'The assistant is taking longer than usual';
+			const body = config.strings.assistantStuckBody || 'You can keep waiting, or open the booking page directly and Alex will sort out the details on site.';
+			const cta = config.strings.assistantStuckCta || 'Open the booking page directly →';
+			banner.innerHTML = '<strong>' + this.escape( title ) + '</strong>' +
+				'<p>' + this.escape( body ) + '</p>' +
+				( fallbackUrl ? '<a class="handik-btn is-primary" target="_blank" rel="noopener" href="' + this.escape( fallbackUrl ) + '" data-handik-stuck-cta>' + this.escape( cta ) + '</a>' : '' );
+			host.appendChild( banner );
+			window.requestAnimationFrame( () => banner.classList.add( 'is-visible' ) );
+			this.logClient( 'warn', 'Assistant stuck banner shown.', {
+				request_id: this.state.requestId,
+				reason: String( reason || 'unknown' ),
+				has_fallback_url: !! fallbackUrl
+			} );
+			// Track CTA clicks so the admin sees how often Plan B is used.
+			const cta_link = banner.querySelector( '[data-handik-stuck-cta]' );
+			if ( cta_link ) {
+				cta_link.addEventListener( 'click', () => {
+					this.logClient( 'warn', 'Assistant stuck Plan B clicked.', {
+						request_id: this.state.requestId,
+						reason: String( reason || 'unknown' )
+					} );
+				}, { once: true } );
+			}
+		}
+
+		clearAssistantStuckBanner() {
+			const host = this.root.querySelector( '.handik-booking-app__assistant-host' );
+			if ( ! host ) {
+				return;
+			}
+			const banner = host.querySelector( '.handik-assistant-stuck-banner' );
+			if ( banner ) {
+				banner.remove();
+			}
 		}
 
 		async ensureDraftRequest( appStep ) {
@@ -2373,6 +2465,8 @@
 							this.state.assistantResponseSeen = false;
 							this.state.assistantReadyForBooking = false;
 							this.clearAssistantFallbackMessage();
+							this.clearAssistantStuckBanner();
+							this.startAssistantResponseSafetyTimer();
 							if ( this.assistantUnlockTimer ) {
 								window.clearTimeout( this.assistantUnlockTimer );
 								this.assistantUnlockTimer = null;
@@ -2387,6 +2481,8 @@
 							this.state.assistantAwaitingResponse = false;
 							this.state.assistantRoutingPending = ! this.state.assistantResultSaved;
 							this.clearAssistantFallbackMessage();
+							this.clearAssistantStuckBanner();
+							this.stopAssistantResponseSafetyTimer();
 							if ( this.assistantUnlockTimer ) {
 								window.clearTimeout( this.assistantUnlockTimer );
 								this.assistantUnlockTimer = null;
@@ -2405,6 +2501,8 @@
 						this.state.assistantResponseSeen = false;
 						this.state.assistantReadyForBooking = false;
 						this.clearAssistantFallbackMessage();
+						this.clearAssistantStuckBanner();
+						this.startAssistantResponseSafetyTimer();
 						if ( this.assistantUnlockTimer ) {
 							window.clearTimeout( this.assistantUnlockTimer );
 							this.assistantUnlockTimer = null;
@@ -2413,6 +2511,7 @@
 					},
 					onComplete: ( normalized, payload ) => {
 						this.hideAssistantTypingIndicator();
+						this.stopAssistantResponseSafetyTimer();
 						this.applySavedAssistantRouting( normalized, payload, 'chatkit-complete' );
 						this.state.assistantUserMessageSent = true;
 						if ( payload && payload.unsafe_flag ) {
@@ -2424,7 +2523,12 @@
 					onError: ( error ) => {
 						this.hideAssistantTypingIndicator();
 						this.setAssistantPreparingState( false );
+						this.stopAssistantResponseSafetyTimer();
 						this.setAssistantNotice( error.message || 'The virtual assistant had trouble loading. Give it another moment, then send a short message about the job.', true );
+						// Issue 5: bridge couldn't mount → show the Plan B banner
+						// so the customer can still get to the booking page even
+						// without the assistant.
+						this.showAssistantStuckBanner( 'mount-failed' );
 					}
 				} );
 
@@ -2505,10 +2609,17 @@
 		}
 
 		screen( title, body, modifier ) {
-			const overlayNeeded = this.state.loading || this.state.photoUploading || ( this.state.assistantPreparing && 'assistant' !== this.state.step );
-			const overlay = overlayNeeded ? '<div class="handik-booking-app__loading-overlay" aria-live="polite">' + this.loaderMarkup( 'Loading' ) + '</div>' : '';
+			// Generic loader overlay for non-assistant blocking states.
+			const genericOverlayNeeded = this.state.loading || this.state.photoUploading;
+			const genericOverlay = genericOverlayNeeded ? '<div class="handik-booking-app__loading-overlay" aria-live="polite">' + this.loaderMarkup( config.strings.loadingTitle || 'Loading' ) + '</div>' : '';
+			// Issue 3 fix: assistant step always carries its own overlay in DOM
+			// from the start; we just toggle is-assistant-preparing on body
+			// based on the bridge readiness, no DOM injection race anymore.
+			const isAssistantStep = 'assistant' === this.state.step;
+			const assistantOverlay = isAssistantStep ? '<div class="handik-booking-app__loading-overlay handik-booking-app__loading-overlay--assistant" data-assistant-preparing-overlay="1" aria-live="polite">' + this.loaderMarkup( config.strings.loadingAssistant || 'Loading virtual assistant…' ) + '</div>' : '';
+			const bodyClass = 'handik-booking-app__screen-body' + ( isAssistantStep && this.state.assistantPreparing ? ' is-assistant-preparing' : '' );
 			const stepClass = 'handik-booking-app__screen--' + String( this.state.step || 'unknown' ).replace( /[^a-z0-9_-]/gi, '-' ).toLowerCase();
-			return '<section class="handik-booking-app__screen ' + stepClass + ' ' + ( modifier || '' ) + '"><div class="handik-booking-app__screen-header"><h2>' + this.escape( title ) + '</h2></div><div class="handik-booking-app__screen-body">' + body + overlay + '</div></section>';
+			return '<section class="handik-booking-app__screen ' + stepClass + ' ' + ( modifier || '' ) + '"><div class="handik-booking-app__screen-header"><h2>' + this.escape( title ) + '</h2></div><div class="' + bodyClass + '">' + body + assistantOverlay + genericOverlay + '</div></section>';
 		}
 
 		directBookingUrl() {
@@ -2607,8 +2718,8 @@
 				return '<p class="handik-booking-app__intro">' + this.escape( config.strings.taskIntro || 'Choose the option that best matches your request.' ) + '</p>' +
 					'<div class="handik-choice-grid handik-choice-grid--task-paths">' +
 						this.taskPathChoiceMarkup( 'choose-general-handyman', 'General Handyman Help', 'For mixed, unclear, or everyday handyman tasks', '$80/hr', this.taskSelected( 'general_handyman_help' ) ) +
-						this.taskPathChoiceMarkup( 'choose-larger-scale', 'Larger-Scale Work', 'For bigger, multi-step, or consultation-first work', 'Consultation first', this.taskSelected( 'larger_scale_work' ) ) +
 						this.taskPathChoiceMarkup( 'choose-specific-tasks', 'Choose Specific Tasks', 'Browse services by category and select one or more tasks', 'Price depends on task', false ) +
+						this.taskPathChoiceMarkup( 'choose-larger-scale', 'Free Consultation', 'Free on-site visit to assess larger or unclear work before booking.', 'Free', this.taskSelected( 'larger_scale_work' ) ) +
 					'</div>';
 			}
 

@@ -441,9 +441,9 @@ class Handik_Booking_App_Service_Catalog_Service {
 					),
 					array(
 						'id'             => 'larger_scale_work',
-						'label'          => 'Larger-Scale Work',
-						'description'    => 'Larger-scope, multi-step, or more complex work that typically starts with a consultation and initial assessment before the work itself is scheduled. This may include multiple rooms, broader repairs, custom installations, or project-style work that needs planning first.',
-						'rate_label'     => 'Consultation first',
+						'label'          => 'Free Consultation',
+						'description'    => 'A free on-site visit to assess larger, multi-step, or unclear work before any quote or scheduling. Use this for projects, broader repairs, custom installations, or anything that needs to be inspected before a fair time and price can be set.',
+						'rate_label'     => 'Free',
 						'service_family' => 'project_large_job',
 						'rate_family'    => 'project_custom',
 					),
