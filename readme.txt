@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.1.9.10
+Stable tag: 2.1.10.0
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, silent returning-client recognition, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,19 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.1.10.0 =
+* **Security sprint #1 — Additional Booking Forms.** Closes the P0 findings from the v2.1.9.10 audit. Public REST endpoints under `handik-booking-app/v1/forms/*` are now hardened against the abuse paths the audit flagged.
+* **Nonce-protected POSTs.** Every write endpoint (`/forms/direct/submit`, `/forms/direct/{id}/capture`, `/forms/project/open`, `/forms/project/{id}/select`, `/forms/project/{id}/confirm`) now requires the `wp_rest` nonce. Off-site origins can no longer fire-and-forget into the CRM.
+* **Sliding-window rate limit.** Per-IP, per-bucket transient-backed throttle: 30 submits/min and 60 reads/min by default. Filters: `apply_filters( 'handik_booking_app_form_rate_limit', $limit, $bucket )`. IP detection prefers `Cf-Connecting-Ip` → `X-Forwarded-For` → `REMOTE_ADDR` so CloudFlare-routed traffic doesn't all share one bucket.
+* **IDOR fix on `/forms/direct/{id}/capture`.** New `capture_token` column on `direct_booking_requests` (migration 1.4.1). The submit handler issues a 32-char `wp_generate_password` token and returns it once; `/capture` rejects requests whose token doesn't match (`hash_equals`). Anonymous parties can no longer iterate auto-increment IDs and overwrite `cal_booking_id` / `status`.
+* **State-machine precondition on `capture_booking`.** Captures are now only accepted from `READY` or `OPENED` states. `BOOKED` is an idempotent success (Cal embed sometimes double-fires `bookingSuccessful`); `CANCELLED` returns 409 instead of being silently re-opened. The SPA also debounces locally so the second event never leaves the browser.
+* **Webhook `map_status` whitelist.** The Cal.com webhook used to default unknown events (`meeting_started`, `payment_initiated`, etc.) to `booked`, which could silently flip a cancelled booking back open. Status mapping is now whitelist-only — known events resolve to one of `booked` / `rescheduled` / `cancelled`; everything else acknowledges (so Cal stops retrying) without mutating state.
+* **Webhook project-routing guard.** A Cal webhook flagged as `project_work_days_form` must now carry both `metadata.handik_project_schedule_id` AND a booking UID. Missing or malformed metadata short-circuits with a logged warning instead of falling through to the AI-flow contact-fallback matcher (which could attribute a project booking to the wrong job request).
+* **`<title>` no longer leaks disabled presets.** `/booking/{slug}` for a disabled preset still shows the friendly "not available" body, but the document title is now the generic "Book a visit" instead of the offering name — no more advertising services that the admin has explicitly turned off.
+* **Defensive `addresses->sync()` return checks.** Both `direct_booking->submit()` and `project_schedule->open_schedule()` now bail with a 500 error when the addresses service returns 0 (validation-level failure), instead of persisting a row pointing at address #0.
+
+DB migration: 1.4.0 → **1.4.1** (one ALTER TABLE adding `capture_token` to `direct_booking_requests`). The migration is idempotent — runs once on plugin update.
 
 = 2.1.9.10 =
 * **Direct Visit progress dots count fixed.** Direct flows (Standard / Extended / Large Visit) now show 3 dots in the progress bar — Contact → Address → Pick a time — instead of 4. The terminal `success` step (the confirmation card) is no longer counted as a separate dot, matching the main `[handik_booking_app]` form which keeps `booking` as the last dot and never adds a separate success entry. Project Work Days flows correctly show 4 dots (Contact → Address → Choose days → Review).

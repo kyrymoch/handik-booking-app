@@ -138,18 +138,32 @@ class Handik_Booking_App_Webhook_Service {
 		}
 
 		$data['booking_type'] = ! empty( $metadata['handik_booking_type'] ) ? sanitize_key( $metadata['handik_booking_type'] ) : '';
-		$this->bookings->upsert_from_cal( $request_id, $data, $this->map_status( $event ) );
+		$mapped_status = $this->map_status( $event );
+		if ( '' === $mapped_status ) {
+			// Unknown / non-state-changing event (e.g. meeting_started). Log
+			// and acknowledge so Cal.com doesn't keep retrying, but don't
+			// mutate the booking row.
+			$this->logger->info(
+				'Cal webhook acknowledged (no state change).',
+				array(
+					'request_id' => $request_id,
+					'event'      => $event,
+				)
+			);
+			return array( 'success' => true, 'status' => 'ignored' );
+		}
+		$this->bookings->upsert_from_cal( $request_id, $data, $mapped_status );
 		$this->logger->info(
 			'Cal webhook synced booking.',
 			array(
 				'request_id' => $request_id,
 				'event'      => $event,
 				'booking_id' => $this->bookings->extract_booking_id( $data ),
-				'status'     => $this->map_status( $event ),
+				'status'     => $mapped_status,
 			)
 		);
 
-		return array( 'success' => true, 'status' => $this->map_status( $event ) );
+		return array( 'success' => true, 'status' => $mapped_status );
 	}
 
 	protected function verify_signature( WP_REST_Request $request, $raw_body ) {
@@ -190,6 +204,14 @@ class Handik_Booking_App_Webhook_Service {
 			? absint( $metadata['handik_direct_request_id'] )
 			: 0;
 
+		if ( '' === $status ) {
+			$this->logger->info(
+				'Cal webhook acknowledged for direct form (no state change).',
+				array( 'event' => $event, 'direct_request_id' => $direct_id )
+			);
+			return array( 'success' => true, 'status' => 'ignored' );
+		}
+
 		if ( $direct_id ) {
 			global $wpdb;
 			$wpdb->update(
@@ -227,35 +249,89 @@ class Handik_Booking_App_Webhook_Service {
 	 * @return array{success?: true, status?: string, error?: string, http_status?: int}
 	 */
 	protected function dispatch_project( $event, array $data, array $metadata ) {
-		$uid    = (string) ( $data['uid'] ?? $data['bookingUid'] ?? '' );
-		$status = $this->map_status( $event );
+		$uid         = (string) ( $data['uid'] ?? $data['bookingUid'] ?? '' );
+		$schedule_id = isset( $metadata['handik_project_schedule_id'] ) ? absint( $metadata['handik_project_schedule_id'] ) : 0;
+		$day_index   = isset( $metadata['handik_project_day_index'] ) ? absint( $metadata['handik_project_day_index'] ) : 0;
+		$status      = $this->map_status( $event );
+
+		if ( '' === $status ) {
+			$this->logger->info(
+				'Cal webhook acknowledged for project (no state change).',
+				array( 'event' => $event, 'schedule_id' => $schedule_id )
+			);
+			return array( 'success' => true, 'status' => 'ignored' );
+		}
+
+		// Guard: a webhook claiming to be a project booking must carry both
+		// the schedule id AND a UID we can match. Without metadata we have
+		// no safe way to attribute the event — refuse rather than guessing
+		// and risking a contact-fallback match against the AI flow.
+		if ( ! $schedule_id || '' === $uid ) {
+			$this->logger->warning(
+				'Cal webhook for project work days missing required metadata; skipping.',
+				array(
+					'event'       => $event,
+					'has_uid'     => '' !== $uid,
+					'schedule_id' => $schedule_id,
+				)
+			);
+			return array( 'success' => true, 'status' => 'ignored' );
+		}
+
+		// Confirm the schedule actually exists. Defends against a forged
+		// metadata payload pointing at someone else's row.
+		$schedule = $this->project->get( $schedule_id );
+		if ( ! $schedule ) {
+			$this->logger->warning(
+				'Cal webhook for project work days references unknown schedule; skipping.',
+				array( 'schedule_id' => $schedule_id, 'event' => $event )
+			);
+			return array( 'success' => true, 'status' => 'ignored' );
+		}
+
 		// For projects we map "booked" → "confirmed" only at the day level;
 		// other events ("cancelled", "rescheduled") flow through unchanged.
 		$day_status = ( 'booked' === $status ) ? Handik_Booking_App_Project_Schedule_Service::DAY_STATUS_CONFIRMED : $status;
-		if ( '' !== $uid ) {
-			$this->project->update_day_status_by_uid( $uid, $day_status );
-		}
+		$this->project->update_day_status_by_uid( $uid, $day_status );
+
 		$this->logger->info(
 			'Cal webhook routed to project work days.',
 			array(
-				'event'      => $event,
-				'cal_uid'    => $uid,
-				'day_status' => $day_status,
-				'schedule_id' => isset( $metadata['handik_project_schedule_id'] ) ? absint( $metadata['handik_project_schedule_id'] ) : 0,
-				'day_index'   => isset( $metadata['handik_project_day_index'] ) ? absint( $metadata['handik_project_day_index'] ) : 0,
+				'event'       => $event,
+				'cal_uid'     => $uid,
+				'day_status'  => $day_status,
+				'schedule_id' => $schedule_id,
+				'day_index'   => $day_index,
 			)
 		);
 		return array( 'success' => true, 'status' => $status );
 	}
 
+	/**
+	 * Map a Cal.com event name to one of our internal booking statuses.
+	 *
+	 * Whitelist-based: unknown events return an empty string and the caller
+	 * SKIPS the state mutation. Earlier we defaulted to `booked` for any
+	 * unknown event, which let benign signals like `meeting_started`,
+	 * `payment_initiated`, `instant_meeting` etc. flip a cancelled booking
+	 * back to booked — exactly what the customer didn't want.
+	 *
+	 * @param string $event Normalized event (lowercased, underscored).
+	 * @return string Internal status, or '' for "ignore this event".
+	 */
 	protected function map_status( $event ) {
 		switch ( $event ) {
-			case 'booking_cancelled':
-				return 'cancelled';
+			case 'booking_created':
+			case 'booking_paid':
+			case 'booking_payment_initiated':
+				return 'booked';
 			case 'booking_rescheduled':
 				return 'rescheduled';
+			case 'booking_cancelled':
+			case 'booking_rejected':
+				return 'cancelled';
 			default:
-				return 'booked';
+				return '';
 		}
 	}
 

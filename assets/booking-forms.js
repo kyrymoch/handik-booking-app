@@ -82,6 +82,8 @@
 			},
 			touched: {},
 			directRequestId: 0,
+			directCaptureToken: '',
+			_captureSent: false,
 			calBookingUrl: '',
 			scheduleId: 0,
 			publicToken: '',
@@ -833,8 +835,10 @@
 			city: '', state: '', zip_code: '', is_valid: false
 		};
 		this.state.touched          = {};
-		this.state.directRequestId  = 0;
-		this.state.calBookingUrl    = '';
+		this.state.directRequestId    = 0;
+		this.state.directCaptureToken = '';
+		this.state._captureSent       = false;
+		this.state.calBookingUrl      = '';
 		this.state.scheduleId       = 0;
 		this.state.publicToken      = '';
 		this.state.slots            = [];
@@ -1001,8 +1005,12 @@
 		var payload = this.contactPayload();
 		this.api( 'POST', 'forms/direct/submit?preset_slug=' + encodeURIComponent( this.preset.preset_slug ), payload )
 			.then( function ( res ) {
-				self.state.directRequestId = parseInt( res.request_id, 10 ) || 0;
-				self.state.calBookingUrl   = String( res.cal_booking_url || '' );
+				self.state.directRequestId   = parseInt( res.request_id, 10 ) || 0;
+				self.state.calBookingUrl     = String( res.cal_booking_url || '' );
+				// Server-issued per-row token. Required on the matching
+				// /capture POST so the booking record can't be mutated by
+				// a third party iterating the auto-increment id.
+				self.state.directCaptureToken = String( res.capture_token || '' );
 				self.go( 'cal' );
 			} )
 			.catch( function ( err ) { self.toast( 'error', err.message ); } )
@@ -1318,16 +1326,27 @@
 	HandikBookingForm.prototype.captureDirectBooking = function ( detail ) {
 		var self = this;
 		if ( ! this.state.directRequestId ) { return; }
+		// Local debounce: Cal embed sometimes fires `bookingSuccessful` more
+		// than once per booking. Only the first call should attempt to
+		// capture — subsequent ones are no-ops on the client too. The
+		// server-side guard catches anything we miss.
+		if ( this.state._captureSent ) { return; }
+		this.state._captureSent = true;
 		this.api(
 			'POST',
 			'forms/direct/' + encodeURIComponent( this.state.directRequestId ) + '/capture',
-			{ booking_payload: detail || {} }
+			{
+				booking_payload: detail || {},
+				capture_token:   String( this.state.directCaptureToken || '' )
+			}
 		)
 			.then( function () {
 				self.state.confirmedDays = [];
 				self.go( 'success' );
 			} )
 			.catch( function ( err ) {
+				// Allow retry if the request actually failed.
+				self.state._captureSent = false;
 				self.toast( 'error', ( err && err.message ) || self.t( 'genericError' ) );
 			} );
 	};

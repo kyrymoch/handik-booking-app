@@ -9,19 +9,37 @@ if ( ! defined( 'ABSPATH' ) ) {
  *
  * Namespace: handik-booking-app/v1
  *
- *  - GET  /forms/preset/{slug}        public preset metadata
- *  - POST /forms/direct/submit        create direct request, return Cal URL
- *  - POST /forms/direct/{id}/capture  record Cal booking from iframe onComplete
- *  - POST /forms/project/open         step 1+2 save contact/address
- *  - GET  /forms/project/{id}/slots   fetch Cal.com slots (token-protected)
- *  - POST /forms/project/{id}/select  step 3 save N selected slots (token-protected)
- *  - POST /forms/project/{id}/confirm step 5 re-check + create N bookings (token-protected)
+ *  - GET  /forms/preset/{slug}        public preset metadata          [rate-limited]
+ *  - POST /forms/direct/submit        create direct request           [nonce + rate-limit]
+ *  - POST /forms/direct/{id}/capture  record Cal booking from iframe  [nonce + capture_token]
+ *  - POST /forms/project/open         step 1+2 save contact/address   [nonce + rate-limit]
+ *  - GET  /forms/project/{id}/slots   fetch Cal.com slots             [public_token + rate-limit]
+ *  - POST /forms/project/{id}/select  save N selected slots           [nonce + public_token]
+ *  - POST /forms/project/{id}/confirm re-check + create N bookings    [nonce + public_token]
  *
- * Submit endpoints carry an X-WP-Nonce (wp_rest) check by virtue of the SPA
- * sending it; tokenized endpoints rely on the unguessable schedule token.
+ * Security model
+ * --------------
+ * - All POST endpoints require a valid `X-WP-Nonce` (the standard `wp_rest`
+ *   nonce that the SPA already sends). This means an off-site script cannot
+ *   write into the CRM without first scraping the form page.
+ * - All endpoints (incl. GET) carry a sliding-window rate limit per IP
+ *   (`Cf-Connecting-Ip` → `X-Forwarded-For` → `REMOTE_ADDR`). Defaults are
+ *   tuned to comfortably support a real customer journey while killing
+ *   bulk abuse: 30 submits/min, 60 reads/min.
+ * - Tokenized endpoints (project schedule, direct capture) compare the
+ *   client-presented token against the row's stored value with
+ *   `hash_equals`. Tokens are issued server-side from
+ *   `wp_generate_password( 32 )` so they're not guessable.
+ * - The capture endpoint additionally requires a per-request capture_token
+ *   handed back by the submit handler — that closes the previous IDOR where
+ *   anyone could iterate `direct_booking_requests.id` and overwrite the
+ *   booking status.
  */
 class Handik_Booking_App_Forms_Rest_Api {
 	const NAMESPACE_V1 = 'handik-booking-app/v1';
+
+	const RATE_LIMIT_SUBMIT_PER_MIN = 30;
+	const RATE_LIMIT_READ_PER_MIN   = 60;
 
 	/** @var Handik_Booking_App_Booking_Presets_Service */
 	protected $presets;
@@ -112,6 +130,10 @@ class Handik_Booking_App_Forms_Rest_Api {
 	// ---------- handlers --------------------------------------------------
 
 	public function get_preset( WP_REST_Request $request ) {
+		$err = $this->guard_rate_limit( 'preset', self::RATE_LIMIT_READ_PER_MIN );
+		if ( $err ) {
+			return $err;
+		}
 		$slug   = sanitize_title( (string) $request['slug'] );
 		$preset = $this->presets->find_by_slug( $slug );
 		if ( ! $preset || empty( $preset['enabled'] ) ) {
@@ -125,6 +147,10 @@ class Handik_Booking_App_Forms_Rest_Api {
 	}
 
 	public function submit_direct( WP_REST_Request $request ) {
+		$err = $this->guard_submit( $request, 'direct_submit' );
+		if ( $err ) {
+			return $err;
+		}
 		$slug    = sanitize_title( (string) $request->get_param( 'preset_slug' ) );
 		$payload = (array) $request->get_json_params();
 		if ( ! isset( $payload['source_url'] ) ) {
@@ -135,16 +161,27 @@ class Handik_Booking_App_Forms_Rest_Api {
 	}
 
 	public function capture_direct( WP_REST_Request $request ) {
+		$err = $this->guard_submit( $request, 'direct_capture' );
+		if ( $err ) {
+			return $err;
+		}
 		$id      = absint( $request['id'] );
 		$payload = (array) $request->get_json_params();
 		$booking = isset( $payload['booking_payload'] ) && is_array( $payload['booking_payload'] )
 			? $payload['booking_payload']
 			: $payload;
-		$result = $this->direct->capture_booking( $id, $booking );
+		$capture_token = isset( $payload['capture_token'] )
+			? sanitize_text_field( (string) $payload['capture_token'] )
+			: sanitize_text_field( (string) $request->get_param( 'capture_token' ) );
+		$result = $this->direct->capture_booking( $id, $booking, $capture_token );
 		return $this->respond( $result );
 	}
 
 	public function open_project( WP_REST_Request $request ) {
+		$err = $this->guard_submit( $request, 'project_open' );
+		if ( $err ) {
+			return $err;
+		}
 		$slug    = sanitize_title( (string) $request->get_param( 'preset_slug' ) );
 		$payload = (array) $request->get_json_params();
 		if ( ! isset( $payload['source_url'] ) ) {
@@ -155,6 +192,10 @@ class Handik_Booking_App_Forms_Rest_Api {
 	}
 
 	public function project_slots( WP_REST_Request $request ) {
+		$err = $this->guard_rate_limit( 'project_slots', self::RATE_LIMIT_READ_PER_MIN );
+		if ( $err ) {
+			return $err;
+		}
 		$id       = absint( $request['id'] );
 		$schedule = $this->project->get( $id );
 		$auth_err = $this->guard_token( $request, $schedule );
@@ -168,6 +209,10 @@ class Handik_Booking_App_Forms_Rest_Api {
 	}
 
 	public function project_select( WP_REST_Request $request ) {
+		$err = $this->guard_submit( $request, 'project_select' );
+		if ( $err ) {
+			return $err;
+		}
 		$id       = absint( $request['id'] );
 		$schedule = $this->project->get( $id );
 		$auth_err = $this->guard_token( $request, $schedule );
@@ -183,6 +228,10 @@ class Handik_Booking_App_Forms_Rest_Api {
 	}
 
 	public function project_confirm( WP_REST_Request $request ) {
+		$err = $this->guard_submit( $request, 'project_confirm' );
+		if ( $err ) {
+			return $err;
+		}
 		$id       = absint( $request['id'] );
 		$schedule = $this->project->get( $id );
 		$auth_err = $this->guard_token( $request, $schedule );
@@ -193,12 +242,93 @@ class Handik_Booking_App_Forms_Rest_Api {
 		return $this->respond( $result );
 	}
 
-	// ---------- helpers --------------------------------------------------
+	// ---------- guards ---------------------------------------------------
+
+	/**
+	 * Combined nonce + rate-limit guard for write endpoints.
+	 *
+	 * @param WP_REST_Request $request Request.
+	 * @param string          $bucket  Per-endpoint rate-limit bucket name.
+	 * @return WP_Error|null  WP_Error to short-circuit, null to proceed.
+	 */
+	protected function guard_submit( WP_REST_Request $request, $bucket ) {
+		if ( ! $this->verify_nonce( $request ) ) {
+			return new WP_Error(
+				'handik_form_invalid_nonce',
+				__( 'This form session has expired. Please reload the page and try again.', 'handik-booking-app' ),
+				array( 'status' => 403 )
+			);
+		}
+		return $this->guard_rate_limit( $bucket, self::RATE_LIMIT_SUBMIT_PER_MIN );
+	}
+
+	/**
+	 * @param WP_REST_Request $request Request.
+	 * @return bool
+	 */
+	protected function verify_nonce( WP_REST_Request $request ) {
+		$nonce = (string) $request->get_header( 'x_wp_nonce' );
+		if ( '' === $nonce ) {
+			$nonce = (string) $request->get_param( '_wpnonce' );
+		}
+		if ( '' === $nonce ) {
+			return false;
+		}
+		return (bool) wp_verify_nonce( $nonce, 'wp_rest' );
+	}
+
+	/**
+	 * Sliding-window rate limit. Keyed by IP + bucket name so each endpoint
+	 * gets its own counter and abuse on one path doesn't lock the customer
+	 * out of an unrelated one.
+	 *
+	 * @param string $bucket    Bucket name.
+	 * @param int    $per_minute Allowed requests per minute.
+	 * @return WP_Error|null
+	 */
+	protected function guard_rate_limit( $bucket, $per_minute ) {
+		$ip      = $this->client_ip();
+		$key     = 'handik_form_rl_' . md5( $bucket . '|' . $ip );
+		$count   = (int) get_transient( $key );
+		$limit   = (int) apply_filters( 'handik_booking_app_form_rate_limit', $per_minute, $bucket );
+		if ( $count >= $limit ) {
+			if ( $this->logger ) {
+				$this->logger->warning(
+					'Additional Forms rate limit hit.',
+					array(
+						'bucket' => $bucket,
+						'limit'  => $limit,
+					)
+				);
+			}
+			return new WP_Error(
+				'handik_form_rate_limited',
+				__( 'Too many requests. Please wait a minute before trying again.', 'handik-booking-app' ),
+				array( 'status' => 429 )
+			);
+		}
+		set_transient( $key, $count + 1, MINUTE_IN_SECONDS );
+		return null;
+	}
+
+	protected function client_ip() {
+		foreach ( array( 'HTTP_CF_CONNECTING_IP', 'HTTP_X_FORWARDED_FOR', 'REMOTE_ADDR' ) as $key ) {
+			if ( empty( $_SERVER[ $key ] ) ) {
+				continue;
+			}
+			$candidate = sanitize_text_field( wp_unslash( (string) $_SERVER[ $key ] ) );
+			$candidate = trim( explode( ',', $candidate )[0] );
+			if ( '' !== $candidate ) {
+				return $candidate;
+			}
+		}
+		return 'unknown';
+	}
 
 	/**
 	 * @param WP_REST_Request           $request   Request.
 	 * @param array<string, mixed>|null $schedule  Loaded schedule row.
-	 * @return WP_Error|null  WP_Error if the request is unauthorized.
+	 * @return WP_Error|null
 	 */
 	protected function guard_token( WP_REST_Request $request, $schedule ) {
 		if ( ! $schedule ) {
