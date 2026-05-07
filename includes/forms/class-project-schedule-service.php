@@ -58,6 +58,87 @@ class Handik_Booking_App_Project_Schedule_Service {
 		$this->contacts  = $contacts;
 		$this->addresses = $addresses;
 		$this->logger    = $logger;
+
+		// Daily cleanup cron — deletes abandoned schedules (still in
+		// SELECTING / DRAFT after 7 days). Without this, every customer who
+		// opened a project preset and walked away leaves a row + token in
+		// the table forever. Cleanup is idempotent and skips anything that
+		// has live Cal bookings or is in any "in progress" state.
+		add_action( self::CRON_HOOK_GC, array( $this, 'gc_abandoned' ) );
+		add_action( 'init', array( $this, 'maybe_schedule_gc' ) );
+	}
+
+	const CRON_HOOK_GC      = 'handik_booking_app_form_gc_abandoned';
+	const GC_ABANDON_DAYS   = 7;
+
+	/**
+	 * Look up the operator's first name (default "Alex"). Convenience for
+	 * the few error strings inside this class that mention them by name.
+	 */
+	protected static function operator_name() {
+		$plugin = function_exists( 'handik_booking_app' ) ? handik_booking_app() : null;
+		if ( $plugin && isset( $plugin->settings ) ) {
+			$name = trim( (string) $plugin->settings->get( 'operator_first_name', 'Alex' ) );
+			if ( '' !== $name ) {
+				return $name;
+			}
+		}
+		return 'Alex';
+	}
+
+	/**
+	 * Register the daily cron event if it isn't already scheduled.
+	 */
+	public function maybe_schedule_gc() {
+		if ( ! wp_next_scheduled( self::CRON_HOOK_GC ) ) {
+			wp_schedule_event( time() + HOUR_IN_SECONDS, 'daily', self::CRON_HOOK_GC );
+		}
+	}
+
+	/**
+	 * Delete project_scheduling_requests rows that have been abandoned in a
+	 * non-terminal state for longer than GC_ABANDON_DAYS, plus their
+	 * project_work_days children. Logs the count.
+	 */
+	public function gc_abandoned() {
+		global $wpdb;
+		$schedules_table  = Handik_Booking_App_DB::table( 'project_scheduling_requests' );
+		$days_table       = Handik_Booking_App_DB::table( 'project_work_days' );
+		$cutoff           = gmdate( 'Y-m-d H:i:s', time() - ( self::GC_ABANDON_DAYS * DAY_IN_SECONDS ) );
+
+		// Only the customer-abandoned states — never touch CONFIRMED,
+		// PARTIAL_FAILED (admin must intervene), or anything CREATING.
+		$sql = $wpdb->prepare(
+			"SELECT id FROM {$schedules_table}
+			 WHERE status IN ( %s, %s )
+			   AND updated_at < %s",
+			self::STATUS_DRAFT,
+			self::STATUS_SELECTING,
+			$cutoff
+		);
+		$ids = $wpdb->get_col( $sql ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+		if ( empty( $ids ) ) {
+			return;
+		}
+		$ids          = array_map( 'absint', $ids );
+		$placeholders = implode( ',', array_fill( 0, count( $ids ), '%d' ) );
+
+		$wpdb->query(
+			$wpdb->prepare( "DELETE FROM {$days_table} WHERE scheduling_request_id IN ({$placeholders})", $ids ) // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		);
+		$deleted = (int) $wpdb->query(
+			$wpdb->prepare( "DELETE FROM {$schedules_table} WHERE id IN ({$placeholders})", $ids ) // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		);
+
+		if ( $this->logger && $deleted > 0 ) {
+			$this->logger->info(
+				'Garbage-collected abandoned project schedules.',
+				array(
+					'count'         => $deleted,
+					'cutoff_days'   => self::GC_ABANDON_DAYS,
+				)
+			);
+		}
 	}
 
 	/**
@@ -152,7 +233,7 @@ class Handik_Booking_App_Project_Schedule_Service {
 			'public_token'              => wp_generate_password( 32, false, false ),
 			'source_url'                => isset( $payload['source_url'] ) ? esc_url_raw( (string) $payload['source_url'] ) : '',
 			'client_type'               => isset( $payload['client_type'] ) ? sanitize_key( (string) $payload['client_type'] ) : 'new_client',
-			'client_ip'                 => $this->client_ip_packed(),
+			'client_ip'                 => Handik_Booking_App_Forms_Helpers::client_ip_packed(),
 		);
 		$wpdb->insert( $table, $row );
 		$schedule_id = (int) $wpdb->insert_id;
@@ -382,7 +463,8 @@ class Handik_Booking_App_Project_Schedule_Service {
 		}
 		if ( self::STATUS_PARTIAL_FAILED === $schedule['status'] ) {
 			return array(
-				'error'  => __( 'This schedule needs admin attention. Alex will follow up.', 'handik-booking-app' ),
+				/* translators: %s: operator first name (Alex by default). */
+				'error'  => sprintf( __( 'This schedule needs admin attention. %s will follow up.', 'handik-booking-app' ), self::operator_name() ),
 				'status' => 409,
 				'state'  => self::STATUS_PARTIAL_FAILED,
 			);
@@ -597,7 +679,8 @@ class Handik_Booking_App_Project_Schedule_Service {
 		);
 
 		$message = $rollback_failed
-			? __( 'Some selected days could not be confirmed. Alex will review and follow up.', 'handik-booking-app' )
+			/* translators: %s: operator first name (Alex by default). */
+			? sprintf( __( 'Some selected days could not be confirmed. %s will review and follow up.', 'handik-booking-app' ), self::operator_name() )
 			: __( 'One of your selected days could not be confirmed and the others were released. Please pick a new set.', 'handik-booking-app' );
 
 		return array(
@@ -668,6 +751,59 @@ class Handik_Booking_App_Project_Schedule_Service {
 			array( 'status' => sanitize_key( $status ) ),
 			array( 'cal_booking_uid' => (string) $uid )
 		);
+	}
+
+	/**
+	 * Admin action: cancel a single project work day on Cal.com and mark
+	 * the local row CANCELLED. Returns the operation result so the admin
+	 * page can render a toast.
+	 *
+	 * @param int $day_id  Project work day primary key.
+	 * @param string $reason Optional reason logged in Cal.
+	 * @return array{success?: true, error?: string, status?: int}
+	 */
+	public function admin_cancel_day( $day_id, $reason = '' ) {
+		global $wpdb;
+		$days_table = Handik_Booking_App_DB::table( 'project_work_days' );
+		$row        = $wpdb->get_row(
+			$wpdb->prepare( "SELECT * FROM {$days_table} WHERE id = %d LIMIT 1", (int) $day_id ),
+			ARRAY_A
+		);
+		if ( ! $row ) {
+			return array(
+				'error'  => __( 'Work day not found.', 'handik-booking-app' ),
+				'status' => 404,
+			);
+		}
+		$uid = (string) $row['cal_booking_uid'];
+		if ( '' !== $uid ) {
+			$cancel = $this->cal_api->cancel_booking( $uid, '' !== $reason ? $reason : 'Cancelled by admin' );
+			if ( ! empty( $cancel['error'] ) ) {
+				if ( $this->logger ) {
+					$this->logger->error(
+						'Admin cancel_day Cal API failed.',
+						array(
+							'day_id' => (int) $day_id,
+							'uid'    => $uid,
+							'error'  => $cancel['error'],
+						)
+					);
+				}
+				return $cancel;
+			}
+		}
+		$wpdb->update(
+			$days_table,
+			array( 'status' => self::DAY_STATUS_CANCELLED ),
+			array( 'id' => (int) $day_id )
+		);
+		if ( $this->logger ) {
+			$this->logger->info(
+				'Admin cancelled project work day.',
+				array( 'day_id' => (int) $day_id, 'uid' => $uid )
+			);
+		}
+		return array( 'success' => true );
 	}
 
 	// ---------- internals -------------------------------------------------
@@ -838,14 +974,7 @@ class Handik_Booking_App_Project_Schedule_Service {
 		}
 	}
 
-	protected function client_ip_packed() {
-		$ip = isset( $_SERVER['REMOTE_ADDR'] ) ? (string) $_SERVER['REMOTE_ADDR'] : '';
-		if ( '' === $ip ) {
-			return null;
-		}
-		$packed = @inet_pton( $ip ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
-		return $packed ?: null;
-	}
+	// `client_ip_packed` moved to Forms_Helpers (Cloudflare-aware, shared).
 
 	protected static function form_type( array $preset ) {
 		return isset( $preset['form_type'] ) ? (string) $preset['form_type'] : '';

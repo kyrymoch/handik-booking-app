@@ -125,7 +125,7 @@ class Handik_Booking_App_Direct_Booking_Service {
 			'status'            => self::STATUS_READY,
 			'source_url'        => isset( $payload['source_url'] ) ? esc_url_raw( (string) $payload['source_url'] ) : '',
 			'client_type'       => isset( $payload['client_type'] ) ? sanitize_key( (string) $payload['client_type'] ) : 'new_client',
-			'client_ip'         => $this->client_ip_packed(),
+			'client_ip'         => Handik_Booking_App_Forms_Helpers::client_ip_packed(),
 			'capture_token'     => $capture_token,
 		);
 		$wpdb->insert( $table, $row );
@@ -389,7 +389,7 @@ class Handik_Booking_App_Direct_Booking_Service {
 			);
 		}
 
-		return $this->build_encoded_url( $base, $params );
+		return Handik_Booking_App_Forms_Helpers::build_encoded_url( $base, $params );
 	}
 
 	protected function event_url_for_type( $booking_type ) {
@@ -406,9 +406,14 @@ class Handik_Booking_App_Direct_Booking_Service {
 	}
 
 	protected function build_notes( $request_id ) {
+		$operator = (string) $this->settings->get( 'operator_first_name', 'Alex' );
+		if ( '' === trim( $operator ) ) {
+			$operator = 'Alex';
+		}
 		return sprintf(
-			/* translators: %d: internal request ID */
-			__( 'Alex will take care of it. Full details are saved in the Handik admin dashboard (request #%d).', 'handik-booking-app' ),
+			/* translators: 1: operator first name, 2: internal request ID */
+			__( '%1$s will take care of it. Full details are saved in the Handik admin dashboard (request #%2$d).', 'handik-booking-app' ),
+			$operator,
 			(int) $request_id
 		);
 	}
@@ -433,46 +438,8 @@ class Handik_Booking_App_Direct_Booking_Service {
 		return trim( preg_replace( '/\s+/', ' ', $address ) );
 	}
 
-	/**
-	 * @param string                $base   Base URL.
-	 * @param array<string, string> $params Params.
-	 * @return string
-	 */
-	protected function build_encoded_url( $base, array $params ) {
-		$base     = (string) $base;
-		$fragment = '';
-		$hash_pos = strpos( $base, '#' );
-		if ( false !== $hash_pos ) {
-			$fragment = substr( $base, $hash_pos );
-			$base     = substr( $base, 0, $hash_pos );
-		}
-
-		$query_args = array();
-		$query_pos  = strpos( $base, '?' );
-		if ( false !== $query_pos ) {
-			$query = substr( $base, $query_pos + 1 );
-			$base  = substr( $base, 0, $query_pos );
-			if ( '' !== $query ) {
-				wp_parse_str( $query, $query_args );
-			}
-		}
-
-		foreach ( $params as $key => $value ) {
-			$query_args[ $key ] = (string) $value;
-		}
-
-		$query = http_build_query( $query_args, '', '&', PHP_QUERY_RFC1738 );
-		return $base . ( '' !== $query ? '?' . $query : '' ) . $fragment;
-	}
-
-	protected function client_ip_packed() {
-		$ip = isset( $_SERVER['REMOTE_ADDR'] ) ? (string) $_SERVER['REMOTE_ADDR'] : '';
-		if ( '' === $ip ) {
-			return null;
-		}
-		$packed = @inet_pton( $ip ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
-		return $packed ?: null;
-	}
+	// `build_encoded_url` + `client_ip_packed` moved to Forms_Helpers (shared
+	// across the three forms services so they can't drift again).
 
 	protected static function form_type( array $preset ) {
 		return isset( $preset['form_type'] ) ? (string) $preset['form_type'] : '';

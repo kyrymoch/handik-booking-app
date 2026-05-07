@@ -113,7 +113,11 @@ class Handik_Booking_App_Booking_Presets_Service {
 		$allowed = array(
 			'form_title'                => 'sanitize_text_field',
 			'cal_event_url'             => 'esc_url_raw',
-			'cal_event_type_id'         => 'sanitize_text_field',
+			// Cal.com event type ids are integers. Pass through digits-only
+			// so a typo (an `o` or trailing space) doesn't silently 400 every
+			// /v2/slots request later. Empty value still allowed — admins
+			// often store the slug instead.
+			'cal_event_type_id'         => array( __CLASS__, 'sanitize_event_type_id' ),
 			'cal_event_slug'            => 'sanitize_title',
 			'allowed_start_time'        => 'sanitize_text_field',
 			'allowed_weekdays'          => 'sanitize_text_field',
@@ -141,6 +145,15 @@ class Handik_Booking_App_Booking_Presets_Service {
 		$wpdb->update( $table, $data, array( 'id' => (int) $id ) );
 		$this->flush_cache();
 		return true;
+	}
+
+	/**
+	 * @param mixed $value Raw value from $_POST.
+	 * @return string Digits-only string (or '' for blank input).
+	 */
+	public static function sanitize_event_type_id( $value ) {
+		$digits = preg_replace( '/\D+/', '', (string) $value );
+		return null === $digits ? '' : (string) $digits;
 	}
 
 	// ---------- defaults --------------------------------------------------

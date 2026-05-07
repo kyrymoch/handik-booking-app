@@ -23,6 +23,8 @@ class Handik_Booking_App_Admin_Additional_Forms {
 	const PAGE_SLUG          = 'handik-booking-app-additional-forms';
 	const NONCE_ACTION_SAVE  = 'handik_save_form_preset';
 	const NONCE_FIELD_SAVE   = 'handik_save_form_preset_nonce';
+	const NONCE_ACTION_CANCEL_DAY = 'handik_cancel_project_day';
+	const NONCE_FIELD_CANCEL_DAY  = 'handik_cancel_project_day_nonce';
 
 	/** @var Handik_Booking_App_Booking_Presets_Service */
 	protected $presets;
@@ -43,6 +45,7 @@ class Handik_Booking_App_Admin_Additional_Forms {
 		$this->addresses = $addresses;
 
 		add_action( 'admin_init', array( $this, 'maybe_save_preset' ) );
+		add_action( 'admin_init', array( $this, 'maybe_cancel_day' ) );
 	}
 
 	public function render() {
@@ -324,18 +327,37 @@ class Handik_Booking_App_Admin_Additional_Forms {
 			echo '<p>' . esc_html__( 'No direct booking submissions yet.', 'handik-booking-app' ) . '</p>';
 			return;
 		}
+
+		// Batch-fetch contacts + addresses in one query each instead of N
+		// per-row lookups. With list_recent(100) this saves up to 200 SQL
+		// round-trips per page render.
+		$contact_ids = array_map( static function ( $r ) { return (int) ( $r['contact_id'] ?? 0 ); }, $rows );
+		$address_ids = array_map( static function ( $r ) { return (int) ( $r['address_id'] ?? 0 ); }, $rows );
+		$contacts    = $this->contacts->get_many( $contact_ids );
+		$addresses   = $this->addresses->get_many( $address_ids );
+
 		echo '<table class="wp-list-table widefat striped">';
 		echo '<thead><tr>';
 		echo '<th>' . esc_html__( 'When', 'handik-booking-app' ) . '</th>';
 		echo '<th>' . esc_html__( 'Client', 'handik-booking-app' ) . '</th>';
 		echo '<th>' . esc_html__( 'Phone', 'handik-booking-app' ) . '</th>';
+		echo '<th>' . esc_html__( 'Address', 'handik-booking-app' ) . '</th>';
 		echo '<th>' . esc_html__( 'Preset', 'handik-booking-app' ) . '</th>';
 		echo '<th>' . esc_html__( 'Duration', 'handik-booking-app' ) . '</th>';
 		echo '<th>' . esc_html__( 'Status', 'handik-booking-app' ) . '</th>';
 		echo '<th>' . esc_html__( 'Cal booking', 'handik-booking-app' ) . '</th>';
 		echo '</tr></thead><tbody>';
 		foreach ( $rows as $row ) {
-			$contact  = $this->contacts->get( (int) $row['contact_id'] );
+			$contact  = $contacts[ (int) ( $row['contact_id'] ?? 0 ) ] ?? null;
+			$address  = $addresses[ (int) ( $row['address_id'] ?? 0 ) ] ?? null;
+			$address_text = '';
+			if ( $address ) {
+				$line = (string) ( $address['address_full'] ?: $address['address_line_1'] );
+				if ( ! empty( $address['address_unit'] ) ) {
+					$line .= ', ' . (string) $address['address_unit'];
+				}
+				$address_text = $line;
+			}
 			$cal_link = '';
 			if ( ! empty( $row['cal_booking_uid'] ) ) {
 				$cal_link = '<code>' . esc_html( (string) $row['cal_booking_uid'] ) . '</code>';
@@ -348,6 +370,7 @@ class Handik_Booking_App_Admin_Additional_Forms {
 			echo '<td>' . esc_html( (string) $row['created_at'] ) . '</td>';
 			echo '<td>' . esc_html( (string) ( $contact['full_name'] ?? '—' ) ) . '</td>';
 			echo '<td>' . esc_html( (string) ( $contact['phone'] ?? '—' ) ) . '</td>';
+			echo '<td>' . esc_html( $address_text ?: '—' ) . '</td>';
 			echo '<td><code>' . esc_html( (string) $row['preset_slug'] ) . '</code></td>';
 			echo '<td>' . esc_html( (string) $row['duration_minutes'] ) . ' min</td>';
 			echo '<td>' . esc_html( (string) $row['status'] ) . '</td>';
@@ -363,6 +386,10 @@ class Handik_Booking_App_Admin_Additional_Forms {
 			echo '<p>' . esc_html__( 'No project scheduling requests yet.', 'handik-booking-app' ) . '</p>';
 			return;
 		}
+		// Batch contact fetch (was N+1).
+		$contact_ids = array_map( static function ( $r ) { return (int) ( $r['contact_id'] ?? 0 ); }, $rows );
+		$contacts    = $this->contacts->get_many( $contact_ids );
+
 		$base = admin_url( 'admin.php?page=' . self::PAGE_SLUG );
 		echo '<table class="wp-list-table widefat striped">';
 		echo '<thead><tr>';
@@ -374,7 +401,7 @@ class Handik_Booking_App_Admin_Additional_Forms {
 		echo '<th></th>';
 		echo '</tr></thead><tbody>';
 		foreach ( $rows as $row ) {
-			$contact = $this->contacts->get( (int) $row['contact_id'] );
+			$contact = $contacts[ (int) ( $row['contact_id'] ?? 0 ) ] ?? null;
 			$detail  = add_query_arg(
 				array(
 					'tab'         => 'project',
@@ -403,6 +430,14 @@ class Handik_Booking_App_Admin_Additional_Forms {
 		$contact = $this->contacts->get( (int) $schedule['contact_id'] );
 		$days    = $this->project->list_days( $schedule_id );
 
+		// Public-customer URL for this schedule. The customer reaches this
+		// via /booking/{slug} but admin sometimes needs to send the link
+		// directly (returning customer who closed the tab, etc.).
+		$public_url = add_query_arg(
+			array( 'token' => (string) $schedule['public_token'] ),
+			home_url( '/booking/' . (string) $schedule['preset_slug'] . '/' )
+		);
+
 		echo '<h2>' . esc_html__( 'Project schedule', 'handik-booking-app' ) . ' #' . (int) $schedule['id'] . '</h2>';
 
 		echo '<table class="form-table"><tbody>';
@@ -410,6 +445,10 @@ class Handik_Booking_App_Admin_Additional_Forms {
 		echo '<tr><th>' . esc_html__( 'Client', 'handik-booking-app' ) . '</th><td>' . esc_html( (string) ( $contact['full_name'] ?? '—' ) ) . '<br>' . esc_html( (string) ( $contact['phone'] ?? '' ) ) . ' · ' . esc_html( (string) ( $contact['email'] ?? '' ) ) . '</td></tr>';
 		echo '<tr><th>' . esc_html__( 'Preset', 'handik-booking-app' ) . '</th><td><code>' . esc_html( (string) $schedule['preset_slug'] ) . '</code></td></tr>';
 		echo '<tr><th>' . esc_html__( 'Days requested', 'handik-booking-app' ) . '</th><td>' . esc_html( (string) $schedule['required_days'] ) . ' × ' . esc_html( (string) $schedule['work_day_duration_minutes'] ) . ' min</td></tr>';
+		echo '<tr><th>' . esc_html__( 'Public link', 'handik-booking-app' ) . '</th><td>';
+		echo '<input type="text" readonly value="' . esc_attr( $public_url ) . '" class="regular-text code" onclick="this.select()" style="width: 100%; max-width: 640px;">';
+		echo '<p class="description">' . esc_html__( 'Send this URL to the customer if they need to revisit the schedule. The token is unguessable.', 'handik-booking-app' ) . '</p>';
+		echo '</td></tr>';
 		if ( ! empty( $schedule['error_message'] ) ) {
 			echo '<tr><th>' . esc_html__( 'Error', 'handik-booking-app' ) . '</th><td><code>' . esc_html( (string) $schedule['error_message'] ) . '</code></td></tr>';
 		}
@@ -421,7 +460,7 @@ class Handik_Booking_App_Admin_Additional_Forms {
 			return;
 		}
 		echo '<table class="wp-list-table widefat striped">';
-		echo '<thead><tr><th>#</th><th>' . esc_html__( 'Start', 'handik-booking-app' ) . '</th><th>' . esc_html__( 'End', 'handik-booking-app' ) . '</th><th>' . esc_html__( 'Status', 'handik-booking-app' ) . '</th><th>' . esc_html__( 'Cal booking', 'handik-booking-app' ) . '</th></tr></thead><tbody>';
+		echo '<thead><tr><th>#</th><th>' . esc_html__( 'Start', 'handik-booking-app' ) . '</th><th>' . esc_html__( 'End', 'handik-booking-app' ) . '</th><th>' . esc_html__( 'Status', 'handik-booking-app' ) . '</th><th>' . esc_html__( 'Cal booking', 'handik-booking-app' ) . '</th><th>' . esc_html__( 'Action', 'handik-booking-app' ) . '</th></tr></thead><tbody>';
 		foreach ( $days as $day ) {
 			$cal = '';
 			if ( ! empty( $day['cal_booking_uid'] ) ) {
@@ -432,15 +471,68 @@ class Handik_Booking_App_Admin_Additional_Forms {
 			} elseif ( ! empty( $day['error_message'] ) ) {
 				$cal = '<code>' . esc_html( (string) $day['error_message'] ) . '</code>';
 			}
+			// Cancel button — only meaningful while a Cal booking is live.
+			$action_cell = '';
+			$cancellable_states = array(
+				Handik_Booking_App_Project_Schedule_Service::DAY_STATUS_CREATED,
+				Handik_Booking_App_Project_Schedule_Service::DAY_STATUS_CONFIRMED,
+			);
+			if ( in_array( (string) $day['status'], $cancellable_states, true ) && ! empty( $day['cal_booking_uid'] ) ) {
+				$action_cell = '<form method="post" action="" onsubmit="return confirm(\'' . esc_js( __( 'Cancel this work day on Cal.com?', 'handik-booking-app' ) ) . '\');" style="margin: 0;">';
+				$action_cell .= wp_nonce_field( self::NONCE_ACTION_CANCEL_DAY, self::NONCE_FIELD_CANCEL_DAY, true, false );
+				$action_cell .= '<input type="hidden" name="day_id" value="' . (int) $day['id'] . '">';
+				$action_cell .= '<input type="hidden" name="schedule_id" value="' . (int) $schedule['id'] . '">';
+				$action_cell .= '<button type="submit" class="button button-small button-link-delete">' . esc_html__( 'Cancel', 'handik-booking-app' ) . '</button>';
+				$action_cell .= '</form>';
+			}
 			echo '<tr>';
 			echo '<td>' . (int) $day['day_index'] . '</td>';
 			echo '<td>' . esc_html( (string) $day['start_iso'] ) . '</td>';
 			echo '<td>' . esc_html( (string) $day['end_iso'] ) . '</td>';
 			echo '<td>' . esc_html( (string) $day['status'] ) . '</td>';
 			echo '<td>' . $cal . '</td>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+			echo '<td>' . $action_cell . '</td>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
 			echo '</tr>';
 		}
 		echo '</tbody></table>';
+	}
+
+	/**
+	 * Handle the Cancel-day form post. Nonce-checked + capability-gated.
+	 * Reuses the project service's admin_cancel_day which calls Cal.com,
+	 * marks the local row, and logs.
+	 */
+	public function maybe_cancel_day() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			return;
+		}
+		if ( empty( $_POST[ self::NONCE_FIELD_CANCEL_DAY ] ) ) {
+			return;
+		}
+		check_admin_referer( self::NONCE_ACTION_CANCEL_DAY, self::NONCE_FIELD_CANCEL_DAY );
+
+		$day_id      = isset( $_POST['day_id'] ) ? absint( $_POST['day_id'] ) : 0;
+		$schedule_id = isset( $_POST['schedule_id'] ) ? absint( $_POST['schedule_id'] ) : 0;
+		if ( ! $day_id ) {
+			return;
+		}
+
+		$result = $this->project->admin_cancel_day( $day_id, 'Cancelled from admin dashboard' );
+		if ( ! empty( $result['error'] ) ) {
+			add_settings_error(
+				'handik_additional_forms',
+				'cancel_day_failed',
+				$result['error'],
+				'error'
+			);
+		} else {
+			add_settings_error(
+				'handik_additional_forms',
+				'cancel_day_ok',
+				__( 'Work day cancelled on Cal.com.', 'handik-booking-app' ),
+				'updated'
+			);
+		}
 	}
 
 	// =====================================================================

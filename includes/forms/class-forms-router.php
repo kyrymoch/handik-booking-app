@@ -60,8 +60,11 @@ class Handik_Booking_App_Forms_Router {
 		register_activation_hook( HANDIK_BOOKING_APP_FILE, array( __CLASS__, 'flush_rewrite_on_activation' ) );
 	}
 
+	const REWRITE_VERSION_OPTION = 'handik_booking_app_form_rewrite_version';
+
 	public static function flush_rewrite_on_activation() {
 		flush_rewrite_rules( false );
+		update_option( self::REWRITE_VERSION_OPTION, HANDIK_BOOKING_APP_VERSION, false );
 	}
 
 	public function register_rewrite() {
@@ -70,6 +73,16 @@ class Handik_Booking_App_Forms_Router {
 			'index.php?' . self::QUERY_VAR . '=$matches[1]',
 			'top'
 		);
+		// If the plugin was updated via FTP / WP-CLI rather than reactivated
+		// through the admin, the activation hook never fired and our /booking/
+		// rule isn't in WordPress's cached rewrite map. Detect that here and
+		// flush once. The option records the version we last flushed for so
+		// this happens at most once per release.
+		$last_flushed = get_option( self::REWRITE_VERSION_OPTION, '' );
+		if ( $last_flushed !== HANDIK_BOOKING_APP_VERSION ) {
+			flush_rewrite_rules( false );
+			update_option( self::REWRITE_VERSION_OPTION, HANDIK_BOOKING_APP_VERSION, false );
+		}
 	}
 
 	public function register_query_vars( $vars ) {
@@ -228,6 +241,15 @@ class Handik_Booking_App_Forms_Router {
 	 * @return array<string, string>
 	 */
 	protected function i18n_strings() {
+		// Customer-facing copy that mentions the operator by name pulls from
+		// the `operator_first_name` setting (default "Alex"). Keeps the
+		// localizable templates generic — only the substituted name is the
+		// site-specific bit.
+		$operator = (string) $this->settings->get( 'operator_first_name', 'Alex' );
+		if ( '' === trim( $operator ) ) {
+			$operator = 'Alex';
+		}
+
 		return array(
 			// Step titles (h2 in each screen header) — match main app naming.
 			'contactTitle'      => __( 'Contact details', 'handik-booking-app' ),
@@ -274,20 +296,24 @@ class Handik_Booking_App_Forms_Router {
 			'confirmCta'        => __( 'Confirm selected days', 'handik-booking-app' ),
 			'selectionCounter'  => __( 'Selected %1$d of %2$d days', 'handik-booking-app' ),
 			'pickHelper'        => __( 'Please select %d work days.', 'handik-booking-app' ),
-			'noSlots'           => __( 'No work days are available in the next 30 days. Please contact Alex directly.', 'handik-booking-app' ),
+			/* translators: %s: operator first name (default Alex). */
+			'noSlots'           => sprintf( __( 'No work days are available in the next 30 days. Please contact %s directly.', 'handik-booking-app' ), $operator ),
 			'replacementNeeded' => __( 'One or more selected days are no longer available. Please pick replacements.', 'handik-booking-app' ),
 
 			// Success copy.
 			'successTitle'      => __( 'You\'re all set!', 'handik-booking-app' ),
-			'projectSuccess'    => __( 'Your project work days have been selected. Alex will follow up if anything needs to be adjusted.', 'handik-booking-app' ),
-			'directSuccess'     => __( 'Your visit is booked. Alex will be in touch before the visit.', 'handik-booking-app' ),
+			/* translators: %s: operator first name. */
+			'projectSuccess'    => sprintf( __( 'Your project work days have been selected. %s will follow up if anything needs to be adjusted.', 'handik-booking-app' ), $operator ),
+			/* translators: %s: operator first name. */
+			'directSuccess'     => sprintf( __( 'Your visit is booked. %s will be in touch before the visit.', 'handik-booking-app' ), $operator ),
 
 			// Returning client.
 			'welcomeBack'       => __( 'Welcome back — we found your saved addresses.', 'handik-booking-app' ),
 			'savedAddressChecking' => __( 'Checking saved addresses…', 'handik-booking-app' ),
 
 			// Success disclaimer + notifications landmark.
-			'allSet'            => __( 'All set. Alex will be in touch before the visit.', 'handik-booking-app' ),
+			/* translators: %s: operator first name. */
+			'allSet'            => sprintf( __( 'All set. %s will be in touch before the visit.', 'handik-booking-app' ), $operator ),
 			'bookAnother'       => __( 'Book another visit', 'handik-booking-app' ),
 			'notificationsRegionLabel' => __( 'Notifications', 'handik-booking-app' ),
 

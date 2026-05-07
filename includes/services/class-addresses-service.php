@@ -163,4 +163,30 @@ class Handik_Booking_App_Addresses_Service {
 		$row   = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$table} WHERE id = %d LIMIT 1", $address_id ), ARRAY_A );
 		return $row ?: null;
 	}
+
+	/**
+	 * Batch fetch by primary key (admin list use).
+	 *
+	 * @param array<int, int> $ids Address ids.
+	 * @return array<int, array<string, mixed>>
+	 */
+	public function get_many( array $ids ) {
+		$ids = array_values( array_unique( array_map( 'absint', $ids ) ) );
+		$ids = array_filter( $ids );
+		if ( empty( $ids ) ) {
+			return array();
+		}
+		global $wpdb;
+		$table        = Handik_Booking_App_DB::table( 'addresses' );
+		$placeholders = implode( ',', array_fill( 0, count( $ids ), '%d' ) );
+		$rows         = $wpdb->get_results(
+			$wpdb->prepare( "SELECT * FROM {$table} WHERE id IN ({$placeholders})", $ids ), // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+			ARRAY_A
+		);
+		$out = array();
+		foreach ( (array) $rows as $row ) {
+			$out[ (int) $row['id'] ] = $row;
+		}
+		return $out;
+	}
 }

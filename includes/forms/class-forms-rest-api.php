@@ -287,7 +287,7 @@ class Handik_Booking_App_Forms_Rest_Api {
 	 * @return WP_Error|null
 	 */
 	protected function guard_rate_limit( $bucket, $per_minute ) {
-		$ip      = $this->client_ip();
+		$ip      = Handik_Booking_App_Forms_Helpers::client_ip();
 		$key     = 'handik_form_rl_' . md5( $bucket . '|' . $ip );
 		$count   = (int) get_transient( $key );
 		$limit   = (int) apply_filters( 'handik_booking_app_form_rate_limit', $per_minute, $bucket );
@@ -311,19 +311,8 @@ class Handik_Booking_App_Forms_Rest_Api {
 		return null;
 	}
 
-	protected function client_ip() {
-		foreach ( array( 'HTTP_CF_CONNECTING_IP', 'HTTP_X_FORWARDED_FOR', 'REMOTE_ADDR' ) as $key ) {
-			if ( empty( $_SERVER[ $key ] ) ) {
-				continue;
-			}
-			$candidate = sanitize_text_field( wp_unslash( (string) $_SERVER[ $key ] ) );
-			$candidate = trim( explode( ',', $candidate )[0] );
-			if ( '' !== $candidate ) {
-				return $candidate;
-			}
-		}
-		return 'unknown';
-	}
+	// `client_ip` moved to Forms_Helpers — shared with the services so the
+	// IP detection chain is identical everywhere.
 
 	/**
 	 * @param WP_REST_Request           $request   Request.

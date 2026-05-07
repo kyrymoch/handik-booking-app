@@ -134,6 +134,11 @@ class Handik_Booking_App_Admin_System {
 					'contacts'     => __( 'Contacts', 'handik-booking-app' ),
 					'addresses'    => __( 'Addresses', 'handik-booking-app' ),
 					'messages'     => __( 'Messages', 'handik-booking-app' ),
+					// Additional Forms tables (added in 2.1.9.1 / 2.1.10.0).
+					'form_presets'                  => __( 'Form presets', 'handik-booking-app' ),
+					'direct_booking_requests'       => __( 'Direct booking requests', 'handik-booking-app' ),
+					'project_scheduling_requests'   => __( 'Project schedules', 'handik-booking-app' ),
+					'project_work_days'             => __( 'Project work days', 'handik-booking-app' ),
 				);
 				foreach ( $tables as $key => $label ) :
 					$url = add_query_arg( '_wpnonce', $nonce, $rest . 'admin/export/' . $key );
@@ -160,9 +165,13 @@ class Handik_Booking_App_Admin_System {
 		$which = isset( $_GET['table'] ) ? sanitize_key( wp_unslash( $_GET['table'] ) ) : 'requests';
 
 		$tables = array(
-			'requests'  => __( 'Job requests', 'handik-booking-app' ),
-			'contacts'  => __( 'Contacts', 'handik-booking-app' ),
-			'addresses' => __( 'Addresses', 'handik-booking-app' ),
+			'requests'                    => __( 'Job requests', 'handik-booking-app' ),
+			'contacts'                    => __( 'Contacts', 'handik-booking-app' ),
+			'addresses'                   => __( 'Addresses', 'handik-booking-app' ),
+			'form_presets'                => __( 'Form presets', 'handik-booking-app' ),
+			'direct_booking_requests'     => __( 'Direct requests', 'handik-booking-app' ),
+			'project_scheduling_requests' => __( 'Project schedules', 'handik-booking-app' ),
+			'project_work_days'           => __( 'Project work days', 'handik-booking-app' ),
 		);
 		echo '<nav class="handik-admin-segmented">';
 		foreach ( $tables as $key => $label ) {
@@ -188,12 +197,56 @@ class Handik_Booking_App_Admin_System {
 					array( 'id', 'contact_id', 'address_full', 'city', 'state', 'zip_code', 'is_primary', 'is_default', 'deleted_at', 'updated_at' )
 				);
 				break;
+			case 'form_presets':
+				$this->render_raw_table_for(
+					'form_presets',
+					array( 'id', 'preset_slug', 'form_type', 'booking_type', 'duration_minutes', 'required_days', 'work_day_duration_minutes', 'enabled', 'is_default' )
+				);
+				break;
+			case 'direct_booking_requests':
+				$this->render_raw_table_for(
+					'direct_booking_requests',
+					array( 'id', 'contact_id', 'address_id', 'preset_slug', 'duration_minutes', 'status', 'cal_booking_uid', 'created_at', 'updated_at' )
+				);
+				break;
+			case 'project_scheduling_requests':
+				$this->render_raw_table_for(
+					'project_scheduling_requests',
+					array( 'id', 'contact_id', 'address_id', 'preset_slug', 'required_days', 'status', 'confirmed_at', 'created_at', 'updated_at' )
+				);
+				break;
+			case 'project_work_days':
+				$this->render_raw_table_for(
+					'project_work_days',
+					array( 'id', 'scheduling_request_id', 'day_index', 'start_iso', 'end_iso', 'status', 'cal_booking_uid', 'updated_at' )
+				);
+				break;
 			default:
 				$this->render_raw_table(
 					$this->job_requests ? $this->job_requests->list_recent( 100 ) : array(),
 					array( 'id', 'contact_id', 'client_type', 'job_shape', 'booking_type', 'status', 'app_step', 'updated_at' )
 				);
 		}
+	}
+
+	/**
+	 * Generic raw-table dump used by the Additional Forms tables (which
+	 * don't have a dedicated service::list_recent helper). Reads the last
+	 * 100 rows ordered by id desc.
+	 *
+	 * @param string $short_name Short table name (without prefix).
+	 * @param array<int, string> $cols Column whitelist.
+	 */
+	protected function render_raw_table_for( $short_name, array $cols ) {
+		global $wpdb;
+		$table  = Handik_Booking_App_DB::table( sanitize_key( $short_name ) );
+		$exists = $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $table ) );
+		if ( ! $exists ) {
+			echo '<p class="handik-admin-muted">' . esc_html__( 'Table not yet created — run pending migrations.', 'handik-booking-app' ) . '</p>';
+			return;
+		}
+		$rows = $wpdb->get_results( "SELECT * FROM {$table} ORDER BY id DESC LIMIT 100", ARRAY_A );
+		$this->render_raw_table( is_array( $rows ) ? $rows : array(), $cols );
 	}
 
 	protected function render_raw_table( array $rows, array $cols ) {

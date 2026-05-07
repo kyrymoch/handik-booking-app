@@ -270,6 +270,7 @@ class Handik_Booking_App_Admin {
 			'handik-booking-app'           => array( 'icon' => '🏠', 'label' => __( 'Dashboard', 'handik-booking-app' ) ),
 			'handik-booking-app-bookings'  => array( 'icon' => '📅', 'label' => __( 'Bookings', 'handik-booking-app' ) ),
 			'handik-booking-app-crm'       => array( 'icon' => '👥', 'label' => __( 'People', 'handik-booking-app' ) ),
+			'handik-booking-app-additional-forms' => array( 'icon' => '📝', 'label' => __( 'Forms', 'handik-booking-app' ) ),
 			'handik-booking-app-settings'  => array( 'icon' => '⚙️', 'label' => __( 'Setup', 'handik-booking-app' ) ),
 			'handik-booking-app-operations'=> array( 'icon' => '📜', 'label' => __( 'Logs', 'handik-booking-app' ) ),
 		);
