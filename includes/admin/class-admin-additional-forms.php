@@ -131,13 +131,7 @@ class Handik_Booking_App_Admin_Additional_Forms {
 					(int) $preset['duration_minutes']
 				);
 			}
-			$edit_url = add_query_arg(
-				array(
-					'tab'       => 'presets',
-					'preset_id' => (int) $preset['id'],
-				),
-				$base
-			);
+			$preset_db_id = (int) ( $preset['id'] ?? 0 );
 
 			echo '<tr>';
 			echo '<td>' . esc_html( (string) $preset['form_title'] ) . '</td>';
@@ -150,7 +144,23 @@ class Handik_Booking_App_Admin_Additional_Forms {
 			echo '<code>' . esc_html( $shortcode ) . '</code><br>';
 			echo '<a href="' . esc_url( $public ) . '" target="_blank" rel="noreferrer noopener">' . esc_html( $public ) . '</a>';
 			echo '</td>';
-			echo '<td><a class="button button-small" href="' . esc_url( $edit_url ) . '">' . esc_html__( 'Edit', 'handik-booking-app' ) . '</a></td>';
+			echo '<td>';
+			if ( $preset_db_id > 0 ) {
+				$edit_url = add_query_arg(
+					array(
+						'tab'       => 'presets',
+						'preset_id' => $preset_db_id,
+					),
+					$base
+				);
+				echo '<a class="button button-small" href="' . esc_url( $edit_url ) . '">' . esc_html__( 'Edit', 'handik-booking-app' ) . '</a>';
+			} else {
+				// In-memory default — table not yet seeded. Editing requires a
+				// real row id, so surface a friendly hint instead of a dead
+				// link to "Preset not found."
+				echo '<span class="handik-admin-muted" title="' . esc_attr__( 'Activate the plugin or run pending migrations to enable editing.', 'handik-booking-app' ) . '">' . esc_html__( 'default', 'handik-booking-app' ) . '</span>';
+			}
+			echo '</td>';
 			echo '</tr>';
 		}
 		echo '</tbody></table>';

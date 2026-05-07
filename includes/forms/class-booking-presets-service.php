@@ -216,10 +216,30 @@ class Handik_Booking_App_Booking_Presets_Service {
 		);
 	}
 
+	/**
+	 * Seed the 13 default presets the first time the table is empty.
+	 *
+	 * Race-safe: two concurrent requests that both observed an empty table
+	 * will both call this. `preset_slug` carries a UNIQUE index (migration
+	 * 1.4.0 line 60 — `UNIQUE KEY preset_slug_unique`), so the loser of the
+	 * race used to take a `WP_DB_Error` on the duplicate insert and bail
+	 * mid-way through, leaving a partially-seeded table. We pre-flight each
+	 * row with a SELECT and only insert if it's not already there. The
+	 * UNIQUE index still backs us up at the storage layer.
+	 */
 	protected function seed_defaults() {
 		global $wpdb;
 		$table = Handik_Booking_App_DB::table( 'form_presets' );
 		foreach ( $this->defaults() as $row ) {
+			$exists = (int) $wpdb->get_var(
+				$wpdb->prepare(
+					"SELECT COUNT(*) FROM {$table} WHERE preset_slug = %s",
+					(string) $row['preset_slug']
+				)
+			);
+			if ( $exists > 0 ) {
+				continue;
+			}
 			$wpdb->insert( $table, $row );
 		}
 	}

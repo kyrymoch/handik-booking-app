@@ -290,6 +290,12 @@ class Handik_Booking_App_Forms_Router {
 			'restartCta'        => __( 'Start a new booking', 'handik-booking-app' ),
 			'openDirectCta'     => __( 'Open the booking page directly', 'handik-booking-app' ),
 			'progressLabel'     => __( 'Booking progress', 'handik-booking-app' ),
+
+			// Restart confirmation modal.
+			'restartConfirmTitle'  => __( 'Start over?', 'handik-booking-app' ),
+			'restartConfirmBody'   => __( 'This will clear what you\'ve typed so far and take you back to the start. Continue?', 'handik-booking-app' ),
+			'restartConfirmCancel' => __( 'Keep my booking', 'handik-booking-app' ),
+			'restartConfirmCta'    => __( 'Start over', 'handik-booking-app' ),
 		);
 	}
 

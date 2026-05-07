@@ -248,7 +248,21 @@ class Handik_Booking_App_Project_Schedule_Service {
 		if ( ! $schedule ) {
 			return array( 'error' => __( 'Schedule not found.', 'handik-booking-app' ), 'status' => 404 );
 		}
-		if ( ! in_array( $schedule['status'], array( self::STATUS_SELECTING, self::STATUS_SELECTED ), true ) ) {
+		// Allow editing from any state where the customer can still legitimately
+		// change their mind:
+		//   - SELECTING     fresh schedule, no selection saved yet
+		//   - SELECTED      already saved a selection, picking again before confirm
+		//   - ROLLED_BACK   previous confirm hit a stale slot mid-flight, all
+		//                   created bookings were cancelled, customer should be
+		//                   able to pick a fresh set without admin intervention
+		// CREATING / CONFIRMED / PARTIAL_FAILED / CANCELLED are terminal-ish
+		// and require an admin to unstick them.
+		$editable = array(
+			self::STATUS_SELECTING,
+			self::STATUS_SELECTED,
+			self::STATUS_ROLLED_BACK,
+		);
+		if ( ! in_array( $schedule['status'], $editable, true ) ) {
 			return array(
 				'error'  => __( 'This schedule can no longer be edited.', 'handik-booking-app' ),
 				'status' => 409,
@@ -344,13 +358,47 @@ class Handik_Booking_App_Project_Schedule_Service {
 		if ( ! $schedule ) {
 			return array( 'error' => __( 'Schedule not found.', 'handik-booking-app' ), 'status' => 404 );
 		}
+		// Idempotent: a confirmed schedule is a confirmed schedule.
 		if ( self::STATUS_CONFIRMED === $schedule['status'] ) {
 			return array( 'success' => true, 'status' => self::STATUS_CONFIRMED );
 		}
-		if ( ! in_array( $schedule['status'], array( self::STATUS_SELECTED, self::STATUS_CREATING, self::STATUS_PARTIAL_FAILED, self::STATUS_ROLLED_BACK ), true ) ) {
+		// State machine — the only state that can confirm is SELECTED. Earlier
+		// builds also listed CREATING / PARTIAL_FAILED / ROLLED_BACK in the
+		// allow-list, but the CAS lock below only matches SELECTED → CREATING,
+		// so those branches just 409'd forever instead of retrying. Now we say
+		// it explicitly:
+		//   - CREATING        another request is in flight; reject as 409
+		//   - PARTIAL_FAILED  some bookings live on Cal, rollback failed —
+		//                     admin must intervene before any retry
+		//   - ROLLED_BACK     all bookings cancelled, customer must redo
+		//                     save_selection (which moves us back to SELECTED)
+		//                     before confirming again
+		if ( self::STATUS_CREATING === $schedule['status'] ) {
+			return array(
+				'error'  => __( 'This schedule is already being processed.', 'handik-booking-app' ),
+				'status' => 409,
+				'state'  => self::STATUS_CREATING,
+			);
+		}
+		if ( self::STATUS_PARTIAL_FAILED === $schedule['status'] ) {
+			return array(
+				'error'  => __( 'This schedule needs admin attention. Alex will follow up.', 'handik-booking-app' ),
+				'status' => 409,
+				'state'  => self::STATUS_PARTIAL_FAILED,
+			);
+		}
+		if ( self::STATUS_ROLLED_BACK === $schedule['status'] ) {
+			return array(
+				'error'  => __( 'Please pick your project days again before confirming.', 'handik-booking-app' ),
+				'status' => 409,
+				'state'  => self::STATUS_ROLLED_BACK,
+			);
+		}
+		if ( self::STATUS_SELECTED !== $schedule['status'] ) {
 			return array(
 				'error'  => __( 'This schedule cannot be confirmed.', 'handik-booking-app' ),
 				'status' => 409,
+				'state'  => (string) $schedule['status'],
 			);
 		}
 
