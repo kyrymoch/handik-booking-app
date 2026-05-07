@@ -284,6 +284,12 @@ class Handik_Booking_App_Forms_Router {
 
 			// Returning client.
 			'welcomeBack'       => __( 'Welcome back — we found your saved addresses.', 'handik-booking-app' ),
+			'savedAddressChecking' => __( 'Checking saved addresses…', 'handik-booking-app' ),
+
+			// Success disclaimer + notifications landmark.
+			'allSet'            => __( 'All set. Alex will be in touch before the visit.', 'handik-booking-app' ),
+			'bookAnother'       => __( 'Book another visit', 'handik-booking-app' ),
+			'notificationsRegionLabel' => __( 'Notifications', 'handik-booking-app' ),
 
 			// Footer disclaimer + progress.
 			'stuckPrefix'       => __( 'Stuck?', 'handik-booking-app' ),

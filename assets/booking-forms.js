@@ -35,6 +35,28 @@
 	var CAL_EMBED_TIMEOUT_MS = 15000;
 	var TOAST_DURATION_MS    = 4200;
 
+	// Draft persistence — namespaced separately from the main app's draft so
+	// the two can coexist on the same site without colliding.
+	var DRAFT_STORAGE_KEY_PREFIX = 'handik_booking_form_draft_v1_';
+	var DRAFT_TTL_MS             = 24 * 60 * 60 * 1000; // 24 hours.
+	var DRAFT_DEBOUNCE_MS        = 500;
+	// State fields that round-trip through localStorage. Keep this list
+	// minimal and explicit — anything not on it doesn't survive a refresh.
+	var PERSISTED_STATE_FIELDS = [
+		'step',
+		'contact',
+		'address',
+		'directRequestId',
+		'directCaptureToken',
+		'calBookingUrl',
+		'scheduleId',
+		'publicToken',
+		'selectedSlots',
+		'isReturningClient',
+		'profileContactId',
+		'savedAddresses'
+	];
+
 	// ===================================================================
 	// Constructor + lifecycle
 	// ===================================================================
@@ -100,9 +122,113 @@
 		this.applyAppearance();
 		this.ensureNotificationsRoot();
 		this.attachHistoryListener();
+		// Restore from localStorage BEFORE the initial render so the SPA
+		// boots straight into the saved step + form values. The plugin
+		// version is part of the envelope so a plugin upgrade invalidates
+		// stale drafts (avoids replaying state across breaking changes).
+		this.restoreDraftFromStorage();
 		this.replaceHistoryState( this.state.step );
 		this.render();
 	}
+
+	// ===================================================================
+	// Draft persistence (localStorage)
+	// ===================================================================
+
+	HandikBookingForm.prototype.draftStorageKey = function () {
+		// Per-preset namespace so a customer who's mid-flow on one
+		// /booking/{slug} doesn't see their data hop to a different
+		// preset they then opened.
+		return DRAFT_STORAGE_KEY_PREFIX + ( this.preset && this.preset.preset_slug ? String( this.preset.preset_slug ) : 'default' );
+	};
+
+	HandikBookingForm.prototype.saveDraftToStorage = function () {
+		if ( ! window.localStorage ) { return; }
+		// Don't persist after the customer has confirmed — clearDraftStorage
+		// runs on success / restart paths, but be defensive here too.
+		if ( 'success' === this.state.step ) { return; }
+		var persisted = {};
+		var self = this;
+		PERSISTED_STATE_FIELDS.forEach( function ( key ) {
+			if ( Object.prototype.hasOwnProperty.call( self.state, key ) ) {
+				persisted[ key ] = self.state[ key ];
+			}
+		} );
+		var envelope = {
+			version: this.config.version || '0',
+			savedAt: Date.now(),
+			state: persisted
+		};
+		try {
+			window.localStorage.setItem( this.draftStorageKey(), JSON.stringify( envelope ) );
+		} catch ( e ) {
+			// Quota exceeded or storage disabled — silently ignore.
+		}
+	};
+
+	HandikBookingForm.prototype.restoreDraftFromStorage = function () {
+		if ( ! window.localStorage ) { return; }
+		var raw;
+		try {
+			raw = window.localStorage.getItem( this.draftStorageKey() );
+		} catch ( e ) { return; }
+		if ( ! raw ) { return; }
+		var envelope;
+		try {
+			envelope = JSON.parse( raw );
+		} catch ( e ) {
+			this.clearDraftStorage();
+			return;
+		}
+		if ( ! envelope || 'object' !== typeof envelope || ! envelope.state ) {
+			this.clearDraftStorage();
+			return;
+		}
+		// Invalidate on plugin upgrades — schemas may have shifted.
+		if ( this.config.version && envelope.version !== this.config.version ) {
+			this.clearDraftStorage();
+			return;
+		}
+		// TTL check.
+		if ( ! envelope.savedAt || Date.now() - envelope.savedAt > DRAFT_TTL_MS ) {
+			this.clearDraftStorage();
+			return;
+		}
+		// Don't restore terminal states — they shouldn't have been saved
+		// but be defensive in case a previous build did.
+		if ( 'success' === envelope.state.step ) {
+			this.clearDraftStorage();
+			return;
+		}
+		var self = this;
+		PERSISTED_STATE_FIELDS.forEach( function ( key ) {
+			if ( Object.prototype.hasOwnProperty.call( envelope.state, key ) ) {
+				self.state[ key ] = envelope.state[ key ];
+			}
+		} );
+	};
+
+	HandikBookingForm.prototype.clearDraftStorage = function () {
+		if ( ! window.localStorage ) { return; }
+		try {
+			window.localStorage.removeItem( this.draftStorageKey() );
+		} catch ( e ) { /* ignore */ }
+	};
+
+	/**
+	 * Debounced save. Called from input handlers + go() so we don't write
+	 * to localStorage on every keystroke.
+	 */
+	HandikBookingForm.prototype.scheduleDraftSave = function () {
+		var self = this;
+		if ( this._draftSaveTimer ) {
+			window.clearTimeout( this._draftSaveTimer );
+		}
+		this._draftSaveTimer = window.setTimeout( function () {
+			self._draftSaveTimer = null;
+			self.saveDraftToStorage();
+		}, DRAFT_DEBOUNCE_MS );
+	};
 
 	// ===================================================================
 	// Browser history (back/forward navigation between form steps)
@@ -192,6 +318,11 @@
 		var notifications = document.createElement( 'div' );
 		notifications.id = this.notificationRootId;
 		notifications.className = 'handik-booking-app__notifications';
+		// Landmark for assistive tech. role="region" + aria-label gives the
+		// stack a name screen readers can navigate to. aria-live remains so
+		// individual toast appends are announced when added by the SPA.
+		notifications.setAttribute( 'role', 'region' );
+		notifications.setAttribute( 'aria-label', this.t( 'notificationsRegionLabel' ) || 'Notifications' );
 		notifications.setAttribute( 'aria-live', 'polite' );
 		document.body.appendChild( notifications );
 		this.notificationsRoot = notifications;
@@ -351,9 +482,18 @@
 
 		// Saved addresses: returning customer has prior addresses. Render the
 		// same <select> dropdown the main app uses (NOT a button list).
+		// While the lookup is mid-flight (lookupInFlightPhone is set) we
+		// show a small shimmer placeholder so the customer doesn't see the
+		// list pop in abruptly after the address step renders.
 		var savedMarkup = '';
 		var savedAddresses = Array.isArray( this.state.savedAddresses ) ? this.state.savedAddresses : [];
-		if ( savedAddresses.length ) {
+		if ( '' !== this.lookupInFlightPhone && ! savedAddresses.length ) {
+			savedMarkup = '<div class="handik-saved-address-loading" role="status" aria-live="polite">' +
+				'<div class="handik-saved-address-loading__bar"></div>' +
+				'<div class="handik-saved-address-loading__bar is-short"></div>' +
+				'<span>' + escapeHtml( this.t( 'savedAddressChecking' ) ) + '</span>' +
+			'</div>';
+		} else if ( savedAddresses.length ) {
 			var options = '<option value="">' + escapeHtml( this.t( 'savedAddressPlaceholder' ) ) + '</option>';
 			savedAddresses.forEach( function ( addr ) {
 				var line = String( addr.address_full || addr.address_line_1 || '' ).trim();
@@ -610,8 +750,20 @@
 	};
 
 	HandikBookingForm.prototype.disclaimerMarkup = function () {
-		// Mirror main app's "Stuck? Start a new booking · Open the booking
-		// page directly" footer link.
+		// Success-step variant: "All set." + "Book another visit" link. On
+		// the confirmation card a "Stuck? Start a new booking" prompt reads
+		// like an error nag — replace it with a celebratory note that
+		// also lets the customer start a fresh booking if they want to.
+		// Mirrors the main form's appFooterDisclaimer success branch.
+		if ( 'success' === this.state.step ) {
+			return '<aside class="handik-app-disclaimer is-success">' +
+					'<p>' + escapeHtml( this.t( 'allSet' ) ) + '</p>' +
+					'<p><a href="#" data-action="restart" class="handik-text-link">' + escapeHtml( this.t( 'bookAnother' ) ) + '</a></p>' +
+				'</aside>';
+		}
+
+		// Default in-flight variant: "Stuck? Start a new booking · Open the
+		// booking page directly".
 		var directUrl = String( this.state.calBookingUrl || '' );
 		var restartLink = '<a href="#" data-action="restart" class="handik-text-link">' + escapeHtml( this.t( 'restartCta' ) ) + '</a>';
 		var directLink = directUrl
@@ -649,6 +801,7 @@
 	HandikBookingForm.prototype.fieldMarkup = function ( opts ) {
 		opts = opts || {};
 		var inputId = opts.inputId || ( 'handik-form-' + opts.model.replace( /[^a-z0-9]/gi, '-' ) );
+		var errorId = inputId + '-error';
 		var fieldClass = 'handik-field' + ( opts.error ? ' is-invalid' : '' ) + ( opts.fieldExtraClass || '' );
 
 		var inputAttrs = [
@@ -666,12 +819,31 @@
 		if ( opts.inputmode ) { inputAttrs.push( 'inputmode="' + escapeAttr( opts.inputmode ) + '"' ); }
 		if ( opts.placeholder ) { inputAttrs.push( 'placeholder="' + escapeAttr( opts.placeholder ) + '"' ); }
 		if ( opts.required ) { inputAttrs.push( 'required' ); }
+		// Email/URL fields default to no autocaps + no spellcheck (mirrors
+		// what the main form does for these types). Without these attrs
+		// mobile Safari capitalizes the first letter of an email and
+		// underlines it as misspelled.
+		if ( ! opts.rawAttrs ) {
+			var t = opts.type || 'text';
+			if ( 'email' === t || 'tel' === t || 'url' === t ) {
+				inputAttrs.push( 'autocapitalize="off"' );
+				inputAttrs.push( 'spellcheck="false"' );
+			}
+		}
+		// A11y wiring: when the field has an inline error, point the input at
+		// it via aria-describedby so screen readers pair the message with the
+		// field, and flip aria-invalid so AT can also surface the error state
+		// independently of the visible :is-invalid styling.
+		if ( opts.error ) {
+			inputAttrs.push( 'aria-invalid="true"' );
+			inputAttrs.push( 'aria-describedby="' + escapeAttr( errorId ) + '"' );
+		}
 		if ( opts.rawAttrs ) { inputAttrs.push( opts.rawAttrs ); }
 
 		return '<label class="' + fieldClass + '" for="' + escapeAttr( inputId ) + '">' +
 				'<span>' + escapeHtml( opts.label ) + '</span>' +
 				'<input ' + inputAttrs.join( ' ' ) + '>' +
-				( opts.error ? '<span class="handik-field__error" role="alert">' + escapeHtml( opts.error ) + '</span>' : '' ) +
+				( opts.error ? '<span class="handik-field__error" id="' + escapeAttr( errorId ) + '" role="alert">' + escapeHtml( opts.error ) + '</span>' : '' ) +
 			'</label>';
 	};
 
@@ -783,6 +955,7 @@
 			this.state.address.address_id = 0;
 		}
 		this.setFieldValue( model, value );
+		this.scheduleDraftSave();
 	};
 
 	HandikBookingForm.prototype.onBlur = function ( input ) {
@@ -790,11 +963,66 @@
 		if ( ! model ) { return; }
 		var key = model.split( '.' ).pop();
 		this.state.touched[ key ] = true;
-		// Re-render contact step on blur to surface inline errors. Other
-		// steps don't need a re-render — would lose focus.
-		if ( 'contact' === this.state.step || ( 'address' === this.state.step && 'address_full' === key ) ) {
+		// Real-time contact lookup on phone blur: as soon as the customer
+		// finishes typing a 10-digit number we hit /contacts/lookup so the
+		// "Welcome back" toast and saved-address prefill happen BEFORE they
+		// reach for Continue. The lookupContactSilent helper reuses the
+		// same per-phone cache, so doing this here doesn't duplicate the
+		// follow-up call on Continue.
+		if ( 'contact.phone' === model && validatePhone( this.state.contact.phone ) ) {
+			this.lookupContactSilent();
+		}
+		// Re-render on any blur within the current step so an error span
+		// that's no longer applicable (the customer fixed the email and
+		// tabbed to phone) actually disappears. Earlier we only re-rendered
+		// for `contact` step or address.address_full — leaving stale
+		// .is-invalid styling on other fields.
+		if ( 'contact' === this.state.step || 'address' === this.state.step ) {
 			this.render();
 		}
+	};
+
+	/**
+	 * Silent (non-advancing) variant of lookupContactAndAdvance. Hits
+	 * /contacts/lookup, prefills name + email if blank, stashes saved
+	 * addresses, and (when matched) shows the "Welcome back" toast — but
+	 * never changes step. Called from phone-blur so a returning customer
+	 * sees recognition before they click Continue.
+	 */
+	HandikBookingForm.prototype.lookupContactSilent = function () {
+		var self = this;
+		var phoneApi = phoneApiValue( this.state.contact.phone );
+		if ( ! phoneApi ) { return; }
+		if ( phoneApi === this.lookupLastPhone || phoneApi === this.lookupInFlightPhone ) {
+			return;
+		}
+		this.lookupInFlightPhone = phoneApi;
+		this.api( 'POST', 'contacts/lookup', { phone: phoneApi } )
+			.then( function ( res ) {
+				self.lookupLastPhone     = phoneApi;
+				self.lookupInFlightPhone = '';
+				if ( res && res.profile && res.profile.contact ) {
+					var p = res.profile;
+					self.state.profileContactId  = parseInt( p.contact.id, 10 ) || 0;
+					self.state.isReturningClient = true;
+					if ( ! String( self.state.contact.full_name || '' ).trim() && p.contact.full_name ) {
+						self.state.contact.full_name = String( p.contact.full_name );
+					}
+					if ( ! String( self.state.contact.email || '' ).trim() && p.contact.email ) {
+						self.state.contact.email = String( p.contact.email );
+					}
+					self.state.savedAddresses = Array.isArray( p.addresses ) ? p.addresses : [];
+					self.render();
+					if ( self.state.savedAddresses.length ) {
+						self.toast( 'info', self.t( 'welcomeBack' ) );
+					}
+				}
+			} )
+			.catch( function () {
+				// Network failures are silent on this path — the customer can
+				// still proceed and the lookup will run again on Continue.
+				self.lookupInFlightPhone = '';
+			} );
 	};
 
 	HandikBookingForm.prototype.setFieldValue = function ( path, value ) {
@@ -888,6 +1116,39 @@
 			this.pushHistoryState( step );
 		}
 		this.render();
+		// On long pages (the form is often inside a tall hero / header) the
+		// next step renders below the fold and the customer scrolls back up
+		// manually after every Continue. Scroll the new screen into view —
+		// same 80px header offset and rAF deferral the main app uses.
+		if ( previous !== step ) {
+			this.scrollStepIntoView();
+			// Persist progress so a refresh resumes here. Success cleans
+			// up explicitly in confirmSchedule / captureDirectBooking.
+			if ( 'success' === step ) {
+				this.clearDraftStorage();
+			} else {
+				this.saveDraftToStorage();
+			}
+		}
+	};
+
+	HandikBookingForm.prototype.scrollStepIntoView = function () {
+		var self = this;
+		window.requestAnimationFrame( function () {
+			var target = self.shell.querySelector( '.handik-booking-app__screen-header' )
+				|| self.shell
+				|| self.root;
+			if ( ! target ) { return; }
+			var rect = target.getBoundingClientRect();
+			var absoluteTop = rect.top + window.pageYOffset;
+			var top = Math.max( 0, absoluteTop - 80 );
+			try {
+				window.scrollTo( { top: top, behavior: 'smooth' } );
+			} catch ( e ) {
+				// Older browsers don't accept the {behavior} options object.
+				window.scrollTo( 0, top );
+			}
+		} );
 	};
 
 	/**
@@ -895,6 +1156,8 @@
 	 * booking" link in the Stuck disclaimer.
 	 */
 	HandikBookingForm.prototype.restart = function () {
+		// Wipe any persisted draft — restart means "throw it away".
+		this.clearDraftStorage();
 		this.state.step             = 'contact';
 		this.state.busy             = false;
 		this.state.contact          = { full_name: '', phone: '', email: '' };
@@ -1690,9 +1953,29 @@
 		return order.map( function ( k ) { return groups[ k ]; } );
 	}
 
+	/**
+	 * Best-effort locale resolver. Prefers the browser's runtime language
+	 * (so a customer with a French browser sees French weekday names) and
+	 * falls back to the document's lang attribute, then to undefined which
+	 * lets `Intl` pick the default. Passing `undefined` (NOT `'en-US'`) is
+	 * the documented way to tell Intl "use the user's locale".
+	 */
+	function browserLocale() {
+		if ( typeof navigator !== 'undefined' ) {
+			if ( Array.isArray( navigator.languages ) && navigator.languages.length ) {
+				return navigator.languages[ 0 ];
+			}
+			if ( navigator.language ) { return navigator.language; }
+		}
+		if ( typeof document !== 'undefined' && document.documentElement && document.documentElement.lang ) {
+			return document.documentElement.lang;
+		}
+		return undefined;
+	}
+
 	function formatDayLabelET( iso, timezone ) {
 		try {
-			return new Date( iso ).toLocaleDateString( 'en-US', {
+			return new Date( iso ).toLocaleDateString( browserLocale(), {
 				weekday: 'short',
 				month:   'short',
 				day:     'numeric',
@@ -1702,15 +1985,16 @@
 	}
 	function formatTimeRangeET( startIso, endIso, timezone ) {
 		try {
+			var locale = browserLocale();
 			var s = new Date( startIso );
-			var label = s.toLocaleTimeString( 'en-US', {
+			var label = s.toLocaleTimeString( locale, {
 				hour:   'numeric',
 				minute: '2-digit',
 				timeZone: timezone || 'America/New_York'
 			} );
 			if ( endIso ) {
 				var e = new Date( endIso );
-				label += ' – ' + e.toLocaleTimeString( 'en-US', {
+				label += ' – ' + e.toLocaleTimeString( locale, {
 					hour:   'numeric',
 					minute: '2-digit',
 					timeZone: timezone || 'America/New_York'
