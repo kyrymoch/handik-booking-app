@@ -8,12 +8,21 @@ if ( ! defined( 'ABSPATH' ) ) {
  * Admin page: Handik Booking → Additional Forms.
  *
  * Three tabs:
- *   1. Presets       — list of public form presets, copy shortcode/URL, toggle enabled.
- *   2. Direct        — submissions from direct-visit forms (Standard/Extended/Large).
- *   3. Project       — Project Work Days scheduling requests with day-level detail.
+ *   1. Presets       — editable list. Edit one preset at a time (form_title,
+ *                      enabled, durations, required_days, Cal.com event
+ *                      type id / slug / url, allowed_start_time, admin_notes).
+ *   2. Direct        — submissions from direct-visit forms.
+ *   3. Project       — Project Work Days scheduling requests with day-level
+ *                      detail.
+ *
+ * All admin POSTs are nonce-protected with the `manage_options` capability
+ * via maybe_save_preset(). The list view always renders shortcode + public
+ * URL so admins can copy them with one click.
  */
 class Handik_Booking_App_Admin_Additional_Forms {
-	const PAGE_SLUG = 'handik-booking-app-additional-forms';
+	const PAGE_SLUG          = 'handik-booking-app-additional-forms';
+	const NONCE_ACTION_SAVE  = 'handik_save_form_preset';
+	const NONCE_FIELD_SAVE   = 'handik_save_form_preset_nonce';
 
 	/** @var Handik_Booking_App_Booking_Presets_Service */
 	protected $presets;
@@ -32,17 +41,23 @@ class Handik_Booking_App_Admin_Additional_Forms {
 		$this->project   = $project;
 		$this->contacts  = $contacts;
 		$this->addresses = $addresses;
+
+		add_action( 'admin_init', array( $this, 'maybe_save_preset' ) );
 	}
 
 	public function render() {
-		$tab = isset( $_GET['tab'] ) ? sanitize_key( wp_unslash( (string) $_GET['tab'] ) ) : 'presets'; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
-		$schedule_id = isset( $_GET['schedule_id'] ) ? absint( wp_unslash( $_GET['schedule_id'] ) ) : 0; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		$tab         = isset( $_GET['tab'] ) ? sanitize_key( wp_unslash( (string) $_GET['tab'] ) ) : 'presets'; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		$schedule_id = isset( $_GET['schedule_id'] ) ? absint( wp_unslash( $_GET['schedule_id'] ) ) : 0;          // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		$preset_id   = isset( $_GET['preset_id'] ) ? absint( wp_unslash( $_GET['preset_id'] ) ) : 0;              // phpcs:ignore WordPress.Security.NonceVerification.Recommended
 
 		echo '<div class="wrap handik-admin">';
 		echo '<h1>' . esc_html__( 'Additional Forms', 'handik-booking-app' ) . '</h1>';
+		settings_errors( 'handik_additional_forms' );
 		$this->render_tabs( $tab );
 
-		if ( 'project' === $tab && $schedule_id > 0 ) {
+		if ( 'presets' === $tab && $preset_id > 0 ) {
+			$this->render_preset_edit( $preset_id );
+		} elseif ( 'project' === $tab && $schedule_id > 0 ) {
 			$this->render_project_detail( $schedule_id );
 		} elseif ( 'project' === $tab ) {
 			$this->render_project_list();
@@ -76,25 +91,32 @@ class Handik_Booking_App_Admin_Additional_Forms {
 		echo '</nav>';
 	}
 
-	// ---------- presets ---------------------------------------------------
+	// =====================================================================
+	// Presets — list + edit
+	// =====================================================================
 
 	protected function render_presets_list() {
 		$presets = $this->presets->all();
-		echo '<p class="description">' . esc_html__( 'These are the public booking-form presets shipped with the plugin. Each has a shortcode and a public URL. Direct visit presets use the Cal.com iframe; project work days presets use the Cal.com API.', 'handik-booking-app' ) . '</p>';
+		$base    = admin_url( 'admin.php?page=' . self::PAGE_SLUG );
+
+		echo '<p class="description">' . esc_html__( 'Public booking-form presets. Direct visit presets use the Cal.com iframe; project work days presets use the Cal.com API. Edit a row to point it at a Cal.com event type or slug, change the duration, or disable it.', 'handik-booking-app' ) . '</p>';
 		echo '<table class="wp-list-table widefat striped">';
 		echo '<thead><tr>';
 		echo '<th>' . esc_html__( 'Title', 'handik-booking-app' ) . '</th>';
 		echo '<th>' . esc_html__( 'Slug', 'handik-booking-app' ) . '</th>';
 		echo '<th>' . esc_html__( 'Type', 'handik-booking-app' ) . '</th>';
 		echo '<th>' . esc_html__( 'Duration / Days', 'handik-booking-app' ) . '</th>';
+		echo '<th>' . esc_html__( 'Cal.com', 'handik-booking-app' ) . '</th>';
 		echo '<th>' . esc_html__( 'Enabled', 'handik-booking-app' ) . '</th>';
 		echo '<th>' . esc_html__( 'Embed', 'handik-booking-app' ) . '</th>';
+		echo '<th></th>';
 		echo '</tr></thead><tbody>';
 		foreach ( $presets as $preset ) {
 			$slug      = (string) $preset['preset_slug'];
 			$shortcode = '[handik_booking_form preset="' . $slug . '"]';
 			$public    = home_url( '/booking/' . $slug . '/' );
 			$type      = (string) $preset['form_type'];
+			$cal       = $this->preset_cal_summary( $preset );
 			if ( 'project_work_days' === $type ) {
 				$detail = sprintf(
 					/* translators: 1: required days, 2: minutes */
@@ -109,22 +131,182 @@ class Handik_Booking_App_Admin_Additional_Forms {
 					(int) $preset['duration_minutes']
 				);
 			}
+			$edit_url = add_query_arg(
+				array(
+					'tab'       => 'presets',
+					'preset_id' => (int) $preset['id'],
+				),
+				$base
+			);
+
 			echo '<tr>';
 			echo '<td>' . esc_html( (string) $preset['form_title'] ) . '</td>';
 			echo '<td><code>' . esc_html( $slug ) . '</code></td>';
 			echo '<td>' . esc_html( $type ) . '</td>';
-			echo '<td>' . $detail . '</td>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped (already escaped above)
+			echo '<td>' . $detail . '</td>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+			echo '<td>' . $cal . '</td>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
 			echo '<td>' . ( ! empty( $preset['enabled'] ) ? '<span class="dashicons dashicons-yes-alt"></span>' : '—' ) . '</td>';
 			echo '<td>';
 			echo '<code>' . esc_html( $shortcode ) . '</code><br>';
 			echo '<a href="' . esc_url( $public ) . '" target="_blank" rel="noreferrer noopener">' . esc_html( $public ) . '</a>';
 			echo '</td>';
+			echo '<td><a class="button button-small" href="' . esc_url( $edit_url ) . '">' . esc_html__( 'Edit', 'handik-booking-app' ) . '</a></td>';
 			echo '</tr>';
 		}
 		echo '</tbody></table>';
 	}
 
-	// ---------- direct list -----------------------------------------------
+	protected function render_preset_edit( $preset_id ) {
+		$preset = $this->find_preset_by_id( $preset_id );
+		if ( ! $preset ) {
+			echo '<p>' . esc_html__( 'Preset not found.', 'handik-booking-app' ) . '</p>';
+			return;
+		}
+		$is_project = Handik_Booking_App_Booking_Presets_Service::FORM_TYPE_PROJECT === (string) $preset['form_type'];
+		$back_url   = admin_url( 'admin.php?page=' . self::PAGE_SLUG . '&tab=presets' );
+
+		echo '<p><a href="' . esc_url( $back_url ) . '">&larr; ' . esc_html__( 'Back to presets', 'handik-booking-app' ) . '</a></p>';
+		echo '<h2>' . esc_html( (string) $preset['form_title'] ) . '</h2>';
+
+		echo '<form method="post" action="">';
+		wp_nonce_field( self::NONCE_ACTION_SAVE, self::NONCE_FIELD_SAVE );
+		echo '<input type="hidden" name="preset_id" value="' . (int) $preset['id'] . '">';
+
+		echo '<table class="form-table" role="presentation"><tbody>';
+		$this->row_text(
+			'form_title',
+			__( 'Title', 'handik-booking-app' ),
+			(string) $preset['form_title'],
+			__( 'Shown to customers as the form heading.', 'handik-booking-app' )
+		);
+		$this->row_checkbox(
+			'enabled',
+			__( 'Enabled', 'handik-booking-app' ),
+			! empty( $preset['enabled'] ),
+			__( 'When unchecked, the public URL and shortcode show a friendly "not available" message.', 'handik-booking-app' )
+		);
+
+		if ( $is_project ) {
+			$this->row_number(
+				'required_days',
+				__( 'Required days', 'handik-booking-app' ),
+				(int) $preset['required_days'],
+				1,
+				14,
+				__( 'How many days the customer must pick. The flow is configured for 1–14.', 'handik-booking-app' )
+			);
+			$this->row_number(
+				'work_day_duration_minutes',
+				__( 'Work day duration (minutes)', 'handik-booking-app' ),
+				(int) $preset['work_day_duration_minutes'],
+				60,
+				720,
+				__( 'Length of each work day. Default 480 (8h).', 'handik-booking-app' )
+			);
+			$this->row_text(
+				'cal_event_type_id',
+				__( 'Cal.com event type ID', 'handik-booking-app' ),
+				(string) ( $preset['cal_event_type_id'] ?? '' ),
+				__( 'Numeric Cal.com event type ID. Server-side bookings via the API need either this or a slug below.', 'handik-booking-app' )
+			);
+			$this->row_text(
+				'cal_event_slug',
+				__( 'Cal.com event type slug', 'handik-booking-app' ),
+				(string) ( $preset['cal_event_slug'] ?? '' ),
+				__( 'Optional. Use this when you prefer a slug-based reference over the numeric ID.', 'handik-booking-app' )
+			);
+			$this->row_text(
+				'allowed_start_time',
+				__( 'Default start time', 'handik-booking-app' ),
+				(string) ( $preset['allowed_start_time'] ?? '' ),
+				__( 'Informational. Day availability is set inside Cal.com directly.', 'handik-booking-app' )
+			);
+		} else {
+			$this->row_number(
+				'duration_minutes',
+				__( 'Duration (minutes)', 'handik-booking-app' ),
+				(int) $preset['duration_minutes'],
+				15,
+				600,
+				__( 'Locked Cal.com slot length. Pre-selects this duration in the iframe.', 'handik-booking-app' )
+			);
+			$this->row_text(
+				'cal_event_url',
+				__( 'Cal.com event URL override', 'handik-booking-app' ),
+				(string) ( $preset['cal_event_url'] ?? '' ),
+				__( 'Leave empty to use the global Cal.com URL configured under App Setup → Cal.com for this booking type.', 'handik-booking-app' )
+			);
+		}
+
+		$this->row_textarea(
+			'admin_notes',
+			__( 'Admin notes (private)', 'handik-booking-app' ),
+			(string) ( $preset['admin_notes'] ?? '' ),
+			__( 'Not shown to customers — for your own reference.', 'handik-booking-app' )
+		);
+		echo '</tbody></table>';
+
+		submit_button( __( 'Save preset', 'handik-booking-app' ) );
+		echo '</form>';
+	}
+
+	/**
+	 * Save handler for the preset edit form.
+	 */
+	public function maybe_save_preset() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			return;
+		}
+		if ( empty( $_POST[ self::NONCE_FIELD_SAVE ] ) ) {
+			return;
+		}
+		check_admin_referer( self::NONCE_ACTION_SAVE, self::NONCE_FIELD_SAVE );
+
+		$preset_id = isset( $_POST['preset_id'] ) ? absint( $_POST['preset_id'] ) : 0;
+		if ( ! $preset_id ) {
+			return;
+		}
+
+		$payload = array(
+			'enabled'                   => ! empty( $_POST['enabled'] ),
+			'form_title'                => isset( $_POST['form_title'] ) ? wp_unslash( (string) $_POST['form_title'] ) : '',
+			'admin_notes'               => isset( $_POST['admin_notes'] ) ? wp_unslash( (string) $_POST['admin_notes'] ) : '',
+		);
+		if ( isset( $_POST['duration_minutes'] ) ) {
+			$payload['duration_minutes'] = absint( $_POST['duration_minutes'] );
+		}
+		if ( isset( $_POST['required_days'] ) ) {
+			$payload['required_days'] = absint( $_POST['required_days'] );
+		}
+		if ( isset( $_POST['work_day_duration_minutes'] ) ) {
+			$payload['work_day_duration_minutes'] = absint( $_POST['work_day_duration_minutes'] );
+		}
+		if ( isset( $_POST['cal_event_type_id'] ) ) {
+			$payload['cal_event_type_id'] = wp_unslash( (string) $_POST['cal_event_type_id'] );
+		}
+		if ( isset( $_POST['cal_event_slug'] ) ) {
+			$payload['cal_event_slug'] = wp_unslash( (string) $_POST['cal_event_slug'] );
+		}
+		if ( isset( $_POST['cal_event_url'] ) ) {
+			$payload['cal_event_url'] = wp_unslash( (string) $_POST['cal_event_url'] );
+		}
+		if ( isset( $_POST['allowed_start_time'] ) ) {
+			$payload['allowed_start_time'] = wp_unslash( (string) $_POST['allowed_start_time'] );
+		}
+
+		$this->presets->update( $preset_id, $payload );
+
+		add_settings_error(
+			'handik_additional_forms',
+			'preset_saved',
+			__( 'Preset updated.', 'handik-booking-app' ),
+			'updated'
+		);
+	}
+
+	// =====================================================================
+	// Direct + Project list/detail (unchanged behavior, polished markup)
+	// =====================================================================
 
 	protected function render_direct_list() {
 		$rows = $this->direct->list_recent( 100 );
@@ -143,8 +325,8 @@ class Handik_Booking_App_Admin_Additional_Forms {
 		echo '<th>' . esc_html__( 'Cal booking', 'handik-booking-app' ) . '</th>';
 		echo '</tr></thead><tbody>';
 		foreach ( $rows as $row ) {
-			$contact   = $this->contacts->get( (int) $row['contact_id'] );
-			$cal_link  = '';
+			$contact  = $this->contacts->get( (int) $row['contact_id'] );
+			$cal_link = '';
 			if ( ! empty( $row['cal_booking_uid'] ) ) {
 				$cal_link = '<code>' . esc_html( (string) $row['cal_booking_uid'] ) . '</code>';
 			} elseif ( ! empty( $row['cal_booking_id'] ) ) {
@@ -164,8 +346,6 @@ class Handik_Booking_App_Admin_Additional_Forms {
 		}
 		echo '</tbody></table>';
 	}
-
-	// ---------- project list ----------------------------------------------
 
 	protected function render_project_list() {
 		$rows = $this->project->list_recent( 100 );
@@ -251,5 +431,71 @@ class Handik_Booking_App_Admin_Additional_Forms {
 			echo '</tr>';
 		}
 		echo '</tbody></table>';
+	}
+
+	// =====================================================================
+	// Helpers
+	// =====================================================================
+
+	/**
+	 * @param int $preset_id Preset ID.
+	 * @return array<string, mixed>|null
+	 */
+	protected function find_preset_by_id( $preset_id ) {
+		foreach ( $this->presets->all() as $preset ) {
+			if ( (int) $preset['id'] === (int) $preset_id ) {
+				return $preset;
+			}
+		}
+		return null;
+	}
+
+	protected function preset_cal_summary( array $preset ) {
+		if ( ! empty( $preset['cal_event_type_id'] ) ) {
+			return 'ID: <code>' . esc_html( (string) $preset['cal_event_type_id'] ) . '</code>';
+		}
+		if ( ! empty( $preset['cal_event_slug'] ) ) {
+			return 'slug: <code>' . esc_html( (string) $preset['cal_event_slug'] ) . '</code>';
+		}
+		if ( ! empty( $preset['cal_event_url'] ) ) {
+			return '<a href="' . esc_url( (string) $preset['cal_event_url'] ) . '" target="_blank" rel="noreferrer noopener">URL</a>';
+		}
+		return '<span class="handik-admin-muted">—</span>';
+	}
+
+	protected function row_text( $name, $label, $value, $help = '' ) {
+		echo '<tr><th scope="row"><label for="handik-preset-' . esc_attr( $name ) . '">' . esc_html( $label ) . '</label></th><td>';
+		echo '<input type="text" id="handik-preset-' . esc_attr( $name ) . '" name="' . esc_attr( $name ) . '" value="' . esc_attr( (string) $value ) . '" class="regular-text">';
+		if ( '' !== $help ) {
+			echo '<p class="description">' . esc_html( $help ) . '</p>';
+		}
+		echo '</td></tr>';
+	}
+
+	protected function row_number( $name, $label, $value, $min, $max, $help = '' ) {
+		echo '<tr><th scope="row"><label for="handik-preset-' . esc_attr( $name ) . '">' . esc_html( $label ) . '</label></th><td>';
+		echo '<input type="number" id="handik-preset-' . esc_attr( $name ) . '" name="' . esc_attr( $name ) . '" value="' . esc_attr( (string) $value ) . '" min="' . (int) $min . '" max="' . (int) $max . '" step="1" class="small-text">';
+		if ( '' !== $help ) {
+			echo '<p class="description">' . esc_html( $help ) . '</p>';
+		}
+		echo '</td></tr>';
+	}
+
+	protected function row_checkbox( $name, $label, $checked, $help = '' ) {
+		echo '<tr><th scope="row">' . esc_html( $label ) . '</th><td>';
+		echo '<label><input type="checkbox" name="' . esc_attr( $name ) . '" value="1"' . checked( (bool) $checked, true, false ) . '> ' . esc_html__( 'Yes', 'handik-booking-app' ) . '</label>';
+		if ( '' !== $help ) {
+			echo '<p class="description">' . esc_html( $help ) . '</p>';
+		}
+		echo '</td></tr>';
+	}
+
+	protected function row_textarea( $name, $label, $value, $help = '' ) {
+		echo '<tr><th scope="row"><label for="handik-preset-' . esc_attr( $name ) . '">' . esc_html( $label ) . '</label></th><td>';
+		echo '<textarea id="handik-preset-' . esc_attr( $name ) . '" name="' . esc_attr( $name ) . '" rows="3" class="large-text">' . esc_textarea( (string) $value ) . '</textarea>';
+		if ( '' !== $help ) {
+			echo '<p class="description">' . esc_html( $help ) . '</p>';
+		}
+		echo '</td></tr>';
 	}
 }

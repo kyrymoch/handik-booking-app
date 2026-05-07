@@ -1,303 +1,347 @@
 /**
  * Public SPA for the Additional Booking Forms module.
  *
- * Handles two presets:
- *   - direct_cal_booking → Contact → Address → Cal.com iframe.
- *   - project_work_days  → Contact → Address → Multi-day picker → Review →
- *                          Confirm (server creates N Cal.com bookings).
+ * Two flows are supported, picked by the preset's `form_type`:
  *
- * Mounts into [data-handik-booking-form-shell] using a JSON config blob in
- * [data-handik-booking-form-config]. Vanilla JS, no dependencies, no build
- * step — matches the existing plugin convention.
+ *   1. direct_cal_booking   Standard / Extended / Large Visits.
+ *      Contact → Address → Cal.com inline embed (one slot).
+ *
+ *   2. project_work_days    Larger-scale project schedules (2-6 days).
+ *      Contact → Address → Multi-day picker → Review → Confirm
+ *      (server then creates N separate Cal.com bookings via the v2 API).
+ *
+ * Visual contract: this file deliberately reuses the EXACT same DOM classes
+ * as `booking-app.js` (`.handik-booking-app`, `.handik-field`, `.handik-btn`,
+ * `.handik-footer-actions`, `.handik-toast`, `.handik-booking-app__booking-embed`,
+ * etc.) so the public stylesheet — `booking-app.css` — themes both forms
+ * with one set of design tokens. Keep that contract intact when editing.
+ *
+ * Notifications, Cal embed loader, Google Maps Places autocomplete, sticky
+ * footer with Back/Continue and the inline phone formatter all mirror the
+ * main app. They are simplified (no AI assistant, no photos, no draft
+ * persistence) but visually identical.
+ *
+ * Bootstrap runs on DOMContentLoaded so any markup the theme injects after
+ * the script tag is already present when we look it up.
  */
 ( function ( window, document ) {
 	'use strict';
 
+	var GOOGLE_SCRIPT_ID    = 'handik-google-maps-places';
+	var CAL_EMBED_SCRIPT_ID = 'handik-cal-embed-script';
+	var CAL_EMBED_TIMEOUT_MS = 15000;
+
+	// ===================================================================
+	// Constructor + lifecycle
+	// ===================================================================
+
 	function HandikBookingForm( root ) {
 		this.root = root;
-		var configNode = root.querySelector( '[data-handik-booking-form-config]' );
-		if ( ! configNode ) {
-			throw new Error( 'Missing booking form config' );
-		}
-		try {
-			this.config = JSON.parse( configNode.textContent || '{}' );
-		} catch ( err ) {
-			throw new Error( 'Could not parse booking form config' );
-		}
-		this.shell = root.querySelector( '[data-handik-booking-form-shell]' );
+		this.config = parseConfig( root );
 		this.preset = this.config.preset || {};
-		this.i18n = this.config.i18n || {};
-		this.formType = String( this.preset.form_type || '' );
+		this.i18n   = this.config.i18n || {};
+		this.formType    = String( this.preset.form_type || '' );
+		this.isProject   = 'project_work_days' === this.formType;
 		this.requiredDays = parseInt( this.preset.required_days, 10 ) || 0;
+		this.timezone    = this.config.timezone || 'America/New_York';
+
+		this.instanceId          = 'handik-form-' + Math.random().toString( 36 ).slice( 2, 8 );
+		this.notificationRootId  = this.instanceId + '-notifications';
+		this.notificationTimers  = new Map();
+		this.notificationCounter = 0;
+
+		this.calEmbedPromise   = null;
+		this.calEmbedNamespace = '';
+		this.calMounted        = false;
+
+		this.googleMapsPromise   = null;
+		this.addressAutocomplete = null;
 
 		this.state = {
-			step: 'contact',
+			step: 'contact',          // contact | address | cal | pick-days | review-days | success
 			busy: false,
-			error: '',
 			contact: { full_name: '', phone: '', email: '' },
-			address: { address_full: '', address_unit: '' },
+			address: {
+				address_full: '',
+				address_unit: '',
+				address_line_1: '',
+				city: '',
+				state: '',
+				zip_code: '',
+				is_valid: false
+			},
 			touched: {},
 			directRequestId: 0,
 			calBookingUrl: '',
 			scheduleId: 0,
 			publicToken: '',
 			slots: [],
+			slotsLoaded: false,
 			selectedSlots: [],
-			missingSlots: []
+			confirmedDays: []
 		};
 
+		this.applyAppearance();
+		this.buildShell();
 		this.render();
 	}
 
-	HandikBookingForm.prototype.t = function ( key ) {
-		return this.i18n[ key ] || key;
-	};
-
-	HandikBookingForm.prototype.go = function ( step ) {
-		this.state.step = step;
-		this.state.error = '';
-		this.render();
-		// Scroll the form into view + move focus to the heading for a11y.
-		var anchor = this.root.querySelector( 'h2' );
-		if ( anchor ) {
-			anchor.setAttribute( 'tabindex', '-1' );
-			try {
-				anchor.focus();
-			} catch ( e ) { /* ignore */ }
+	HandikBookingForm.prototype.applyAppearance = function () {
+		var vars = this.config.appearance || {};
+		var keys = Object.keys( vars );
+		if ( ! keys.length ) {
+			return;
 		}
+		// Apply CSS variables to the form's root element so the same tokens
+		// the main app uses theme this form too.
+		for ( var i = 0; i < keys.length; i++ ) {
+			try {
+				this.root.style.setProperty( keys[ i ], vars[ keys[ i ] ] );
+			} catch ( e ) { /* ignore unsupported var name */ }
+		}
+		// Add the main-app root class so booking-app.css rules apply.
+		this.root.classList.add( 'handik-booking-app' );
 	};
 
-	HandikBookingForm.prototype.setBusy = function ( busy ) {
-		this.state.busy = !! busy;
-		this.render();
+	HandikBookingForm.prototype.buildShell = function () {
+		var shell = this.root.querySelector( '[data-handik-booking-form-shell]' );
+		if ( ! shell ) {
+			shell = document.createElement( 'div' );
+			shell.setAttribute( 'data-handik-booking-form-shell', '' );
+			this.root.appendChild( shell );
+		}
+		shell.classList.add( 'handik-booking-app__shell' );
+		this.shell = shell;
+
+		// Notification root — matches main app placement (fixed bottom-right).
+		var notifications = document.createElement( 'div' );
+		notifications.id = this.notificationRootId;
+		notifications.className = 'handik-booking-app__notifications';
+		notifications.setAttribute( 'aria-live', 'polite' );
+		document.body.appendChild( notifications );
+		this.notificationsRoot = notifications;
 	};
 
-	HandikBookingForm.prototype.setError = function ( msg ) {
-		this.state.error = String( msg || '' );
-		this.render();
-	};
-
-	// ---------- top-level render ----------
+	// ===================================================================
+	// Top-level render
+	// ===================================================================
 
 	HandikBookingForm.prototype.render = function () {
 		var html = '';
-		html += '<div class="handik-booking-form__title"><h2 tabindex="-1">' + escapeHtml( String( this.preset.form_title || '' ) ) + '</h2></div>';
-
-		if ( this.state.error ) {
-			html += '<div class="handik-booking-form__error" role="alert">' + escapeHtml( this.state.error ) + '</div>';
-		}
+		html += '<div class="handik-booking-app__screen">';
+		html += this.headerMarkup();
+		html += '<div class="handik-booking-app__screen-body">';
 
 		switch ( this.state.step ) {
 			case 'contact':
-				html += this.renderContact();
+				html += this.contactMarkup();
 				break;
 			case 'address':
-				html += this.renderAddress();
+				html += this.addressMarkup();
 				break;
 			case 'cal':
-				html += this.renderCalIframe();
+				html += this.calMarkup();
 				break;
 			case 'pick-days':
-				html += this.renderPickDays();
+				html += this.pickDaysMarkup();
 				break;
 			case 'review-days':
-				html += this.renderReviewDays();
+				html += this.reviewDaysMarkup();
 				break;
 			case 'success':
-				html += this.renderSuccess();
-				break;
-			case 'project-success':
-				html += this.renderProjectSuccess();
+				html += this.successMarkup();
 				break;
 			default:
 				html += '<p>' + escapeHtml( this.t( 'genericError' ) ) + '</p>';
 		}
+
+		html += '</div></div>';
 		this.shell.innerHTML = html;
+
 		this.bindEvents();
+		this.afterRender();
 	};
 
-	HandikBookingForm.prototype.bindEvents = function () {
-		var self = this;
-		var form = this.shell.querySelector( '[data-form]' );
-		if ( form ) {
-			form.addEventListener( 'submit', function ( ev ) {
-				ev.preventDefault();
-				self.onSubmit();
-			} );
+	HandikBookingForm.prototype.afterRender = function () {
+		// Move focus to the new heading for screen-reader announcement.
+		var heading = this.shell.querySelector( '.handik-booking-app__screen-header h2' );
+		if ( heading ) {
+			heading.setAttribute( 'tabindex', '-1' );
+			try { heading.focus( { preventScroll: true } ); } catch ( e ) { /* ignore */ }
 		}
-		this.shell.querySelectorAll( 'input[name]' ).forEach( function ( input ) {
-			input.addEventListener( 'input', function () {
-				self.onInput( input );
-			} );
-			input.addEventListener( 'blur', function () {
-				self.onBlur( input );
-			} );
-		} );
-		this.shell.querySelectorAll( '[data-action]' ).forEach( function ( btn ) {
-			btn.addEventListener( 'click', function ( ev ) {
-				ev.preventDefault();
-				self.onAction( btn.getAttribute( 'data-action' ), btn );
-			} );
-		} );
-	};
 
-	HandikBookingForm.prototype.onInput = function ( input ) {
-		var name = input.name;
-		var value = input.value;
-		if ( 'phone' === name ) {
-			value = formatPhoneAsYouType( value );
-			input.value = value;
-		}
-		if ( name && name.indexOf( '.' ) === -1 ) {
-			if ( name in this.state.contact ) {
-				this.state.contact[ name ] = value;
-			} else if ( name in this.state.address ) {
-				this.state.address[ name ] = value;
-			}
-		}
-	};
-
-	HandikBookingForm.prototype.onBlur = function ( input ) {
-		this.state.touched[ input.name ] = true;
-		// Re-render only the field error if changed; cheap full re-render is ok here.
-	};
-
-	HandikBookingForm.prototype.onAction = function ( action, btn ) {
-		if ( 'back' === action ) {
-			if ( 'address' === this.state.step ) {
-				this.go( 'contact' );
-				return;
-			}
-			if ( 'pick-days' === this.state.step ) {
-				this.go( 'address' );
-				return;
-			}
-			if ( 'review-days' === this.state.step ) {
-				this.go( 'pick-days' );
-				return;
-			}
-		}
-		if ( 'continue' === action ) {
-			this.onSubmit();
-			return;
-		}
-		if ( 'pick-replacement' === action ) {
-			this.state.missingSlots = [];
-			this.go( 'pick-days' );
-			return;
-		}
-		if ( 'toggle-slot' === action ) {
-			this.toggleSlot( btn.getAttribute( 'data-slot-start' ), btn.getAttribute( 'data-slot-end' ) );
-			return;
-		}
-		if ( 'review-days' === action ) {
-			if ( this.state.selectedSlots.length !== this.requiredDays ) {
-				return;
-			}
-			this.saveSelection();
-			return;
-		}
-		if ( 'confirm-days' === action ) {
-			this.confirmSchedule();
-			return;
-		}
-	};
-
-	HandikBookingForm.prototype.onSubmit = function () {
-		if ( 'contact' === this.state.step ) {
-			this.state.touched = { full_name: true, phone: true, email: true };
-			if ( ! this.validateContact() ) {
-				this.render();
-				return;
-			}
-			this.go( 'address' );
-			return;
-		}
 		if ( 'address' === this.state.step ) {
-			this.state.touched.address_full = true;
-			if ( '' === String( this.state.address.address_full || '' ).trim() ) {
-				this.setError( this.t( 'errorRequired' ) );
-				return;
-			}
-			if ( 'project_work_days' === this.formType ) {
-				this.openProject();
-			} else {
-				this.submitDirect();
-			}
+			this.mountAddressAutocomplete();
+		}
+		if ( 'cal' === this.state.step && ! this.calMounted ) {
+			this.mountCalEmbed();
 		}
 	};
 
-	// ---------- step renderers ----------
+	HandikBookingForm.prototype.headerMarkup = function () {
+		return '<div class="handik-booking-app__screen-header"><h2>' + escapeHtml( this.preset.form_title || '' ) + '</h2></div>';
+	};
 
-	HandikBookingForm.prototype.renderContact = function () {
+	// ===================================================================
+	// Step renderers
+	// ===================================================================
+
+	HandikBookingForm.prototype.contactMarkup = function () {
 		var c = this.state.contact;
 		var t = this.state.touched;
+		var nameError = t.full_name && ! validateFullName( c.full_name ) ? this.t( 'errorRequired' ) : '';
+		var phoneError = t.phone && ! validatePhone( c.phone ) ? this.t( 'errorPhone' ) : '';
+		var emailError = t.email && '' !== c.email && ! validateEmail( c.email ) ? this.t( 'errorEmail' ) : '';
+
 		return [
-			'<form data-form class="handik-booking-form__form">',
-				this.fieldText( 'full_name', this.t( 'fullNameLabel' ), c.full_name, 'name', t.full_name && ! validateFullName( c.full_name ) ? this.t( 'errorRequired' ) : '' ),
-				this.fieldTel( 'phone', this.t( 'phoneLabel' ), c.phone, t.phone && ! validatePhone( c.phone ) ? this.t( 'errorPhone' ) : '' ),
-				this.fieldEmail( 'email', this.t( 'emailLabel' ), c.email, t.email && '' !== c.email && ! validateEmail( c.email ) ? this.t( 'errorEmail' ) : '' ),
-				this.actionsRow( false, this.t( 'continueLabel' ) ),
-			'</form>'
+			'<p class="handik-booking-app__intro">', escapeHtml( this.t( 'contactIntro' ) ), '</p>',
+			this.fieldMarkup( {
+				name: 'contact.full_name',
+				label: this.t( 'fullNameLabel' ),
+				type: 'text',
+				value: c.full_name,
+				autocomplete: 'name',
+				error: nameError,
+				required: true
+			} ),
+			'<div class="handik-grid-2">',
+				this.fieldMarkup( {
+					name: 'contact.phone',
+					label: this.t( 'phoneLabel' ),
+					type: 'tel',
+					value: c.phone,
+					autocomplete: 'tel',
+					inputmode: 'tel',
+					error: phoneError,
+					required: true
+				} ),
+				this.fieldMarkup( {
+					name: 'contact.email',
+					label: this.t( 'emailLabel' ),
+					type: 'email',
+					value: c.email,
+					autocomplete: 'email',
+					inputmode: 'email',
+					error: emailError,
+					required: false
+				} ),
+			'</div>',
+			this.footerActionsMarkup( {
+				backAction: '',
+				continueAction: 'contact-next',
+				continueLabel: this.t( 'continueLabel' ),
+				hideBack: true,
+				continueMuted: ! this.contactValid()
+			} )
 		].join( '' );
 	};
 
-	HandikBookingForm.prototype.renderAddress = function () {
+	HandikBookingForm.prototype.addressMarkup = function () {
 		var a = this.state.address;
+		var addressError = this.state.touched.address_full && '' === String( a.address_full || '' ).trim()
+			? this.t( 'errorRequired' )
+			: '';
+		var hasMaps = !! this.config.googleMapsApiKey;
+
 		return [
-			'<form data-form class="handik-booking-form__form">',
-				this.fieldText( 'address_full', this.t( 'addressLabel' ), a.address_full, 'street-address', '' ),
-				this.fieldText( 'address_unit', this.t( 'unitLabel' ), a.address_unit, 'address-line2', '' ),
-				this.actionsRow( true, this.t( 'continueLabel' ) ),
-			'</form>'
+			'<p class="handik-booking-app__intro">', escapeHtml( this.t( 'addressIntro' ) ), '</p>',
+			this.fieldMarkup( {
+				name: 'address.address_full',
+				label: this.t( 'addressLabel' ),
+				type: 'text',
+				value: a.address_full,
+				autocomplete: hasMaps ? 'off' : 'street-address',
+				placeholder: this.t( 'addressPlaceholder' ),
+				inputId: 'handik-form-address',
+				error: addressError,
+				required: true,
+				dataAttrs: hasMaps ? { 'handik-google-address': '1' } : {}
+			} ),
+			this.fieldMarkup( {
+				name: 'address.address_unit',
+				label: this.t( 'unitLabel' ),
+				type: 'text',
+				value: a.address_unit,
+				autocomplete: 'address-line2',
+				required: false
+			} ),
+			this.footerActionsMarkup( {
+				backAction: 'address-back',
+				continueAction: 'address-next',
+				continueLabel: this.t( 'continueLabel' ),
+				continueMuted: '' === String( a.address_full || '' ).trim()
+			} )
 		].join( '' );
 	};
 
-	HandikBookingForm.prototype.renderCalIframe = function () {
-		var url = this.state.calBookingUrl;
-		if ( ! url ) {
-			return '<p>' + escapeHtml( this.t( 'genericError' ) ) + '</p>';
+	HandikBookingForm.prototype.calMarkup = function () {
+		// Skeleton matches main app's `.handik-skeleton--calendar`.
+		var skeleton = '<div class="handik-skeleton handik-skeleton--calendar" aria-hidden="true">' +
+			'<div class="handik-skeleton__bar handik-skeleton__bar--header"></div>' +
+			'<div class="handik-skeleton__grid">' +
+				'<div class="handik-skeleton__cell"></div>'.repeat( 9 ) +
+			'</div></div>';
+
+		return [
+			'<p class="handik-booking-app__intro">', escapeHtml( this.t( 'calIntro' ) ), '</p>',
+			'<div class="handik-booking-app__booking-embed" data-handik-cal-embed>', skeleton, '</div>',
+			this.footerActionsMarkup( {
+				backAction: 'cal-back',
+				continueAction: '',
+				continueLabel: '',
+				hideContinue: true
+			} )
+		].join( '' );
+	};
+
+	HandikBookingForm.prototype.pickDaysMarkup = function () {
+		if ( ! this.state.slotsLoaded ) {
+			return this.loadingMarkup( this.t( 'loading' ) ) +
+				this.footerActionsMarkup( {
+					backAction: 'pick-back',
+					continueAction: 'pick-next',
+					continueLabel: this.t( 'continueLabel' ),
+					continueMuted: true
+				} );
 		}
-		// Cal.com embed via iframe. We don't try to listen to bookingSuccessful
-		// over postMessage — the existing webhook handles status sync. Customer
-		// sees the success screen only after the iframe shows Cal's confirmation.
-		return [
-			'<div class="handik-booking-form__cal-wrap">',
-				'<iframe',
-					' src="', escapeAttr( url ), '"',
-					' title="', escapeAttr( this.t( 'reviewTitle' ) ), '"',
-					' loading="eager"',
-					' allow="payment"',
-					' style="width:100%;min-height:720px;border:0;"></iframe>',
-			'</div>'
-		].join( '' );
-	};
-
-	HandikBookingForm.prototype.renderPickDays = function () {
 		if ( ! this.state.slots.length ) {
-			return '<p class="handik-booking-form__loading" aria-live="polite">' + escapeHtml( this.t( 'loading' ) ) + '</p>';
+			return [
+				'<div class="handik-booking-app__alert is-error" role="alert">',
+					escapeHtml( this.t( 'noSlots' ) ),
+				'</div>',
+				this.footerActionsMarkup( {
+					backAction: 'pick-back',
+					continueAction: '',
+					continueLabel: '',
+					hideContinue: true
+				} )
+			].join( '' );
 		}
-		var grouped = groupSlotsByDay( this.state.slots, this.config.timezone || 'America/New_York' );
-		var selectedKey = {};
-		this.state.selectedSlots.forEach( function ( s ) {
-			selectedKey[ s.start ] = true;
-		} );
+
+		var grouped = groupSlotsByDay( this.state.slots, this.timezone );
+		var selectedKeys = {};
+		this.state.selectedSlots.forEach( function ( s ) { selectedKeys[ s.start ] = true; } );
+		var canSelectMore = this.state.selectedSlots.length < this.requiredDays;
+
 		var html = '';
-		html += '<p class="handik-booking-form__hint">' + escapeHtml( ( this.t( 'pickHelper' ) || '' ).replace( '%d', this.requiredDays ) ) + '</p>';
-		if ( this.state.missingSlots && this.state.missingSlots.length ) {
-			html += '<div class="handik-booking-form__warning" role="alert">' + escapeHtml( this.t( 'replacementNeeded' ) ) + '</div>';
-		}
-		html += '<ul class="handik-booking-form__slots">';
+		html += '<p class="handik-booking-app__intro">' + escapeHtml( ( this.t( 'pickHelper' ) || '' ).replace( '%d', this.requiredDays ) ) + '</p>';
+		html += '<ul class="handik-booking-app__slots">';
 		grouped.forEach( function ( day ) {
-			html += '<li class="handik-booking-form__slot-day">';
-			html += '<div class="handik-booking-form__slot-day-label">' + escapeHtml( day.label ) + '</div>';
-			html += '<div class="handik-booking-form__slot-row">';
+			html += '<li class="handik-booking-app__slot-day">';
+			html += '<div class="handik-booking-app__slot-day-label">' + escapeHtml( day.label ) + '</div>';
+			html += '<div class="handik-booking-app__slot-row">';
 			day.slots.forEach( function ( slot ) {
-				var pressed = selectedKey[ slot.start_iso ] ? 'true' : 'false';
-				var cls = 'handik-booking-form__slot' + ( selectedKey[ slot.start_iso ] ? ' is-selected' : '' );
-				html += '<button type="button" class="' + cls + '" data-action="toggle-slot" data-slot-start="' + escapeAttr( slot.start_iso ) + '" data-slot-end="' + escapeAttr( slot.end_iso || '' ) + '" aria-pressed="' + pressed + '">';
-				html += escapeHtml( slot.timeLabel );
-				html += '</button>';
+				var isSelected = !! selectedKeys[ slot.start_iso ];
+				var disabled   = ! isSelected && ! canSelectMore;
+				var pressed = isSelected ? 'true' : 'false';
+				var cls = 'handik-booking-app__slot' + ( isSelected ? ' is-selected' : '' );
+				html += '<button type="button" class="' + cls + '"';
+				html += ' data-action="toggle-slot"';
+				html += ' data-slot-start="' + escapeAttr( slot.start_iso ) + '"';
+				html += ' data-slot-end="' + escapeAttr( slot.end_iso || '' ) + '"';
+				html += ' aria-pressed="' + pressed + '"';
+				if ( disabled ) { html += ' disabled aria-disabled="true"'; }
+				html += '>' + escapeHtml( slot.timeLabel ) + '</button>';
 			} );
 			html += '</div></li>';
 		} );
@@ -306,21 +350,23 @@
 		var counter = ( this.t( 'selectionCounter' ) || '' )
 			.replace( '%1$d', this.state.selectedSlots.length )
 			.replace( '%2$d', this.requiredDays );
-		var canProceed = this.state.selectedSlots.length === this.requiredDays;
+		html += '<p class="handik-booking-app__slot-counter" aria-live="polite"><strong>' + escapeHtml( counter ) + '</strong></p>';
 
-		html += '<div class="handik-booking-form__actions">';
-		html += '<button type="button" class="handik-booking-form__btn handik-booking-form__btn--secondary" data-action="back">' + escapeHtml( this.t( 'backLabel' ) ) + '</button>';
-		html += '<div class="handik-booking-form__counter" aria-live="polite">' + escapeHtml( counter ) + '</div>';
-		html += '<button type="button" class="handik-booking-form__btn handik-booking-form__btn--primary" data-action="review-days"' + ( canProceed ? '' : ' disabled aria-disabled="true"' ) + '>' + escapeHtml( this.t( 'continueLabel' ) ) + '</button>';
-		html += '</div>';
+		html += this.footerActionsMarkup( {
+			backAction: 'pick-back',
+			continueAction: 'pick-next',
+			continueLabel: this.t( 'continueLabel' ),
+			continueMuted: this.state.selectedSlots.length !== this.requiredDays
+		} );
 		return html;
 	};
 
-	HandikBookingForm.prototype.renderReviewDays = function () {
+	HandikBookingForm.prototype.reviewDaysMarkup = function () {
 		var c = this.state.contact;
 		var a = this.state.address;
 		var html = '';
-		html += '<dl class="handik-booking-form__review">';
+		html += '<p class="handik-booking-app__intro">' + escapeHtml( this.t( 'reviewIntro' ) ) + '</p>';
+		html += '<dl class="handik-booking-app__review">';
 		html += '<dt>' + escapeHtml( this.t( 'fullNameLabel' ) ) + '</dt><dd>' + escapeHtml( c.full_name ) + '</dd>';
 		html += '<dt>' + escapeHtml( this.t( 'phoneLabel' ) ) + '</dt><dd>' + escapeHtml( c.phone ) + '</dd>';
 		if ( c.email ) {
@@ -329,100 +375,246 @@
 		html += '<dt>' + escapeHtml( this.t( 'addressLabel' ) ) + '</dt><dd>' + escapeHtml( a.address_full + ( a.address_unit ? ', ' + a.address_unit : '' ) ) + '</dd>';
 		html += '</dl>';
 		html += '<h3>' + escapeHtml( this.t( 'reviewTitle' ) ) + '</h3>';
-		html += '<ol class="handik-booking-form__review-days">';
+		html += '<ol class="handik-booking-app__review-days">';
+		var tz = this.timezone;
 		this.state.selectedSlots.forEach( function ( s ) {
-			html += '<li>' + escapeHtml( formatSlotLabelET( s.start, s.end || '', this.config.timezone || 'America/New_York' ) ) + '</li>';
-		}, this );
+			html += '<li>' + escapeHtml( formatSlotLabelET( s.start, s.end || '', tz ) ) + '</li>';
+		} );
 		html += '</ol>';
-		html += '<div class="handik-booking-form__actions">';
-		html += '<button type="button" class="handik-booking-form__btn handik-booking-form__btn--secondary" data-action="back"' + ( this.state.busy ? ' disabled aria-disabled="true"' : '' ) + '>' + escapeHtml( this.t( 'backLabel' ) ) + '</button>';
-		html += '<button type="button" class="handik-booking-form__btn handik-booking-form__btn--primary" data-action="confirm-days"' + ( this.state.busy ? ' disabled aria-disabled="true"' : '' ) + '>' + escapeHtml( this.t( 'confirmCta' ) ) + '</button>';
-		html += '</div>';
+		html += this.footerActionsMarkup( {
+			backAction: 'review-back',
+			continueAction: 'review-confirm',
+			continueLabel: this.t( 'confirmCta' ),
+			continueMuted: this.state.busy
+		} );
 		return html;
 	};
 
-	HandikBookingForm.prototype.renderSuccess = function () {
-		return '<div class="handik-booking-form__success">' + escapeHtml( this.t( 'directSuccess' ) ) + '</div>';
-	};
-
-	HandikBookingForm.prototype.renderProjectSuccess = function () {
-		var html = '<div class="handik-booking-form__success">' + escapeHtml( this.t( 'projectSuccess' ) ) + '</div>';
-		if ( this.state.selectedSlots.length ) {
-			html += '<ul class="handik-booking-form__success-days">';
-			this.state.selectedSlots.forEach( function ( s ) {
-				html += '<li>' + escapeHtml( formatSlotLabelET( s.start, s.end || '', this.config.timezone || 'America/New_York' ) ) + '</li>';
-			}, this );
+	HandikBookingForm.prototype.successMarkup = function () {
+		var msg = this.isProject ? this.t( 'projectSuccess' ) : this.t( 'directSuccess' );
+		var html = '<div class="handik-booking-app__success-card"><strong>' + escapeHtml( this.t( 'successTitle' ) ) + '</strong>';
+		html += escapeHtml( msg ) + '</div>';
+		if ( this.isProject && this.state.confirmedDays.length ) {
+			html += '<ul class="handik-booking-app__success-days">';
+			var tz = this.timezone;
+			this.state.confirmedDays.forEach( function ( s ) {
+				html += '<li>' + escapeHtml( formatSlotLabelET( s.start, s.end || '', tz ) ) + '</li>';
+			} );
 			html += '</ul>';
 		}
 		return html;
 	};
 
-	// ---------- field helpers ----------
-
-	HandikBookingForm.prototype.fieldText = function ( name, label, value, autocomplete, error ) {
-		return [
-			'<label class="handik-booking-form__field">',
-				'<span class="handik-booking-form__label">', escapeHtml( label ), '</span>',
-				'<input type="text" name="', escapeAttr( name ), '" value="', escapeAttr( String( value || '' ) ), '" autocomplete="', escapeAttr( autocomplete || 'off' ), '" required>',
-				error ? '<span class="handik-booking-form__field-error" role="alert">' + escapeHtml( error ) + '</span>' : '',
-			'</label>'
-		].join( '' );
+	HandikBookingForm.prototype.loadingMarkup = function ( label ) {
+		return '<div class="handik-booking-app__loading" aria-live="polite">' +
+			'<div class="sp sp-loadbar" aria-hidden="true"></div>' +
+			'<h5>' + escapeHtml( label ) + '</h5>' +
+		'</div>';
 	};
 
-	HandikBookingForm.prototype.fieldTel = function ( name, label, value, error ) {
-		return [
-			'<label class="handik-booking-form__field">',
-				'<span class="handik-booking-form__label">', escapeHtml( label ), '</span>',
-				'<input type="tel" name="', escapeAttr( name ), '" value="', escapeAttr( String( value || '' ) ), '" autocomplete="tel" inputmode="tel" required>',
-				error ? '<span class="handik-booking-form__field-error" role="alert">' + escapeHtml( error ) + '</span>' : '',
-			'</label>'
-		].join( '' );
-	};
+	// ===================================================================
+	// Field + footer helpers (match main app DOM)
+	// ===================================================================
 
-	HandikBookingForm.prototype.fieldEmail = function ( name, label, value, error ) {
-		return [
-			'<label class="handik-booking-form__field">',
-				'<span class="handik-booking-form__label">', escapeHtml( label ), '</span>',
-				'<input type="email" name="', escapeAttr( name ), '" value="', escapeAttr( String( value || '' ) ), '" autocomplete="email" inputmode="email">',
-				error ? '<span class="handik-booking-form__field-error" role="alert">' + escapeHtml( error ) + '</span>' : '',
-			'</label>'
-		].join( '' );
-	};
-
-	HandikBookingForm.prototype.actionsRow = function ( showBack, primaryLabel ) {
-		var html = '<div class="handik-booking-form__actions">';
-		if ( showBack ) {
-			html += '<button type="button" class="handik-booking-form__btn handik-booking-form__btn--secondary" data-action="back"' + ( this.state.busy ? ' disabled aria-disabled="true"' : '' ) + '>' + escapeHtml( this.t( 'backLabel' ) ) + '</button>';
+	HandikBookingForm.prototype.fieldMarkup = function ( opts ) {
+		opts = opts || {};
+		var inputId = opts.inputId || ( 'handik-form-' + opts.name.replace( /[^a-z0-9]/gi, '-' ) );
+		var fieldClass = 'handik-field' + ( opts.error ? ' is-invalid' : '' );
+		var data = '';
+		if ( opts.dataAttrs ) {
+			Object.keys( opts.dataAttrs ).forEach( function ( k ) {
+				data += ' data-' + k + '="' + escapeAttr( opts.dataAttrs[ k ] ) + '"';
+			} );
 		}
-		html += '<button type="submit" class="handik-booking-form__btn handik-booking-form__btn--primary"' + ( this.state.busy ? ' disabled aria-disabled="true"' : '' ) + '>' + escapeHtml( primaryLabel ) + '</button>';
-		html += '</div>';
-		return html;
+
+		var inputAttrs = [
+			'type="' + escapeAttr( opts.type || 'text' ) + '"',
+			'id="' + escapeAttr( inputId ) + '"',
+			'name="' + escapeAttr( opts.name ) + '"',
+			'value="' + escapeAttr( String( opts.value == null ? '' : opts.value ) ) + '"',
+			'autocomplete="' + escapeAttr( opts.autocomplete || 'off' ) + '"'
+		];
+		if ( opts.inputmode ) { inputAttrs.push( 'inputmode="' + escapeAttr( opts.inputmode ) + '"' ); }
+		if ( opts.placeholder ) { inputAttrs.push( 'placeholder="' + escapeAttr( opts.placeholder ) + '"' ); }
+		if ( opts.required ) { inputAttrs.push( 'required' ); }
+
+		return '<label class="' + fieldClass + '" for="' + escapeAttr( inputId ) + '"' + data + '>' +
+				'<span>' + escapeHtml( opts.label ) + '</span>' +
+				'<input ' + inputAttrs.join( ' ' ) + '>' +
+				( opts.error ? '<span class="handik-field__help is-error">' + escapeHtml( opts.error ) + '</span>' : '' ) +
+			'</label>';
 	};
 
-	// ---------- validation ----------
+	HandikBookingForm.prototype.footerActionsMarkup = function ( settings ) {
+		settings = settings || {};
+		var backLabel = escapeHtml( settings.backLabel || this.t( 'backLabel' ) );
+		var continueLabel = escapeHtml( settings.continueLabel || this.t( 'continueLabel' ) );
 
-	HandikBookingForm.prototype.validateContact = function () {
+		var backIcon = '<span class="handik-btn__icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M19 11H7.83l4.88-4.88L11.29 4.7 4 12l7.29 7.3 1.42-1.42L7.83 13H19v-2z"/></svg></span>';
+		var backInner = backIcon + '<span class="handik-btn__label">' + backLabel + '</span>';
+		var backClass = 'handik-btn is-secondary is-back';
+		var continueClass = 'handik-btn ' + ( settings.continueMuted ? 'is-pending' : 'is-primary' ) + ' is-continue';
+
+		var backButton = settings.hideBack
+			? ''
+			: '<button type="button" data-action="' + escapeAttr( settings.backAction || 'back' ) + '" class="' + backClass + '">' + backInner + '</button>';
+		var continueButton = settings.hideContinue
+			? ''
+			: '<div class="handik-footer-actions__continue">' +
+				'<button type="button" data-action="' + escapeAttr( settings.continueAction || 'continue' ) + '" class="' + continueClass + '" aria-disabled="' + ( settings.continueMuted ? 'true' : 'false' ) + '">' +
+					'<span class="handik-btn__label">' + continueLabel + '</span>' +
+				'</button>' +
+			'</div>';
+
+		var actions = ( backButton || continueButton )
+			? '<div class="handik-footer-actions is-docked' + ( settings.hideBack || settings.hideContinue ? ' is-single' : '' ) + '">' + backButton + continueButton + '</div>'
+			: '';
+		return '<div class="handik-footer-wrap">' + actions + '</div>';
+	};
+
+	// ===================================================================
+	// Event binding + actions
+	// ===================================================================
+
+	HandikBookingForm.prototype.bindEvents = function () {
+		var self = this;
+
+		this.shell.querySelectorAll( 'input[name]' ).forEach( function ( input ) {
+			input.addEventListener( 'input', function () { self.onInput( input ); } );
+			input.addEventListener( 'blur', function () { self.onBlur( input ); } );
+		} );
+		this.shell.querySelectorAll( '[data-action]' ).forEach( function ( btn ) {
+			btn.addEventListener( 'click', function ( ev ) {
+				ev.preventDefault();
+				self.onAction( btn.getAttribute( 'data-action' ), btn );
+			} );
+		} );
+
+		// Notification dismiss + action delegation.
+		var notif = this.notificationsRoot;
+		if ( notif && ! notif.dataset.handikBound ) {
+			notif.addEventListener( 'click', function ( ev ) {
+				var dismiss = ev.target.closest && ev.target.closest( '[data-notification-dismiss]' );
+				if ( dismiss ) {
+					self.dismissNotification( dismiss.getAttribute( 'data-notification-dismiss' ) );
+				}
+			} );
+			notif.dataset.handikBound = '1';
+		}
+	};
+
+	HandikBookingForm.prototype.onInput = function ( input ) {
+		var name = input.name;
+		var value = input.value;
+		if ( 'contact.phone' === name ) {
+			value = formatPhoneAsYouType( value );
+			input.value = value;
+		}
+		this.setFieldValue( name, value );
+	};
+
+	HandikBookingForm.prototype.onBlur = function ( input ) {
+		var key = input.name.split( '.' ).pop();
+		this.state.touched[ key ] = true;
+		// Only re-render contact step on blur to surface inline error; other
+		// steps don't need it and re-render would lose focus.
+		if ( 'contact' === this.state.step || ( 'address' === this.state.step && 'address_full' === key ) ) {
+			this.render();
+		}
+	};
+
+	HandikBookingForm.prototype.setFieldValue = function ( path, value ) {
+		var parts = path.split( '.' );
+		if ( 2 === parts.length && this.state[ parts[0] ] ) {
+			this.state[ parts[0] ][ parts[1] ] = value;
+		}
+	};
+
+	HandikBookingForm.prototype.onAction = function ( action, btn ) {
+		// "Disabled" continue buttons still emit click in some browsers — guard.
+		if ( btn && 'true' === btn.getAttribute( 'aria-disabled' ) ) {
+			return;
+		}
+		switch ( action ) {
+			case 'contact-next':
+				this.state.touched.full_name = true;
+				this.state.touched.phone     = true;
+				this.state.touched.email     = true;
+				if ( ! this.contactValid() ) {
+					this.render();
+					this.toast( 'warning', this.t( 'errorRequired' ) );
+					return;
+				}
+				this.go( 'address' );
+				break;
+			case 'address-back':
+				this.go( 'contact' );
+				break;
+			case 'address-next':
+				this.state.touched.address_full = true;
+				if ( '' === String( this.state.address.address_full || '' ).trim() ) {
+					this.render();
+					return;
+				}
+				if ( this.isProject ) {
+					this.openProject();
+				} else {
+					this.submitDirect();
+				}
+				break;
+			case 'cal-back':
+				this.go( 'address' );
+				break;
+			case 'pick-back':
+				this.go( 'address' );
+				break;
+			case 'pick-next':
+				if ( this.state.selectedSlots.length !== this.requiredDays ) {
+					return;
+				}
+				this.saveSelection();
+				break;
+			case 'review-back':
+				this.go( 'pick-days' );
+				break;
+			case 'review-confirm':
+				this.confirmSchedule();
+				break;
+			case 'toggle-slot':
+				this.toggleSlot( btn.getAttribute( 'data-slot-start' ), btn.getAttribute( 'data-slot-end' ) );
+				break;
+		}
+	};
+
+	HandikBookingForm.prototype.go = function ( step ) {
+		this.state.step = step;
+		this.render();
+	};
+
+	// ===================================================================
+	// Validation
+	// ===================================================================
+
+	HandikBookingForm.prototype.contactValid = function () {
 		var c = this.state.contact;
-		if ( ! validateFullName( c.full_name ) ) {
-			this.setError( this.t( 'errorRequired' ) );
-			return false;
-		}
-		if ( ! validatePhone( c.phone ) ) {
-			this.setError( this.t( 'errorPhone' ) );
-			return false;
-		}
-		if ( '' !== c.email && ! validateEmail( c.email ) ) {
-			this.setError( this.t( 'errorEmail' ) );
-			return false;
-		}
+		if ( ! validateFullName( c.full_name ) ) { return false; }
+		if ( ! validatePhone( c.phone ) ) { return false; }
+		if ( '' !== c.email && ! validateEmail( c.email ) ) { return false; }
 		return true;
 	};
 
-	// ---------- network ----------
+	HandikBookingForm.prototype.t = function ( key ) {
+		var v = this.i18n[ key ];
+		return v == null ? '' : String( v );
+	};
+
+	// ===================================================================
+	// Network
+	// ===================================================================
 
 	HandikBookingForm.prototype.api = function ( method, path, body ) {
 		var self = this;
-		var url = this.config.restBase + path.replace( /^\//, '' );
+		var url = this.config.restBase + String( path ).replace( /^\//, '' );
 		var opts = {
 			method: method,
 			credentials: 'same-origin',
@@ -449,57 +641,38 @@
 
 	HandikBookingForm.prototype.submitDirect = function () {
 		var self = this;
-		this.setBusy( true );
-		var payload = {
-			preset_slug: this.preset.preset_slug,
-			full_name: this.state.contact.full_name,
-			phone: this.state.contact.phone,
-			email: this.state.contact.email,
-			address_full: this.state.address.address_full,
-			address_unit: this.state.address.address_unit,
-			source_url: this.config.sourceUrl || ''
-		};
+		this.busy( true );
+		var payload = this.contactPayload();
 		this.api( 'POST', 'forms/direct/submit?preset_slug=' + encodeURIComponent( this.preset.preset_slug ), payload )
 			.then( function ( res ) {
 				self.state.directRequestId = parseInt( res.request_id, 10 ) || 0;
-				self.state.calBookingUrl = String( res.cal_booking_url || '' );
+				self.state.calBookingUrl   = String( res.cal_booking_url || '' );
+				self.calMounted = false;
 				self.go( 'cal' );
 			} )
 			.catch( function ( err ) {
-				self.setError( err.message );
+				self.toast( 'error', err.message );
 			} )
-			.then( function () {
-				self.setBusy( false );
-			} );
+			.then( function () { self.busy( false ); } );
 	};
 
 	HandikBookingForm.prototype.openProject = function () {
 		var self = this;
-		this.setBusy( true );
-		var payload = {
-			preset_slug: this.preset.preset_slug,
-			full_name: this.state.contact.full_name,
-			phone: this.state.contact.phone,
-			email: this.state.contact.email,
-			address_full: this.state.address.address_full,
-			address_unit: this.state.address.address_unit,
-			source_url: this.config.sourceUrl || ''
-		};
+		this.busy( true );
+		var payload = this.contactPayload();
 		this.api( 'POST', 'forms/project/open?preset_slug=' + encodeURIComponent( this.preset.preset_slug ), payload )
 			.then( function ( res ) {
-				self.state.scheduleId = parseInt( res.schedule_id, 10 ) || 0;
+				self.state.scheduleId  = parseInt( res.schedule_id, 10 ) || 0;
 				self.state.publicToken = String( res.public_token || '' );
+				self.state.slotsLoaded = false;
+				self.state.slots       = [];
+				self.go( 'pick-days' );
 				return self.fetchSlots();
 			} )
-			.then( function () {
-				self.go( 'pick-days' );
-			} )
 			.catch( function ( err ) {
-				self.setError( err.message );
+				self.toast( 'error', err.message );
 			} )
-			.then( function () {
-				self.setBusy( false );
-			} );
+			.then( function () { self.busy( false ); } );
 	};
 
 	HandikBookingForm.prototype.fetchSlots = function () {
@@ -507,7 +680,9 @@
 		var path = 'forms/project/' + encodeURIComponent( this.state.scheduleId )
 			+ '/slots?token=' + encodeURIComponent( this.state.publicToken );
 		return this.api( 'GET', path ).then( function ( res ) {
-			self.state.slots = Array.isArray( res.slots ) ? res.slots : [];
+			self.state.slots       = Array.isArray( res.slots ) ? res.slots : [];
+			self.state.slotsLoaded = true;
+			self.render();
 		} );
 	};
 
@@ -532,61 +707,343 @@
 
 	HandikBookingForm.prototype.saveSelection = function () {
 		var self = this;
-		this.setBusy( true );
+		this.busy( true );
 		var path = 'forms/project/' + encodeURIComponent( this.state.scheduleId )
 			+ '/select?token=' + encodeURIComponent( this.state.publicToken );
 		this.api( 'POST', path, { selected_slots: this.state.selectedSlots } )
-			.then( function () {
-				self.go( 'review-days' );
-			} )
-			.catch( function ( err ) {
-				self.setError( err.message );
-			} )
-			.then( function () {
-				self.setBusy( false );
-			} );
+			.then( function () { self.go( 'review-days' ); } )
+			.catch( function ( err ) { self.toast( 'error', err.message ); } )
+			.then( function () { self.busy( false ); } );
 	};
 
 	HandikBookingForm.prototype.confirmSchedule = function () {
 		var self = this;
-		this.setBusy( true );
+		this.busy( true );
 		var path = 'forms/project/' + encodeURIComponent( this.state.scheduleId )
 			+ '/confirm?token=' + encodeURIComponent( this.state.publicToken );
 		this.api( 'POST', path, {} )
 			.then( function () {
-				self.go( 'project-success' );
+				self.state.confirmedDays = self.state.selectedSlots.slice();
+				self.go( 'success' );
 			} )
 			.catch( function ( err ) {
 				if ( err.payload && Array.isArray( err.payload.missing ) && err.payload.missing.length ) {
-					self.state.missingSlots = err.payload.missing;
 					var missingKeys = {};
-					err.payload.missing.forEach( function ( m ) {
-						missingKeys[ m.start_iso ] = true;
-					} );
+					err.payload.missing.forEach( function ( m ) { missingKeys[ m.start_iso ] = true; } );
 					self.state.selectedSlots = self.state.selectedSlots.filter( function ( s ) {
 						return ! missingKeys[ s.start ];
 					} );
-					return self.fetchSlots().then( function () {
-						self.go( 'pick-days' );
-					} );
+					self.toast( 'warning', self.t( 'replacementNeeded' ) );
+					return self.fetchSlots().then( function () { self.go( 'pick-days' ); } );
 				}
-				self.setError( err.message );
+				self.toast( 'error', err.message );
 			} )
+			.then( function () { self.busy( false ); } );
+	};
+
+	HandikBookingForm.prototype.contactPayload = function () {
+		var c = this.state.contact;
+		var a = this.state.address;
+		return {
+			preset_slug: this.preset.preset_slug,
+			full_name:   c.full_name,
+			phone:       c.phone,
+			email:       c.email,
+			address_full: a.address_full,
+			address_unit: a.address_unit,
+			source_url:  this.config.sourceUrl || ''
+		};
+	};
+
+	HandikBookingForm.prototype.busy = function ( on ) {
+		this.state.busy = !! on;
+		// Visually muted Continue buttons while busy.
+		var primaries = this.shell.querySelectorAll( '.handik-btn.is-primary, .handik-btn.is-pending' );
+		primaries.forEach( function ( b ) {
+			if ( on ) {
+				b.setAttribute( 'aria-busy', 'true' );
+				b.setAttribute( 'aria-disabled', 'true' );
+			} else {
+				b.removeAttribute( 'aria-busy' );
+			}
+		} );
+	};
+
+	// ===================================================================
+	// Cal embed (matches main app's window.Cal API)
+	// ===================================================================
+
+	HandikBookingForm.prototype.loadCalScript = function ( origin ) {
+		if ( window.Cal && 'function' === typeof window.Cal ) {
+			return Promise.resolve( window.Cal );
+		}
+		if ( this.calEmbedPromise ) {
+			return this.calEmbedPromise;
+		}
+		var embedOrigin = origin || 'https://app.cal.com';
+		var embedUrl    = embedOrigin.replace( /\/+$/, '' ) + '/embed/embed.js';
+
+		this.calEmbedPromise = new Promise( function ( resolve, reject ) {
+			if ( window.Cal && 'function' === typeof window.Cal ) {
+				resolve( window.Cal );
+				return;
+			}
+			window.Cal = window.Cal || function () {
+				var cal = window.Cal;
+				cal.q = cal.q || [];
+				cal.q.push( arguments );
+			};
+			var existing = document.getElementById( CAL_EMBED_SCRIPT_ID );
+			if ( ! existing ) {
+				var script = document.createElement( 'script' );
+				script.id    = CAL_EMBED_SCRIPT_ID;
+				script.async = true;
+				script.defer = true;
+				script.src   = embedUrl;
+				script.onload  = function () { resolve( window.Cal ); };
+				script.onerror = function () { reject( new Error( 'Cal embed script failed to load.' ) ); };
+				document.head.appendChild( script );
+			} else {
+				existing.addEventListener( 'load',  function () { resolve( window.Cal ); }, { once: true } );
+				existing.addEventListener( 'error', function () { reject( new Error( 'Cal embed script failed to load.' ) ); }, { once: true } );
+			}
+		} );
+		return this.calEmbedPromise;
+	};
+
+	HandikBookingForm.prototype.parseCalEmbedConfig = function () {
+		if ( ! this.state.calBookingUrl ) {
+			return null;
+		}
+		var bookingUrl;
+		try { bookingUrl = new URL( this.state.calBookingUrl ); }
+		catch ( e ) { return null; }
+		var pathParts = bookingUrl.pathname.split( '/' ).filter( Boolean );
+		if ( ! pathParts.length ) { return null; }
+		var calLink = pathParts.join( '/' );
+		var embedConfig = {};
+		bookingUrl.searchParams.forEach( function ( value, key ) {
+			if ( 'phone' === key ) {
+				var v = String( value || '' ).replace( /[\s()-]+/g, '' );
+				embedConfig[ key ] = v && '+' !== v.charAt( 0 ) ? '+' + v : v;
+				return;
+			}
+			embedConfig[ key ] = value;
+		} );
+		return {
+			origin: bookingUrl.origin || 'https://cal.com',
+			calLink: calLink,
+			config: embedConfig
+		};
+	};
+
+	HandikBookingForm.prototype.mountCalEmbed = function () {
+		var self = this;
+		var container = this.shell.querySelector( '[data-handik-cal-embed]' );
+		if ( ! container ) { return; }
+		var parsed = this.parseCalEmbedConfig();
+		if ( ! parsed ) {
+			container.innerHTML = '<div class="handik-booking-app__alert is-error" role="alert">' + escapeHtml( this.t( 'calNotReady' ) ) + '</div>';
+			return;
+		}
+
+		var fallbackTimer = window.setTimeout( function () {
+			if ( self.state.calBookingUrl ) {
+				container.innerHTML = '<div class="handik-booking-app__booking-direct">' +
+					'<a class="handik-btn is-primary" href="' + escapeAttr( self.state.calBookingUrl ) + '" target="_blank" rel="noopener noreferrer">' +
+					'<span class="handik-btn__label">' + escapeHtml( self.t( 'openInNewTab' ) ) + '</span></a></div>';
+			}
+		}, CAL_EMBED_TIMEOUT_MS );
+
+		this.loadCalScript( parsed.origin )
 			.then( function () {
-				self.setBusy( false );
+				self.calMounted = true;
+				container.innerHTML = '<div class="handik-booking-app__booking-frame-wrap" data-handik-cal-frame></div>';
+				var namespace = 'handik_form_' + self.instanceId;
+				self.calEmbedNamespace = namespace;
+				window.__handikCalNamespaces = window.__handikCalNamespaces || {};
+				if ( ! window.__handikCalNamespaces[ namespace ] ) {
+					window.Cal( 'init', namespace, { origin: parsed.origin } );
+					window.__handikCalNamespaces[ namespace ] = true;
+				}
+				var ns = window.Cal.ns && window.Cal.ns[ namespace ] ? window.Cal.ns[ namespace ] : window.Cal;
+				ns( 'inline', {
+					elementOrSelector: container.querySelector( '[data-handik-cal-frame]' ),
+					calLink: parsed.calLink,
+					config: parsed.config
+				} );
+				ns( 'on', {
+					action: 'bookingSuccessful',
+					callback: function ( e ) {
+						self.captureDirectBooking( e && e.detail && e.detail.data ? e.detail.data : ( e && e.detail ? e.detail : {} ) );
+					}
+				} );
+				window.clearTimeout( fallbackTimer );
+			} )
+			.catch( function ( err ) {
+				window.clearTimeout( fallbackTimer );
+				container.innerHTML = '<div class="handik-booking-app__alert is-error" role="alert">' +
+					escapeHtml( ( err && err.message ) || self.t( 'genericError' ) ) +
+				'</div>';
 			} );
 	};
 
-	// ---------- pure helpers ----------
+	HandikBookingForm.prototype.captureDirectBooking = function ( detail ) {
+		var self = this;
+		if ( ! this.state.directRequestId ) { return; }
+		this.api(
+			'POST',
+			'forms/direct/' + encodeURIComponent( this.state.directRequestId ) + '/capture',
+			{ booking_payload: detail || {} }
+		)
+			.then( function () {
+				self.state.confirmedDays = [];
+				self.go( 'success' );
+			} )
+			.catch( function ( err ) {
+				self.toast( 'error', ( err && err.message ) || self.t( 'genericError' ) );
+			} );
+	};
+
+	// ===================================================================
+	// Google Maps Places autocomplete (mirrors main app behavior)
+	// ===================================================================
+
+	HandikBookingForm.prototype.loadGoogleMapsPlaces = function () {
+		var self = this;
+		if ( ! this.config.googleMapsApiKey ) {
+			return Promise.resolve( null );
+		}
+		if ( window.google && window.google.maps && window.google.maps.places ) {
+			return Promise.resolve( window.google.maps );
+		}
+		if ( this.googleMapsPromise ) {
+			return this.googleMapsPromise;
+		}
+		this.googleMapsPromise = new Promise( function ( resolve, reject ) {
+			var existing = document.getElementById( GOOGLE_SCRIPT_ID );
+			if ( existing ) {
+				existing.addEventListener( 'load', function () {
+					resolve( window.google && window.google.maps ? window.google.maps : null );
+				}, { once: true } );
+				existing.addEventListener( 'error', function () {
+					reject( new Error( 'Google Maps script failed to load.' ) );
+				}, { once: true } );
+				return;
+			}
+			var s = document.createElement( 'script' );
+			s.id    = GOOGLE_SCRIPT_ID;
+			s.async = true;
+			s.defer = true;
+			s.src   = 'https://maps.googleapis.com/maps/api/js?key=' + encodeURIComponent( self.config.googleMapsApiKey ) + '&libraries=places';
+			s.onload  = function () { resolve( window.google && window.google.maps ? window.google.maps : null ); };
+			s.onerror = function () { reject( new Error( 'Google Maps script failed to load.' ) ); };
+			document.head.appendChild( s );
+		} );
+		return this.googleMapsPromise;
+	};
+
+	HandikBookingForm.prototype.mountAddressAutocomplete = function () {
+		var self = this;
+		var input = this.shell.querySelector( '#handik-form-address' );
+		if ( ! input || ! this.config.googleMapsApiKey ) { return; }
+		if ( '1' === input.getAttribute( 'data-google-mounted' ) ) { return; }
+		// Suppress browser's native autofill so it doesn't compete with Places.
+		input.setAttribute( 'autocomplete', 'off' );
+
+		this.loadGoogleMapsPlaces().then( function ( gm ) {
+			if ( ! gm || ! gm.places ) { return; }
+			self.addressAutocomplete = new gm.places.Autocomplete( input, {
+				fields: [ 'address_components', 'formatted_address', 'geometry' ],
+				types: [ 'address' ],
+				componentRestrictions: self.config.googleMapsCountry ? { country: self.config.googleMapsCountry } : undefined
+			} );
+			self.addressAutocomplete.addListener( 'place_changed', function () {
+				var place = self.addressAutocomplete.getPlace();
+				if ( ! place ) { return; }
+				var parsed = parseAddressComponents( place );
+				self.state.address = Object.assign( {}, self.state.address, parsed );
+				input.value = self.state.address.address_full || input.value;
+				self.render();
+			} );
+			input.setAttribute( 'data-google-mounted', '1' );
+		} ).catch( function ( err ) {
+			// Soft-fail — the user can still type the address manually.
+			self.googleMapsPromise = Promise.resolve( null );
+			console.error( '[HandikBookingForm] Google Maps autocomplete failed.', err );
+		} );
+	};
+
+	// ===================================================================
+	// Toast notifications (visually identical to main app)
+	// ===================================================================
+
+	HandikBookingForm.prototype.toast = function ( type, message, opts ) {
+		opts = opts || {};
+		var id = 'h-form-n-' + ( ++this.notificationCounter );
+		var duration = Math.max( 1200, opts.duration || 4200 );
+		var item = document.createElement( 'div' );
+		item.className = 'handik-toast handik-toast--' + ( type || 'info' );
+		item.setAttribute( 'role', 'error' === type ? 'alert' : 'status' );
+		item.setAttribute( 'aria-live', 'error' === type ? 'assertive' : 'polite' );
+		item.setAttribute( 'data-notification-id', id );
+		item.style.setProperty( '--handik-toast-duration', duration + 'ms' );
+		item.style.setProperty( '--handik-toast-progress-start', '1' );
+		item.innerHTML =
+			'<div class="handik-toast__icon" aria-hidden="true">' + toastIcon( type ) + '</div>' +
+			'<div class="handik-toast__content">' +
+				'<div class="handik-toast__body">' +
+					( opts.title ? '<strong>' + escapeHtml( opts.title ) + '</strong>' : '' ) +
+					( message ? '<span>' + escapeHtml( message ) + '</span>' : '' ) +
+				'</div>' +
+			'</div>' +
+			'<button type="button" class="handik-toast__close" data-notification-dismiss="' + id + '" aria-label="Dismiss notification">&times;</button>';
+
+		this.notificationsRoot.appendChild( item );
+		// Ensure transition fires.
+		window.requestAnimationFrame( function () { item.classList.add( 'is-visible' ); } );
+		var timer = window.setTimeout( function () {
+			item.classList.remove( 'is-visible' );
+			item.classList.add( 'is-closing' );
+			window.setTimeout( function () { if ( item.parentNode ) { item.parentNode.removeChild( item ); } }, 320 );
+		}, duration );
+		this.notificationTimers.set( id, timer );
+	};
+
+	HandikBookingForm.prototype.dismissNotification = function ( id ) {
+		var timer = this.notificationTimers.get( id );
+		if ( timer ) { window.clearTimeout( timer ); this.notificationTimers.delete( id ); }
+		var node = this.notificationsRoot.querySelector( '[data-notification-id="' + id + '"]' );
+		if ( ! node ) { return; }
+		node.classList.remove( 'is-visible' );
+		node.classList.add( 'is-closing' );
+		window.setTimeout( function () { if ( node.parentNode ) { node.parentNode.removeChild( node ); } }, 320 );
+	};
+
+	// ===================================================================
+	// Pure helpers
+	// ===================================================================
+
+	function parseConfig( root ) {
+		var node = root.querySelector( '[data-handik-booking-form-config]' );
+		if ( ! node ) {
+			throw new Error( 'Missing booking form config' );
+		}
+		try {
+			return JSON.parse( node.textContent || '{}' );
+		} catch ( err ) {
+			throw new Error( 'Could not parse booking form config' );
+		}
+	}
 
 	function validateFullName( v ) {
-		return /^[\p{L}][\p{L}\s'-]*$/u.test( String( v || '' ).trim() );
+		return /^[\p{L}][\p{L}\s'-]*$/u.test( String( v == null ? '' : v ).trim() );
 	}
 	function validateEmail( v ) {
-		return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test( String( v || '' ).trim() );
+		return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test( String( v == null ? '' : v ).trim() );
 	}
 	function phoneDigits( v ) {
-		var d = String( v || '' ).replace( /\D/g, '' );
+		var d = String( v == null ? '' : v ).replace( /\D/g, '' );
 		if ( d.length > 10 && '1' === d.charAt( 0 ) ) {
 			d = d.slice( 1 );
 		}
@@ -597,22 +1054,12 @@
 	}
 	function formatPhoneAsYouType( v ) {
 		var d = phoneDigits( v );
-		if ( ! d ) {
-			return '';
-		}
+		if ( ! d ) { return ''; }
 		var parts = [];
-		if ( d.length > 0 ) {
-			parts.push( d.slice( 0, Math.min( 3, d.length ) ) );
-		}
-		if ( d.length > 3 ) {
-			parts.push( d.slice( 3, Math.min( 6, d.length ) ) );
-		}
-		if ( d.length > 6 ) {
-			parts.push( d.slice( 6, Math.min( 8, d.length ) ) );
-		}
-		if ( d.length > 8 ) {
-			parts.push( d.slice( 8, Math.min( 10, d.length ) ) );
-		}
+		if ( d.length > 0 ) { parts.push( d.slice( 0, Math.min( 3, d.length ) ) ); }
+		if ( d.length > 3 ) { parts.push( d.slice( 3, Math.min( 6, d.length ) ) ); }
+		if ( d.length > 6 ) { parts.push( d.slice( 6, Math.min( 8, d.length ) ) ); }
+		if ( d.length > 8 ) { parts.push( d.slice( 8, Math.min( 10, d.length ) ) ); }
 		return '+1 ' + parts.join( ' ' );
 	}
 
@@ -624,8 +1071,34 @@
 			.replace( /"/g, '&quot;' )
 			.replace( /'/g, '&#39;' );
 	}
-	function escapeAttr( s ) {
-		return escapeHtml( s );
+	function escapeAttr( s ) { return escapeHtml( s ); }
+
+	function toastIcon( type ) {
+		if ( 'error' === type ) { return '&times;'; }
+		if ( 'warning' === type ) { return '&#9888;'; }
+		return '&#9432;';
+	}
+
+	function parseAddressComponents( place ) {
+		var components = Array.isArray( place.address_components ) ? place.address_components : [];
+		function value( type, useShort ) {
+			var match = components.find( function ( c ) { return Array.isArray( c.types ) && c.types.indexOf( type ) !== -1; } );
+			if ( ! match ) { return ''; }
+			return useShort ? ( match.short_name || '' ) : ( match.long_name || '' );
+		}
+		var streetNumber = value( 'street_number', false );
+		var route = value( 'route', false );
+		var subpremise = value( 'subpremise', false );
+		var lineOne = [ streetNumber, route ].filter( Boolean ).join( ' ' ).trim();
+		return {
+			address_full:  place.formatted_address || '',
+			address_line_1: lineOne || place.formatted_address || '',
+			address_unit: subpremise || '',
+			city:  value( 'locality', false ) || value( 'postal_town', false ) || value( 'sublocality_level_1', false ),
+			state: value( 'administrative_area_level_1', true ),
+			zip_code: value( 'postal_code', false ),
+			is_valid: !! ( place.formatted_address && lineOne && place.geometry && place.geometry.location )
+		};
 	}
 
 	function groupSlotsByDay( slots, timezone ) {
@@ -633,7 +1106,7 @@
 		var order = [];
 		slots.forEach( function ( slot ) {
 			var label = formatDayLabelET( slot.start_iso, timezone );
-			var time = formatTimeRangeET( slot.start_iso, slot.end_iso, timezone );
+			var time  = formatTimeRangeET( slot.start_iso, slot.end_iso, timezone );
 			if ( ! groups[ label ] ) {
 				groups[ label ] = { label: label, slots: [] };
 				order.push( label );
@@ -644,23 +1117,18 @@
 				timeLabel: time
 			} );
 		} );
-		return order.map( function ( k ) {
-			return groups[ k ];
-		} );
+		return order.map( function ( k ) { return groups[ k ]; } );
 	}
 
 	function formatDayLabelET( iso, timezone ) {
 		try {
-			var d = new Date( iso );
-			return d.toLocaleDateString( 'en-US', {
+			return new Date( iso ).toLocaleDateString( 'en-US', {
 				weekday: 'short',
 				month: 'short',
 				day: 'numeric',
 				timeZone: timezone || 'America/New_York'
 			} );
-		} catch ( e ) {
-			return String( iso );
-		}
+		} catch ( e ) { return String( iso ); }
 	}
 	function formatTimeRangeET( startIso, endIso, timezone ) {
 		try {
@@ -679,32 +1147,26 @@
 				} );
 			}
 			return label;
-		} catch ( err ) {
-			return String( startIso );
-		}
+		} catch ( err ) { return String( startIso ); }
 	}
 	function formatSlotLabelET( startIso, endIso, timezone ) {
-		var day = formatDayLabelET( startIso, timezone );
-		var time = formatTimeRangeET( startIso, endIso, timezone );
-		return day + ' · ' + time;
+		return formatDayLabelET( startIso, timezone ) + ' · ' + formatTimeRangeET( startIso, endIso, timezone );
 	}
 
-	// Bootstrap. Runs only after all prototype methods + helpers above have
-	// been registered (the `this.render is not a function` bug from 2.1.9.1
-	// was caused by hoisting the constructor call above the prototype
-	// assignments). Defer to DOMContentLoaded if the script lands before the
-	// markup, otherwise run immediately.
+	// ===================================================================
+	// Bootstrap
+	// ===================================================================
+
 	function init() {
 		var roots = document.querySelectorAll( '[data-handik-booking-form]' );
-		if ( ! roots || ! roots.length ) {
-			return;
-		}
+		if ( ! roots || ! roots.length ) { return; }
 		roots.forEach( function ( root ) {
 			try {
 				// eslint-disable-next-line no-new
 				new HandikBookingForm( root );
 			} catch ( err ) {
-				root.innerHTML = '<p class="handik-booking-form__error">' + escapeHtml( String( err && err.message ? err.message : err ) ) + '</p>';
+				root.innerHTML = '<div class="handik-booking-app__alert is-error" role="alert">' +
+					escapeHtml( String( err && err.message ? err.message : err ) ) + '</div>';
 			}
 		} );
 	}
