@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.1.9.6
+Stable tag: 2.1.9.7
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, silent returning-client recognition, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,16 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.1.9.7 =
+* **Full visual parity audit + rewrite of the public Additional Forms SPA.** A line-by-line review of `assets/booking-forms.js` against `assets/booking-app.js` surfaced six structural gaps that were keeping the new forms from looking and behaving like the main `[handik_booking_app]` flow. Fixed all of them in one pass:
+  1. **Saved addresses are now a `<select>` dropdown.** Previously rendered as a stack of clickable cards — now matches the main form's `<select id="handik-form-saved-address">` with a `Choose saved address` placeholder + one `<option>` per saved address. On change, the chosen address fills the form and focus jumps to the unit field.
+  2. **Step-specific h2 headers.** Each step now shows its own heading: "Contact details", "Address details", "Pick a time", "Choose project work days", "Review your selected days", "You're all set". Previously every step showed the preset title.
+  3. **Progress dots.** Below every screen we now render `<ol class="handik-progress-dots">` filled to the current step (4 dots for direct visit, 5 for project work days), reusing the main form's `.handik-progress-dots` styling.
+  4. **"Stuck?" footer disclaimer.** Same `Stuck? Start a new booking · Open the booking page directly` link the main form ships, with the same `data-action="restart"` behavior (resets state and returns to the contact step).
+  5. **Address-validation parity.** Continue is now muted on the Address step until a Google-Places-verified address is chosen (`address.is_valid === true`). Inline error spans match the main form's `.handik-field__error` class. Typing into the address input after a previous selection invalidates `is_valid` so the customer must re-pick from the suggestions.
+  6. **Inputs bound via `data-model="…"`** instead of `name="…"`, so the address inputs can carry the `name="handik_form_location_query"` / `name="handik_form_unit_detail"` autofill-suppression names the main form uses without breaking state binding.
+* **Documentation pass.** Top-of-file JSDoc now restates the visual contract; every new method carries a short inline comment explaining intent. The class is organized into clearly labeled sections (Lifecycle / Render / Step renderers / Field helpers / Events / Validation / Saved addresses / Network / Cal embed / Google Maps / Toasts / Pure helpers / Bootstrap).
 
 = 2.1.9.6 =
 * **Fixed: Google Maps suggestions were unclickable.** Two root causes — the page's stacking context (often Elementor) was rendering above Google's `.pac-container`, and the browser's native address-fill heuristic was competing with the Places dropdown for input focus. Fix raises `.pac-container { z-index: 2147483647 !important; pointer-events: auto !important }` and applies the same autofill-suppression attributes (`autocomplete="new-password"`, `data-lpignore`, `data-1p-ignore`, renamed input field) the main `[handik_booking_app]` form uses.

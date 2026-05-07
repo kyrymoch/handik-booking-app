@@ -6,20 +6,23 @@
  *   1. direct_cal_booking   Standard / Extended / Large Visits.
  *      Contact → Address → Cal.com inline embed (one slot).
  *
- *   2. project_work_days    Larger-scale project schedules (2-6 days).
+ *   2. project_work_days    Larger-scale project schedules (2-N days).
  *      Contact → Address → Multi-day picker → Review → Confirm
  *      (server then creates N separate Cal.com bookings via the v2 API).
  *
- * Visual contract: this file deliberately reuses the EXACT same DOM classes
- * as `booking-app.js` (`.handik-booking-app`, `.handik-field`, `.handik-btn`,
- * `.handik-footer-actions`, `.handik-toast`, `.handik-booking-app__booking-embed`,
- * etc.) so the public stylesheet — `booking-app.css` — themes both forms
- * with one set of design tokens. Keep that contract intact when editing.
+ * Visual contract: this file deliberately reuses the EXACT DOM classes and
+ * structure of `booking-app.js` (`.handik-booking-app__shell`,
+ * `.handik-booking-app__screen`, `.handik-booking-app__screen-header`,
+ * `.handik-field`, `.handik-btn`, `.handik-footer-actions`,
+ * `.handik-progress-dots`, `.handik-app-disclaimer`, `.handik-toast`,
+ * `.handik-booking-app__booking-embed`, etc.) so the public stylesheet —
+ * `booking-app.css` — themes both forms with one set of design tokens.
+ * Keep this contract intact when editing.
  *
  * Notifications, Cal embed loader, Google Maps Places autocomplete, sticky
- * footer with Back/Continue and the inline phone formatter all mirror the
- * main app. They are simplified (no AI assistant, no photos, no draft
- * persistence) but visually identical.
+ * footer with Back/Continue, the inline phone formatter, the saved-address
+ * <select> dropdown, the progress dots, and the "Stuck? Start a new booking"
+ * disclaimer all mirror the main app pixel-for-pixel.
  *
  * Bootstrap runs on DOMContentLoaded so any markup the theme injects after
  * the script tag is already present when we look it up.
@@ -27,9 +30,10 @@
 ( function ( window, document ) {
 	'use strict';
 
-	var GOOGLE_SCRIPT_ID    = 'handik-google-maps-places';
-	var CAL_EMBED_SCRIPT_ID = 'handik-cal-embed-script';
+	var GOOGLE_SCRIPT_ID     = 'handik-google-maps-places';
+	var CAL_EMBED_SCRIPT_ID  = 'handik-cal-embed-script';
 	var CAL_EMBED_TIMEOUT_MS = 15000;
+	var TOAST_DURATION_MS    = 4200;
 
 	// ===================================================================
 	// Constructor + lifecycle
@@ -37,9 +41,9 @@
 
 	function HandikBookingForm( root ) {
 		this.root = root;
-		this.config = parseConfig( root );
-		this.preset = this.config.preset || {};
-		this.i18n   = this.config.i18n || {};
+		this.config      = parseConfig( root );
+		this.preset      = this.config.preset || {};
+		this.i18n        = this.config.i18n || {};
 		this.formType    = String( this.preset.form_type || '' );
 		this.isProject   = 'project_work_days' === this.formType;
 		this.requiredDays = parseInt( this.preset.required_days, 10 ) || 0;
@@ -68,6 +72,7 @@
 			busy: false,
 			contact: { full_name: '', phone: '', email: '' },
 			address: {
+				address_id: 0,
 				address_full: '',
 				address_unit: '',
 				address_line_1: '',
@@ -91,38 +96,30 @@
 		};
 
 		this.applyAppearance();
-		this.buildShell();
+		this.ensureNotificationsRoot();
 		this.render();
 	}
 
 	HandikBookingForm.prototype.applyAppearance = function () {
 		var vars = this.config.appearance || {};
 		var keys = Object.keys( vars );
-		if ( ! keys.length ) {
-			return;
-		}
-		// Apply CSS variables to the form's root element so the same tokens
-		// the main app uses theme this form too.
+		// Apply CSS variables to the form's root so the same tokens the main
+		// app uses theme this form too.
 		for ( var i = 0; i < keys.length; i++ ) {
-			try {
-				this.root.style.setProperty( keys[ i ], vars[ keys[ i ] ] );
-			} catch ( e ) { /* ignore unsupported var name */ }
+			try { this.root.style.setProperty( keys[ i ], vars[ keys[ i ] ] ); }
+			catch ( e ) { /* ignore unsupported var name */ }
 		}
 		// Add the main-app root class so booking-app.css rules apply.
 		this.root.classList.add( 'handik-booking-app' );
 	};
 
-	HandikBookingForm.prototype.buildShell = function () {
-		var shell = this.root.querySelector( '[data-handik-booking-form-shell]' );
-		if ( ! shell ) {
-			shell = document.createElement( 'div' );
-			shell.setAttribute( 'data-handik-booking-form-shell', '' );
-			this.root.appendChild( shell );
-		}
-		shell.classList.add( 'handik-booking-app__shell' );
-		this.shell = shell;
-
+	HandikBookingForm.prototype.ensureNotificationsRoot = function () {
 		// Notification root — matches main app placement (fixed bottom-right).
+		var existing = document.getElementById( this.notificationRootId );
+		if ( existing ) {
+			this.notificationsRoot = existing;
+			return;
+		}
 		var notifications = document.createElement( 'div' );
 		notifications.id = this.notificationRootId;
 		notifications.className = 'handik-booking-app__notifications';
@@ -135,36 +132,38 @@
 	// Top-level render
 	// ===================================================================
 
+	/**
+	 * Replace the inner shell content with the current step's markup.
+	 * The structure mirrors the main app exactly:
+	 *
+	 *   <section class="handik-booking-app__screen handik-booking-app__screen--<step>">
+	 *     <div class="handik-booking-app__screen-header"><h2>{step title}</h2></div>
+	 *     <div class="handik-booking-app__screen-body">{step body}</div>
+	 *   </section>
+	 *   <div class="handik-global-progress">{progress dots}</div>
+	 *   <aside class="handik-app-disclaimer">{stuck links}</aside>
+	 */
 	HandikBookingForm.prototype.render = function () {
-		var html = '';
-		html += '<div class="handik-booking-app__screen">';
-		html += this.headerMarkup();
-		html += '<div class="handik-booking-app__screen-body">';
-
-		switch ( this.state.step ) {
-			case 'contact':
-				html += this.contactMarkup();
-				break;
-			case 'address':
-				html += this.addressMarkup();
-				break;
-			case 'cal':
-				html += this.calMarkup();
-				break;
-			case 'pick-days':
-				html += this.pickDaysMarkup();
-				break;
-			case 'review-days':
-				html += this.reviewDaysMarkup();
-				break;
-			case 'success':
-				html += this.successMarkup();
-				break;
-			default:
-				html += '<p>' + escapeHtml( this.t( 'genericError' ) ) + '</p>';
+		var shell = this.root.querySelector( '[data-handik-booking-form-shell]' );
+		if ( ! shell ) {
+			shell = document.createElement( 'div' );
+			shell.setAttribute( 'data-handik-booking-form-shell', '' );
+			this.root.appendChild( shell );
 		}
+		// Reset the shell class so step modifiers don't accumulate across renders.
+		var stepSlug = this.state.step.replace( /[^a-z0-9_-]/gi, '-' );
+		shell.className = 'handik-booking-app__shell handik-booking-app__shell--' + stepSlug;
+		this.shell = shell;
 
-		html += '</div></div>';
+		var stepClass = 'handik-booking-app__screen--' + stepSlug;
+		var html = '';
+		html += '<section class="handik-booking-app__screen ' + stepClass + '">';
+		html +=   '<div class="handik-booking-app__screen-header"><h2>' + escapeHtml( this.stepTitle() ) + '</h2></div>';
+		html +=   '<div class="handik-booking-app__screen-body">' + this.stepBody() + '</div>';
+		html += '</section>';
+		html += this.progressMarkup();
+		html += this.disclaimerMarkup();
+
 		this.shell.innerHTML = html;
 
 		this.bindEvents();
@@ -172,11 +171,9 @@
 	};
 
 	HandikBookingForm.prototype.afterRender = function () {
-		// Note: we deliberately do NOT move focus to the new <h2> on every
-		// step transition. The main [handik_booking_app] form removed that
-		// behavior because it caused mobile keyboards to dismiss and screen
-		// magnifiers to jump unpredictably. Keep parity here.
-
+		// Note: we deliberately do NOT move focus to the new <h2> on step
+		// transitions — same parity decision the main form made (it was
+		// dismissing mobile keyboards and confusing screen magnifiers).
 		if ( 'address' === this.state.step ) {
 			this.mountAddressAutocomplete();
 		}
@@ -185,8 +182,28 @@
 		}
 	};
 
-	HandikBookingForm.prototype.headerMarkup = function () {
-		return '<div class="handik-booking-app__screen-header"><h2>' + escapeHtml( this.preset.form_title || '' ) + '</h2></div>';
+	HandikBookingForm.prototype.stepTitle = function () {
+		switch ( this.state.step ) {
+			case 'contact':      return this.t( 'contactTitle' );
+			case 'address':      return this.t( 'addressTitle' );
+			case 'cal':          return this.t( 'calTitle' );
+			case 'pick-days':    return this.t( 'pickDaysTitle' );
+			case 'review-days':  return this.t( 'reviewTitle' );
+			case 'success':      return this.t( 'successHeading' );
+			default:             return String( this.preset.form_title || '' );
+		}
+	};
+
+	HandikBookingForm.prototype.stepBody = function () {
+		switch ( this.state.step ) {
+			case 'contact':     return this.contactMarkup();
+			case 'address':     return this.addressMarkup();
+			case 'cal':         return this.calMarkup();
+			case 'pick-days':   return this.pickDaysMarkup();
+			case 'review-days': return this.reviewDaysMarkup();
+			case 'success':     return this.successMarkup();
+			default:            return '<p>' + escapeHtml( this.t( 'genericError' ) ) + '</p>';
+		}
 	};
 
 	// ===================================================================
@@ -196,45 +213,47 @@
 	HandikBookingForm.prototype.contactMarkup = function () {
 		var c = this.state.contact;
 		var t = this.state.touched;
-		var nameError = t.full_name && ! validateFullName( c.full_name ) ? this.t( 'errorRequired' ) : '';
+		var nameError  = t.full_name && ! validateFullName( c.full_name ) ? this.t( 'errorRequired' ) : '';
 		var phoneError = t.phone && ! validatePhone( c.phone ) ? this.t( 'errorPhone' ) : '';
 		var emailError = t.email && '' !== c.email && ! validateEmail( c.email ) ? this.t( 'errorEmail' ) : '';
 
 		return [
 			'<p class="handik-booking-app__intro">', escapeHtml( this.t( 'contactIntro' ) ), '</p>',
 			this.fieldMarkup( {
-				name: 'contact.full_name',
+				model: 'contact.full_name',
 				label: this.t( 'fullNameLabel' ),
 				type: 'text',
 				value: c.full_name,
 				autocomplete: 'name',
 				error: nameError,
-				required: true
+				required: true,
+				inputId: 'handik-form-full-name'
 			} ),
 			'<div class="handik-grid-2">',
 				this.fieldMarkup( {
-					name: 'contact.phone',
+					model: 'contact.phone',
 					label: this.t( 'phoneLabel' ),
 					type: 'tel',
 					value: c.phone,
 					autocomplete: 'tel',
 					inputmode: 'tel',
 					error: phoneError,
-					required: true
+					required: true,
+					inputId: 'handik-form-phone'
 				} ),
 				this.fieldMarkup( {
-					name: 'contact.email',
+					model: 'contact.email',
 					label: this.t( 'emailLabel' ),
 					type: 'email',
 					value: c.email,
 					autocomplete: 'email',
 					inputmode: 'email',
 					error: emailError,
-					required: false
+					required: false,
+					inputId: 'handik-form-email'
 				} ),
 			'</div>',
 			this.footerActionsMarkup( {
-				backAction: '',
 				continueAction: 'contact-next',
 				continueLabel: this.t( 'continueLabel' ),
 				hideBack: true,
@@ -245,66 +264,75 @@
 
 	HandikBookingForm.prototype.addressMarkup = function () {
 		var a = this.state.address;
-		var addressError = this.state.touched.address_full && '' === String( a.address_full || '' ).trim()
-			? this.t( 'errorRequired' )
-			: '';
 		var hasMaps = !! this.config.googleMapsApiKey;
+		// Continue gating: when Maps is configured, require a Places-verified
+		// address (is_valid). Without Maps, accept any non-empty value.
+		var addressFilled = '' !== String( a.address_full || '' ).trim();
+		var continueMuted = hasMaps ? ! a.is_valid : ! addressFilled;
+		// Inline error: only after the user typed something but we can't
+		// confirm it via Places — same wording as the main form.
+		var addressError = ( hasMaps && addressFilled && ! a.is_valid )
+			? this.t( 'errorAddressInvalid' )
+			: '';
 
-		// Saved addresses surface when /contacts/lookup matched the customer's
-		// phone with an existing CRM contact. Click → fills the form.
-		var savedAddresses = Array.isArray( this.state.savedAddresses ) ? this.state.savedAddresses : [];
+		// Saved addresses: returning customer has prior addresses. Render the
+		// same <select> dropdown the main app uses (NOT a button list).
 		var savedMarkup = '';
+		var savedAddresses = Array.isArray( this.state.savedAddresses ) ? this.state.savedAddresses : [];
 		if ( savedAddresses.length ) {
-			savedMarkup += '<div class="handik-booking-app__saved-addresses" role="region" aria-label="' + escapeAttr( this.t( 'savedAddressesLabel' ) ) + '">';
-			savedMarkup += '<p class="handik-booking-app__saved-addresses-title">' + escapeHtml( this.t( 'savedAddressesLabel' ) ) + '</p>';
-			savedMarkup += '<div class="handik-booking-app__saved-addresses-list">';
-			savedAddresses.forEach( function ( addr, idx ) {
+			var options = '<option value="">' + escapeHtml( this.t( 'savedAddressPlaceholder' ) ) + '</option>';
+			savedAddresses.forEach( function ( addr ) {
 				var line = String( addr.address_full || addr.address_line_1 || '' ).trim();
-				var unit = String( addr.address_unit || '' ).trim();
-				var fullDisplay = line + ( unit ? ', ' + unit : '' );
-				savedMarkup += '<button type="button" class="handik-booking-app__saved-address" data-action="select-saved-address" data-saved-index="' + idx + '">';
-				savedMarkup += '<span class="handik-booking-app__saved-address-line">' + escapeHtml( fullDisplay ) + '</span>';
-				savedMarkup += '</button>';
+				options += '<option value="' + escapeAttr( String( addr.id ) ) + '"' +
+					( a.address_id && parseInt( addr.id, 10 ) === parseInt( a.address_id, 10 ) ? ' selected' : '' ) +
+					'>' + escapeHtml( line ) + '</option>';
 			} );
-			savedMarkup += '</div></div>';
+			savedMarkup = '<label class="handik-field" for="handik-form-saved-address">' +
+				'<span>' + escapeHtml( this.t( 'savedAddressLabel' ) ) + '</span>' +
+				'<select id="handik-form-saved-address" autocomplete="off">' + options + '</select>' +
+			'</label>';
+		} else if ( this.state.isReturningClient ) {
+			savedMarkup = '<p class="handik-field__help" role="status">' + escapeHtml( this.t( 'savedAddressEmpty' ) ) + '</p>';
 		}
 
-		// `name="handik_job_location_query"` + `autocomplete="new-password"` is
-		// the same combo the main app uses to suppress Chrome/Safari's native
-		// address autofill, which competes with Google's Places dropdown and
-		// makes suggestions seem unclickable.
-		var inputAutocomplete = hasMaps ? 'new-password' : 'street-address';
+		// Native autofill suppression — prevents Chrome's address heuristic
+		// from competing with Google Places for keystrokes (which made the
+		// dropdown un-clickable in earlier builds).
+		var addressAttrs = hasMaps
+			? 'autocomplete="new-password" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" data-form-type="other" name="handik_form_location_query"'
+			: 'autocomplete="street-address" name="handik_form_location_query"';
+		var unitAttrs = 'autocomplete="new-password" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" data-form-type="other" name="handik_form_unit_detail"';
 
 		return [
-			'<p class="handik-booking-app__intro">', escapeHtml( this.t( 'addressIntro' ) ), '</p>',
 			savedMarkup,
 			this.fieldMarkup( {
-				name: 'address.address_full',
+				model: 'address.address_full',
 				label: this.t( 'addressLabel' ),
 				type: 'text',
 				value: a.address_full,
-				autocomplete: inputAutocomplete,
 				placeholder: this.t( 'addressPlaceholder' ),
 				inputId: 'handik-form-address',
 				error: addressError,
 				required: true,
-				extraAttrs: hasMaps
-					? 'autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" data-form-type="other"'
-					: ''
+				rawAttrs: addressAttrs,
+				skipName: true,
+				fieldExtraClass: ( hasMaps && addressFilled && ! a.is_valid ) ? ' is-invalid' : ''
 			} ),
 			this.fieldMarkup( {
-				name: 'address.address_unit',
+				model: 'address.address_unit',
 				label: this.t( 'unitLabel' ),
 				type: 'text',
 				value: a.address_unit,
-				autocomplete: 'address-line2',
-				required: false
+				inputId: 'handik-form-address-unit',
+				required: false,
+				rawAttrs: unitAttrs,
+				skipName: true
 			} ),
 			this.footerActionsMarkup( {
 				backAction: 'address-back',
 				continueAction: 'address-next',
 				continueLabel: this.t( 'continueLabel' ),
-				continueMuted: '' === String( a.address_full || '' ).trim()
+				continueMuted: continueMuted
 			} )
 		].join( '' );
 	};
@@ -314,7 +342,7 @@
 		var skeleton = '<div class="handik-skeleton handik-skeleton--calendar" aria-hidden="true">' +
 			'<div class="handik-skeleton__bar handik-skeleton__bar--header"></div>' +
 			'<div class="handik-skeleton__grid">' +
-				'<div class="handik-skeleton__cell"></div>'.repeat( 9 ) +
+				new Array( 9 ).join( '<div class="handik-skeleton__cell"></div>' ) + '<div class="handik-skeleton__cell"></div>' +
 			'</div></div>';
 
 		return [
@@ -322,8 +350,6 @@
 			'<div class="handik-booking-app__booking-embed" data-handik-cal-embed>', skeleton, '</div>',
 			this.footerActionsMarkup( {
 				backAction: 'cal-back',
-				continueAction: '',
-				continueLabel: '',
 				hideContinue: true
 			} )
 		].join( '' );
@@ -346,8 +372,6 @@
 				'</div>',
 				this.footerActionsMarkup( {
 					backAction: 'pick-back',
-					continueAction: '',
-					continueLabel: '',
 					hideContinue: true
 				} )
 			].join( '' );
@@ -409,7 +433,7 @@
 		}
 		html += '<dt>' + escapeHtml( this.t( 'addressLabel' ) ) + '</dt><dd>' + escapeHtml( a.address_full + ( a.address_unit ? ', ' + a.address_unit : '' ) ) + '</dd>';
 		html += '</dl>';
-		html += '<h3>' + escapeHtml( this.t( 'reviewTitle' ) ) + '</h3>';
+		html += '<h3 class="handik-booking-app__review-heading">' + escapeHtml( this.t( 'reviewSelectedDaysHeading' ) ) + '</h3>';
 		html += '<ol class="handik-booking-app__review-days">';
 		var tz = this.timezone;
 		this.state.selectedSlots.forEach( function ( s ) {
@@ -448,39 +472,104 @@
 	};
 
 	// ===================================================================
-	// Field + footer helpers (match main app DOM)
+	// Progress dots + footer disclaimer (parity with main app)
 	// ===================================================================
 
+	HandikBookingForm.prototype.applicableSteps = function () {
+		return this.isProject
+			? [ 'contact', 'address', 'pick-days', 'review-days', 'success' ]
+			: [ 'contact', 'address', 'cal', 'success' ];
+	};
+
+	HandikBookingForm.prototype.progressMarkup = function () {
+		if ( 'success' === this.state.step ) {
+			return '';
+		}
+		var steps = this.applicableSteps();
+		var activeIndex = Math.max( 0, steps.indexOf( this.state.step ) );
+		var html = '<div class="handik-global-progress"><ol class="handik-progress-dots" aria-label="' + escapeAttr( this.t( 'progressLabel' ) ) + '">';
+		steps.forEach( function ( step, idx ) {
+			var classes = '';
+			if ( idx <= activeIndex ) { classes += ' is-done'; }
+			if ( idx === activeIndex ) { classes += ' is-current'; }
+			html += '<li class="' + classes.trim() + '"></li>';
+		} );
+		html += '</ol></div>';
+		return html;
+	};
+
+	HandikBookingForm.prototype.disclaimerMarkup = function () {
+		// Mirror main app's "Stuck? Start a new booking · Open the booking
+		// page directly" footer link.
+		var directUrl = String( this.state.calBookingUrl || '' );
+		var restartLink = '<a href="#" data-action="restart" class="handik-text-link">' + escapeHtml( this.t( 'restartCta' ) ) + '</a>';
+		var directLink = directUrl
+			? '<a href="' + escapeAttr( directUrl ) + '" target="_blank" rel="noopener" class="handik-text-link">' + escapeHtml( this.t( 'openDirectCta' ) ) + '</a>'
+			: '';
+		var links = directLink
+			? restartLink + '<span class="handik-app-disclaimer__sep" aria-hidden="true"> · </span>' + directLink
+			: restartLink;
+		return '<aside class="handik-app-disclaimer"><p>' + escapeHtml( this.t( 'stuckPrefix' ) ) + ' ' + links + '</p></aside>';
+	};
+
+	// ===================================================================
+	// Field + footer helpers
+	// ===================================================================
+
+	/**
+	 * Render a `.handik-field` exactly like the main app does: an outer
+	 * <label> with a <span> caption + an <input> bound via `data-model`.
+	 *
+	 * @param {Object} opts
+	 * @param {string} opts.model        State path the input is bound to (eg. "contact.phone").
+	 * @param {string} opts.label        Caption text.
+	 * @param {string} [opts.type]       Input type. Default "text".
+	 * @param {string} [opts.value]      Current value.
+	 * @param {string} [opts.autocomplete] Autocomplete hint.
+	 * @param {string} [opts.inputmode]  inputmode hint.
+	 * @param {string} [opts.placeholder]
+	 * @param {boolean} [opts.required]
+	 * @param {string} [opts.error]      Inline error message (rendered when truthy).
+	 * @param {string} [opts.inputId]    Force a specific id on the <input>.
+	 * @param {string} [opts.rawAttrs]   Extra attributes injected verbatim.
+	 * @param {boolean} [opts.skipName]  When `rawAttrs` already supplies a `name=`.
+	 * @param {string} [opts.fieldExtraClass]  Extra class on the wrapping <label>.
+	 */
 	HandikBookingForm.prototype.fieldMarkup = function ( opts ) {
 		opts = opts || {};
-		var inputId = opts.inputId || ( 'handik-form-' + opts.name.replace( /[^a-z0-9]/gi, '-' ) );
-		var fieldClass = 'handik-field' + ( opts.error ? ' is-invalid' : '' );
+		var inputId = opts.inputId || ( 'handik-form-' + opts.model.replace( /[^a-z0-9]/gi, '-' ) );
+		var fieldClass = 'handik-field' + ( opts.error ? ' is-invalid' : '' ) + ( opts.fieldExtraClass || '' );
 
 		var inputAttrs = [
 			'type="' + escapeAttr( opts.type || 'text' ) + '"',
 			'id="' + escapeAttr( inputId ) + '"',
-			'name="' + escapeAttr( opts.name ) + '"',
-			'value="' + escapeAttr( String( opts.value == null ? '' : opts.value ) ) + '"',
-			'autocomplete="' + escapeAttr( opts.autocomplete || 'off' ) + '"'
+			'data-model="' + escapeAttr( opts.model ) + '"',
+			'value="' + escapeAttr( String( opts.value == null ? '' : opts.value ) ) + '"'
 		];
+		if ( ! opts.skipName ) {
+			inputAttrs.push( 'name="' + escapeAttr( opts.model ) + '"' );
+		}
+		if ( opts.autocomplete && ! opts.rawAttrs ) {
+			inputAttrs.push( 'autocomplete="' + escapeAttr( opts.autocomplete ) + '"' );
+		}
 		if ( opts.inputmode ) { inputAttrs.push( 'inputmode="' + escapeAttr( opts.inputmode ) + '"' ); }
 		if ( opts.placeholder ) { inputAttrs.push( 'placeholder="' + escapeAttr( opts.placeholder ) + '"' ); }
 		if ( opts.required ) { inputAttrs.push( 'required' ); }
-		if ( opts.extraAttrs ) { inputAttrs.push( opts.extraAttrs ); }
+		if ( opts.rawAttrs ) { inputAttrs.push( opts.rawAttrs ); }
 
 		return '<label class="' + fieldClass + '" for="' + escapeAttr( inputId ) + '">' +
 				'<span>' + escapeHtml( opts.label ) + '</span>' +
 				'<input ' + inputAttrs.join( ' ' ) + '>' +
-				( opts.error ? '<span class="handik-field__help is-error">' + escapeHtml( opts.error ) + '</span>' : '' ) +
+				( opts.error ? '<span class="handik-field__error" role="alert">' + escapeHtml( opts.error ) + '</span>' : '' ) +
 			'</label>';
 	};
 
 	HandikBookingForm.prototype.footerActionsMarkup = function ( settings ) {
 		settings = settings || {};
-		var backLabel = escapeHtml( settings.backLabel || this.t( 'backLabel' ) );
+		var backLabel     = escapeHtml( settings.backLabel || this.t( 'backLabel' ) );
 		var continueLabel = escapeHtml( settings.continueLabel || this.t( 'continueLabel' ) );
 
-		var backIcon = '<span class="handik-btn__icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M19 11H7.83l4.88-4.88L11.29 4.7 4 12l7.29 7.3 1.42-1.42L7.83 13H19v-2z"/></svg></span>';
+		var backIcon  = '<span class="handik-btn__icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M19 11H7.83l4.88-4.88L11.29 4.7 4 12l7.29 7.3 1.42-1.42L7.83 13H19v-2z"/></svg></span>';
 		var backInner = backIcon + '<span class="handik-btn__label">' + backLabel + '</span>';
 		var backClass = 'handik-btn is-secondary is-back';
 		var continueClass = 'handik-btn ' + ( settings.continueMuted ? 'is-pending' : 'is-primary' ) + ' is-continue';
@@ -503,16 +592,24 @@
 	};
 
 	// ===================================================================
-	// Event binding + actions
+	// Event binding
 	// ===================================================================
 
 	HandikBookingForm.prototype.bindEvents = function () {
 		var self = this;
 
-		this.shell.querySelectorAll( 'input[name]' ).forEach( function ( input ) {
+		this.shell.querySelectorAll( '[data-model]' ).forEach( function ( input ) {
 			input.addEventListener( 'input', function () { self.onInput( input ); } );
-			input.addEventListener( 'blur', function () { self.onBlur( input ); } );
+			input.addEventListener( 'blur',  function () { self.onBlur( input ); } );
 		} );
+
+		var savedSelect = this.shell.querySelector( '#handik-form-saved-address' );
+		if ( savedSelect ) {
+			savedSelect.addEventListener( 'change', function () {
+				self.applySavedAddressById( savedSelect.value );
+			} );
+		}
+
 		this.shell.querySelectorAll( '[data-action]' ).forEach( function ( btn ) {
 			btn.addEventListener( 'click', function ( ev ) {
 				ev.preventDefault();
@@ -520,7 +617,7 @@
 			} );
 		} );
 
-		// Notification dismiss + action delegation.
+		// Notification dismiss delegation (one listener per notifications root).
 		var notif = this.notificationsRoot;
 		if ( notif && ! notif.dataset.handikBound ) {
 			notif.addEventListener( 'click', function ( ev ) {
@@ -534,20 +631,29 @@
 	};
 
 	HandikBookingForm.prototype.onInput = function ( input ) {
-		var name = input.name;
+		var model = input.getAttribute( 'data-model' );
+		if ( ! model ) { return; }
 		var value = input.value;
-		if ( 'contact.phone' === name ) {
+		if ( 'contact.phone' === model ) {
 			value = formatPhoneAsYouType( value );
 			input.value = value;
 		}
-		this.setFieldValue( name, value );
+		if ( 'address.address_full' === model ) {
+			// User edited the address text directly — invalidate the previous
+			// Places verification so they have to re-pick from suggestions.
+			this.state.address.is_valid  = false;
+			this.state.address.address_id = 0;
+		}
+		this.setFieldValue( model, value );
 	};
 
 	HandikBookingForm.prototype.onBlur = function ( input ) {
-		var key = input.name.split( '.' ).pop();
+		var model = input.getAttribute( 'data-model' );
+		if ( ! model ) { return; }
+		var key = model.split( '.' ).pop();
 		this.state.touched[ key ] = true;
-		// Only re-render contact step on blur to surface inline error; other
-		// steps don't need it and re-render would lose focus.
+		// Re-render contact step on blur to surface inline errors. Other
+		// steps don't need a re-render — would lose focus.
 		if ( 'contact' === this.state.step || ( 'address' === this.state.step && 'address_full' === key ) ) {
 			this.render();
 		}
@@ -575,13 +681,7 @@
 					this.toast( 'warning', this.t( 'errorRequired' ) );
 					return;
 				}
-				// Fire the contact lookup BEFORE navigating to address — if it
-				// returns a returning-client profile, prefill name/email and
-				// stash saved addresses for the next step.
 				this.lookupContactAndAdvance();
-				break;
-			case 'select-saved-address':
-				this.applySavedAddress( parseInt( btn.getAttribute( 'data-saved-index' ), 10 ) );
 				break;
 			case 'address-back':
 				this.go( 'contact' );
@@ -590,6 +690,11 @@
 				this.state.touched.address_full = true;
 				if ( '' === String( this.state.address.address_full || '' ).trim() ) {
 					this.render();
+					return;
+				}
+				if ( this.config.googleMapsApiKey && ! this.state.address.is_valid ) {
+					this.render();
+					this.toast( 'warning', this.t( 'errorAddressInvalid' ) );
 					return;
 				}
 				if ( this.isProject ) {
@@ -619,11 +724,44 @@
 			case 'toggle-slot':
 				this.toggleSlot( btn.getAttribute( 'data-slot-start' ), btn.getAttribute( 'data-slot-end' ) );
 				break;
+			case 'restart':
+				this.restart();
+				break;
 		}
 	};
 
 	HandikBookingForm.prototype.go = function ( step ) {
 		this.state.step = step;
+		this.render();
+	};
+
+	/**
+	 * Reset to a fresh contact step. Mirrors the main app's "Start a new
+	 * booking" link in the Stuck disclaimer.
+	 */
+	HandikBookingForm.prototype.restart = function () {
+		this.state.step             = 'contact';
+		this.state.busy             = false;
+		this.state.contact          = { full_name: '', phone: '', email: '' };
+		this.state.address          = {
+			address_id: 0, address_full: '', address_unit: '', address_line_1: '',
+			city: '', state: '', zip_code: '', is_valid: false
+		};
+		this.state.touched          = {};
+		this.state.directRequestId  = 0;
+		this.state.calBookingUrl    = '';
+		this.state.scheduleId       = 0;
+		this.state.publicToken      = '';
+		this.state.slots            = [];
+		this.state.slotsLoaded      = false;
+		this.state.selectedSlots    = [];
+		this.state.confirmedDays    = [];
+		this.state.savedAddresses   = [];
+		this.state.isReturningClient = false;
+		this.state.profileContactId  = 0;
+		this.lookupLastPhone        = '';
+		this.lookupInFlightPhone    = '';
+		this.calMounted             = false;
 		this.render();
 	};
 
@@ -642,6 +780,51 @@
 	HandikBookingForm.prototype.t = function ( key ) {
 		var v = this.i18n[ key ];
 		return v == null ? '' : String( v );
+	};
+
+	// ===================================================================
+	// Saved addresses (returning client)
+	// ===================================================================
+
+	/**
+	 * Apply a saved-address selection by its CRM id. Pulls the matching row
+	 * from `state.savedAddresses`, fills the form, and re-renders so the
+	 * Continue button unblocks.
+	 */
+	HandikBookingForm.prototype.applySavedAddressById = function ( id ) {
+		if ( '' === String( id ) ) {
+			// User picked the placeholder — clear the address so they can
+			// type a fresh one.
+			this.state.address = {
+				address_id: 0, address_full: '', address_unit: '', address_line_1: '',
+				city: '', state: '', zip_code: '', is_valid: false
+			};
+			this.render();
+			return;
+		}
+		var addr = null;
+		for ( var i = 0; i < this.state.savedAddresses.length; i++ ) {
+			if ( String( this.state.savedAddresses[ i ].id ) === String( id ) ) {
+				addr = this.state.savedAddresses[ i ];
+				break;
+			}
+		}
+		if ( ! addr ) { return; }
+		this.state.address = {
+			address_id:    parseInt( addr.id, 10 ) || 0,
+			address_full:  String( addr.address_full || addr.address_line_1 || '' ),
+			address_unit:  String( addr.address_unit || '' ),
+			address_line_1: String( addr.address_line_1 || '' ),
+			city:          String( addr.city || '' ),
+			state:         String( addr.state || '' ),
+			zip_code:      String( addr.zip_code || '' ),
+			is_valid:      true
+		};
+		this.render();
+		var unit = this.shell.querySelector( '#handik-form-address-unit' );
+		if ( unit ) {
+			try { unit.focus( { preventScroll: true } ); } catch ( e ) { /* ignore */ }
+		}
 	};
 
 	// ===================================================================
@@ -675,6 +858,59 @@
 		} );
 	};
 
+	/**
+	 * Look up the customer by phone number against the existing CRM. If we
+	 * find a match, prefill name + email and stash any saved addresses so
+	 * the address step can offer them. Always advances to the address step
+	 * — even when the lookup fails — so a network blip never strands the
+	 * customer on the contact screen.
+	 */
+	HandikBookingForm.prototype.lookupContactAndAdvance = function () {
+		var self = this;
+		var phoneApi = phoneApiValue( this.state.contact.phone );
+		if ( ! phoneApi ) {
+			this.go( 'address' );
+			return;
+		}
+		if ( phoneApi === this.lookupLastPhone || phoneApi === this.lookupInFlightPhone ) {
+			this.go( 'address' );
+			return;
+		}
+		this.lookupInFlightPhone = phoneApi;
+		this.busy( true );
+
+		this.api( 'POST', 'contacts/lookup', { phone: phoneApi } )
+			.then( function ( res ) {
+				self.lookupLastPhone     = phoneApi;
+				self.lookupInFlightPhone = '';
+				if ( res && res.profile && res.profile.contact ) {
+					var p = res.profile;
+					self.state.profileContactId   = parseInt( p.contact.id, 10 ) || 0;
+					self.state.isReturningClient  = true;
+					if ( ! String( self.state.contact.full_name || '' ).trim() && p.contact.full_name ) {
+						self.state.contact.full_name = String( p.contact.full_name );
+					}
+					if ( ! String( self.state.contact.email || '' ).trim() && p.contact.email ) {
+						self.state.contact.email = String( p.contact.email );
+					}
+					self.state.savedAddresses = Array.isArray( p.addresses ) ? p.addresses : [];
+					if ( self.state.savedAddresses.length ) {
+						self.toast( 'info', self.t( 'welcomeBack' ) );
+					}
+				} else {
+					self.state.isReturningClient = false;
+					self.state.savedAddresses    = [];
+				}
+				self.go( 'address' );
+			} )
+			.catch( function () {
+				// Lookup failures are non-blocking. Treat as a brand-new client.
+				self.lookupInFlightPhone = '';
+				self.go( 'address' );
+			} )
+			.then( function () { self.busy( false ); } );
+	};
+
 	HandikBookingForm.prototype.submitDirect = function () {
 		var self = this;
 		this.busy( true );
@@ -686,9 +922,7 @@
 				self.calMounted = false;
 				self.go( 'cal' );
 			} )
-			.catch( function ( err ) {
-				self.toast( 'error', err.message );
-			} )
+			.catch( function ( err ) { self.toast( 'error', err.message ); } )
 			.then( function () { self.busy( false ); } );
 	};
 
@@ -705,9 +939,7 @@
 				self.go( 'pick-days' );
 				return self.fetchSlots();
 			} )
-			.catch( function ( err ) {
-				self.toast( 'error', err.message );
-			} )
+			.catch( function ( err ) { self.toast( 'error', err.message ); } )
 			.then( function () { self.busy( false ); } );
 	};
 
@@ -725,17 +957,12 @@
 	HandikBookingForm.prototype.toggleSlot = function ( startIso, endIso ) {
 		var existing = -1;
 		for ( var i = 0; i < this.state.selectedSlots.length; i++ ) {
-			if ( this.state.selectedSlots[ i ].start === startIso ) {
-				existing = i;
-				break;
-			}
+			if ( this.state.selectedSlots[ i ].start === startIso ) { existing = i; break; }
 		}
 		if ( existing >= 0 ) {
 			this.state.selectedSlots.splice( existing, 1 );
 		} else {
-			if ( this.state.selectedSlots.length >= this.requiredDays ) {
-				return;
-			}
+			if ( this.state.selectedSlots.length >= this.requiredDays ) { return; }
 			this.state.selectedSlots.push( { start: startIso, end: endIso || '' } );
 		}
 		this.render();
@@ -781,98 +1008,19 @@
 		var c = this.state.contact;
 		var a = this.state.address;
 		return {
-			preset_slug: this.preset.preset_slug,
-			full_name:   c.full_name,
-			phone:       c.phone,
-			email:       c.email,
+			preset_slug:  this.preset.preset_slug,
+			full_name:    c.full_name,
+			phone:        c.phone,
+			email:        c.email,
 			address_full: a.address_full,
 			address_unit: a.address_unit,
-			source_url:  this.config.sourceUrl || ''
+			source_url:   this.config.sourceUrl || ''
 		};
-	};
-
-	/**
-	 * Look up the customer by phone number against the existing CRM. If we
-	 * find a match, prefill name + email and stash any saved addresses so
-	 * the address step can offer them. Always advances to the address step
-	 * — even when the lookup fails — so a network blip never strands the
-	 * customer on the contact screen.
-	 */
-	HandikBookingForm.prototype.lookupContactAndAdvance = function () {
-		var self = this;
-		var phoneApi = phoneApiValue( this.state.contact.phone );
-		// No valid 10-digit phone yet → just advance, no lookup possible.
-		if ( ! phoneApi ) {
-			this.go( 'address' );
-			return;
-		}
-		// Already looked up this exact number — skip.
-		if ( phoneApi === this.lookupLastPhone || phoneApi === this.lookupInFlightPhone ) {
-			this.go( 'address' );
-			return;
-		}
-		this.lookupInFlightPhone = phoneApi;
-		this.busy( true );
-
-		this.api( 'POST', 'contacts/lookup', { phone: phoneApi } )
-			.then( function ( res ) {
-				self.lookupLastPhone     = phoneApi;
-				self.lookupInFlightPhone = '';
-				if ( res && res.profile && res.profile.contact ) {
-					var p = res.profile;
-					self.state.profileContactId   = parseInt( p.contact.id, 10 ) || 0;
-					self.state.isReturningClient  = true;
-					if ( ! String( self.state.contact.full_name || '' ).trim() && p.contact.full_name ) {
-						self.state.contact.full_name = String( p.contact.full_name );
-					}
-					if ( ! String( self.state.contact.email || '' ).trim() && p.contact.email ) {
-						self.state.contact.email = String( p.contact.email );
-					}
-					self.state.savedAddresses = Array.isArray( p.addresses ) ? p.addresses : [];
-					if ( self.state.savedAddresses.length ) {
-						self.toast( 'info', self.t( 'welcomeBack' ) );
-					}
-				} else {
-					self.state.isReturningClient = false;
-					self.state.savedAddresses    = [];
-				}
-				self.go( 'address' );
-			} )
-			.catch( function () {
-				// Lookup failures are non-blocking. Treat as a brand-new client.
-				self.lookupInFlightPhone = '';
-				self.go( 'address' );
-			} )
-			.then( function () { self.busy( false ); } );
-	};
-
-	/**
-	 * Fill the address form from a saved address card and advance focus to
-	 * the unit field so a returning customer can confirm in two clicks.
-	 */
-	HandikBookingForm.prototype.applySavedAddress = function ( index ) {
-		var addr = this.state.savedAddresses[ index ];
-		if ( ! addr ) { return; }
-		this.state.address = {
-			address_full:   String( addr.address_full || addr.address_line_1 || '' ),
-			address_unit:   String( addr.address_unit || '' ),
-			address_line_1: String( addr.address_line_1 || '' ),
-			city:           String( addr.city || '' ),
-			state:          String( addr.state || '' ),
-			zip_code:       String( addr.zip_code || '' ),
-			is_valid:       true
-		};
-		this.render();
-		var unit = this.shell.querySelector( 'input[name="address.address_unit"]' );
-		if ( unit ) {
-			try { unit.focus( { preventScroll: true } ); } catch ( e ) { /* ignore */ }
-		}
 	};
 
 	HandikBookingForm.prototype.busy = function ( on ) {
 		this.state.busy = !! on;
-		// Visually muted Continue buttons while busy.
-		var primaries = this.shell.querySelectorAll( '.handik-btn.is-primary, .handik-btn.is-pending' );
+		var primaries = this.shell ? this.shell.querySelectorAll( '.handik-btn.is-primary, .handik-btn.is-pending' ) : [];
 		primaries.forEach( function ( b ) {
 			if ( on ) {
 				b.setAttribute( 'aria-busy', 'true' );
@@ -926,9 +1074,7 @@
 	};
 
 	HandikBookingForm.prototype.parseCalEmbedConfig = function () {
-		if ( ! this.state.calBookingUrl ) {
-			return null;
-		}
+		if ( ! this.state.calBookingUrl ) { return null; }
 		var bookingUrl;
 		try { bookingUrl = new URL( this.state.calBookingUrl ); }
 		catch ( e ) { return null; }
@@ -1057,23 +1203,6 @@
 		return this.googleMapsPromise;
 	};
 
-	/**
-	 * Suppress Chrome/Safari's native address-fill so the Google Places
-	 * dropdown doesn't fight it. Mirrors the main app's identical helper.
-	 */
-	HandikBookingForm.prototype.disableNativeAddressAutofill = function ( input ) {
-		if ( ! input ) { return; }
-		input.setAttribute( 'autocomplete', 'new-password' );
-		input.setAttribute( 'autocorrect', 'off' );
-		input.setAttribute( 'autocapitalize', 'off' );
-		input.setAttribute( 'spellcheck', 'false' );
-		input.setAttribute( 'data-lpignore', 'true' );
-		input.setAttribute( 'data-1p-ignore', 'true' );
-		input.setAttribute( 'data-form-type', 'other' );
-		// Renaming the field also confuses the browser's heuristic.
-		input.setAttribute( 'name', 'handik_form_location_query' );
-	};
-
 	HandikBookingForm.prototype.mountAddressAutocomplete = function () {
 		var self = this;
 		var input = this.shell.querySelector( '#handik-form-address' );
@@ -1092,9 +1221,7 @@
 				var place = self.addressAutocomplete.getPlace();
 				if ( ! place ) { return; }
 				var parsed = parseAddressComponents( place );
-				self.state.address = Object.assign( {}, self.state.address, parsed );
-				// Re-render so the form reflects the chosen address. The next
-				// render will re-mount the autocomplete on the fresh input.
+				self.state.address = Object.assign( {}, self.state.address, parsed, { address_id: 0 } );
 				self.render();
 			} );
 			input.setAttribute( 'data-google-mounted', '1' );
@@ -1102,10 +1229,25 @@
 			// `autocomplete` attribute internally when it binds.
 			self.disableNativeAddressAutofill( input );
 		} ).catch( function ( err ) {
-			// Soft-fail — the user can still type the address manually.
 			self.googleMapsPromise = Promise.resolve( null );
 			console.error( '[HandikBookingForm] Google Maps autocomplete failed.', err );
 		} );
+	};
+
+	/**
+	 * Suppress Chrome/Safari's native address-fill so the Google Places
+	 * dropdown doesn't fight it. Mirrors the main app's identical helper.
+	 */
+	HandikBookingForm.prototype.disableNativeAddressAutofill = function ( input ) {
+		if ( ! input ) { return; }
+		input.setAttribute( 'autocomplete', 'new-password' );
+		input.setAttribute( 'autocorrect', 'off' );
+		input.setAttribute( 'autocapitalize', 'off' );
+		input.setAttribute( 'spellcheck', 'false' );
+		input.setAttribute( 'data-lpignore', 'true' );
+		input.setAttribute( 'data-1p-ignore', 'true' );
+		input.setAttribute( 'data-form-type', 'other' );
+		input.setAttribute( 'name', 'handik_form_location_query' );
 	};
 
 	// ===================================================================
@@ -1115,7 +1257,7 @@
 	HandikBookingForm.prototype.toast = function ( type, message, opts ) {
 		opts = opts || {};
 		var id = 'h-form-n-' + ( ++this.notificationCounter );
-		var duration = Math.max( 1200, opts.duration || 4200 );
+		var duration = Math.max( 1200, opts.duration || TOAST_DURATION_MS );
 		var item = document.createElement( 'div' );
 		item.className = 'handik-toast handik-toast--' + ( type || 'info' );
 		item.setAttribute( 'role', 'error' === type ? 'alert' : 'status' );
@@ -1134,13 +1276,11 @@
 			'<button type="button" class="handik-toast__close" data-notification-dismiss="' + id + '" aria-label="Dismiss notification">&times;</button>';
 
 		this.notificationsRoot.appendChild( item );
-		// Force a synchronous layout pass so the browser commits opacity:0 +
-		// the transform before we toggle `is-visible`. Without this, some
-		// browsers batch the append + class change into one frame and skip
-		// the entrance animation, which made earlier builds look like the
-		// toast wasn't appearing at all.
+		// Force a synchronous reflow so the initial opacity:0 is committed
+		// before we toggle `is-visible` and the entrance transition runs.
 		void item.offsetWidth;
 		item.classList.add( 'is-visible' );
+
 		var timer = window.setTimeout( function () {
 			item.classList.remove( 'is-visible' );
 			item.classList.add( 'is-closing' );
@@ -1165,14 +1305,9 @@
 
 	function parseConfig( root ) {
 		var node = root.querySelector( '[data-handik-booking-form-config]' );
-		if ( ! node ) {
-			throw new Error( 'Missing booking form config' );
-		}
-		try {
-			return JSON.parse( node.textContent || '{}' );
-		} catch ( err ) {
-			throw new Error( 'Could not parse booking form config' );
-		}
+		if ( ! node ) { throw new Error( 'Missing booking form config' ); }
+		try { return JSON.parse( node.textContent || '{}' ); }
+		catch ( err ) { throw new Error( 'Could not parse booking form config' ); }
 	}
 
 	function validateFullName( v ) {
@@ -1183,18 +1318,12 @@
 	}
 	function phoneDigits( v ) {
 		var d = String( v == null ? '' : v ).replace( /\D/g, '' );
-		if ( d.length > 10 && '1' === d.charAt( 0 ) ) {
-			d = d.slice( 1 );
-		}
+		if ( d.length > 10 && '1' === d.charAt( 0 ) ) { d = d.slice( 1 ); }
 		return d.slice( 0, 10 );
 	}
 	function validatePhone( v ) {
 		return 10 === phoneDigits( v ).length;
 	}
-	/**
-	 * Returns the +1NNNNNNNNNN format the REST API expects, or '' if the
-	 * input doesn't have 10 digits yet.
-	 */
 	function phoneApiValue( v ) {
 		var d = phoneDigits( v );
 		return 10 === d.length ? '+1' + d : '';
@@ -1238,9 +1367,9 @@
 		var subpremise = value( 'subpremise', false );
 		var lineOne = [ streetNumber, route ].filter( Boolean ).join( ' ' ).trim();
 		return {
-			address_full:  place.formatted_address || '',
+			address_full:   place.formatted_address || '',
 			address_line_1: lineOne || place.formatted_address || '',
-			address_unit: subpremise || '',
+			address_unit:   subpremise || '',
 			city:  value( 'locality', false ) || value( 'postal_town', false ) || value( 'sublocality_level_1', false ),
 			state: value( 'administrative_area_level_1', true ),
 			zip_code: value( 'postal_code', false ),
@@ -1260,7 +1389,7 @@
 			}
 			groups[ label ].slots.push( {
 				start_iso: slot.start_iso,
-				end_iso: slot.end_iso,
+				end_iso:   slot.end_iso,
 				timeLabel: time
 			} );
 		} );
@@ -1271,8 +1400,8 @@
 		try {
 			return new Date( iso ).toLocaleDateString( 'en-US', {
 				weekday: 'short',
-				month: 'short',
-				day: 'numeric',
+				month:   'short',
+				day:     'numeric',
 				timeZone: timezone || 'America/New_York'
 			} );
 		} catch ( e ) { return String( iso ); }
@@ -1281,14 +1410,14 @@
 		try {
 			var s = new Date( startIso );
 			var label = s.toLocaleTimeString( 'en-US', {
-				hour: 'numeric',
+				hour:   'numeric',
 				minute: '2-digit',
 				timeZone: timezone || 'America/New_York'
 			} );
 			if ( endIso ) {
 				var e = new Date( endIso );
 				label += ' – ' + e.toLocaleTimeString( 'en-US', {
-					hour: 'numeric',
+					hour:   'numeric',
 					minute: '2-digit',
 					timeZone: timezone || 'America/New_York'
 				} );

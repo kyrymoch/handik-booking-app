@@ -3,20 +3,54 @@
  *
  * The public Additional Forms SPA reuses the entire main app stylesheet
  * (`booking-app.css`) so colors, typography, fields, buttons, sticky footer,
- * toasts and the Cal.com embed all match the main `[handik_booking_app]`
- * form pixel-for-pixel. Anything in this file is strictly additive — patterns
- * the main app does not have:
+ * toasts, progress dots, the Cal.com embed and the "Stuck?" disclaimer all
+ * match the main `[handik_booking_app]` form pixel-for-pixel. Anything in
+ * this file is strictly additive — patterns the main app does not have:
  *
  *   1. Project Work Days slot picker (multi-select day grid).
  *   2. Review-days summary list.
  *   3. Project success card.
+ *   4. Saved-address <select> dropdown styling (the main app inherits a
+ *      browser-default select; we polish it slightly so it matches the
+ *      `.handik-field input` look).
+ *   5. .pac-container z-index escape so Google Places suggestions render
+ *      above Elementor stacking contexts.
  *
  * If you add a style that already exists with the `handik-` prefix in
  * booking-app.css, drop it from here and reuse the existing class.
  */
 
 /* ===================================================================== */
-/* Slot picker                                                            */
+/* Saved-address <select> — match the .handik-field input look           */
+/* ===================================================================== */
+
+.handik-booking-app__shell .handik-field select#handik-form-saved-address {
+	width: 100%;
+	padding: 12px 14px;
+	border-radius: 14px;
+	border: 1px solid var( --handik-border, #dbe3ea );
+	font: inherit;
+	font-size: 16px;
+	background: #fff;
+	color: var( --handik-text, #0f172a );
+	appearance: none;
+	-webkit-appearance: none;
+	-moz-appearance: none;
+	background-image: url( "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'><path d='M1 1l5 5 5-5' stroke='%2364748b' stroke-width='2' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>" );
+	background-repeat: no-repeat;
+	background-position: right 16px center;
+	background-size: 12px 8px;
+	padding-right: 40px;
+}
+
+.handik-booking-app__shell .handik-field select#handik-form-saved-address:focus {
+	outline: none;
+	border-color: var( --handik-accent, #0f766e );
+	box-shadow: 0 0 0 3px rgba( 15, 118, 110, 0.18 );
+}
+
+/* ===================================================================== */
+/* Slot picker (project work days)                                        */
 /* ===================================================================== */
 
 .handik-booking-app__slots {
@@ -116,6 +150,12 @@
 	color: var( --handik-text, #0f172a );
 }
 
+.handik-booking-app__review-heading {
+	margin: 16px 0 8px;
+	font-size: 1.05rem;
+	color: var( --handik-text, #0f172a );
+}
+
 .handik-booking-app__review-days,
 .handik-booking-app__success-days {
 	margin: 12px 0;
@@ -149,59 +189,7 @@
 }
 
 /* ===================================================================== */
-/* Saved addresses (returning client)                                     */
-/* ===================================================================== */
-
-.handik-booking-app__saved-addresses {
-	margin-bottom: 12px;
-}
-
-.handik-booking-app__saved-addresses-title {
-	margin: 0 0 8px;
-	font-size: 0.88rem;
-	font-weight: 600;
-	color: var( --handik-muted-text, #64748b );
-	text-transform: uppercase;
-	letter-spacing: 0.04em;
-}
-
-.handik-booking-app__saved-addresses-list {
-	display: grid;
-	gap: 8px;
-}
-
-.handik-booking-app__saved-address {
-	appearance: none;
-	display: block;
-	width: 100%;
-	text-align: left;
-	font: inherit;
-	cursor: pointer;
-	padding: 12px 14px;
-	background: #f8fafc;
-	border: 1px solid var( --handik-border, #dbe3ea );
-	border-radius: var( --handik-radius, 18px );
-	color: var( --handik-text, #0f172a );
-	transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
-}
-
-.handik-booking-app__saved-address:hover,
-.handik-booking-app__saved-address:focus-visible {
-	border-color: var( --handik-accent, #0f766e );
-	background: #fff;
-	transform: translateY( -1px );
-	outline: none;
-}
-
-.handik-booking-app__saved-address-line {
-	display: block;
-	font-weight: 600;
-	font-size: 0.96rem;
-}
-
-/* ===================================================================== */
-/* Google Places dropdown — force above any Elementor stacking context    */
-/* and make sure pointer events reach the suggestions.                    */
+/* Google Places dropdown — force above any Elementor stacking context.   */
 /*                                                                         */
 /* The previous build used a parent z-index lower than Elementor's site   */
 /* header, so suggestions appeared but clicks went through to the page    */
@@ -238,12 +226,10 @@
 /* ===================================================================== */
 
 @media ( prefers-reduced-motion: reduce ) {
-	.handik-booking-app__slot,
-	.handik-booking-app__saved-address {
+	.handik-booking-app__slot {
 		transition: none !important;
 	}
-	.handik-booking-app__slot:hover,
-	.handik-booking-app__saved-address:hover {
+	.handik-booking-app__slot:hover {
 		transform: none !important;
 	}
 }
