@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.1.10.1
+Stable tag: 2.1.11.0
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, silent returning-client recognition, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,20 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.1.11.0 =
+* **Sprint 3 — UX parity + accessibility for Additional Booking Forms.** Closes the customer-facing P2 findings from the v2.1.9.10 audit.
+* **Local draft persistence (24h TTL, version-pinned).** Customer journeys are now resumable: refreshing the page or reopening the tab puts the customer right back where they left off, with name/phone/email/address and any selected project days intact. Stored under a per-preset namespace in `localStorage`, debounced 500ms on input, cleared automatically on success or "Start over". Plugin version is part of the envelope so a plugin upgrade invalidates stale drafts.
+* **Real-time contact recognition.** As soon as the customer types a 10-digit phone number, the form silently hits `/contacts/lookup` and (on match) prefills name + email and shows the "Welcome back" toast — no more waiting until Continue. The lookup is per-phone cached so a second lookup on Continue doesn't fire.
+* **Saved-address skeleton loader.** While the lookup is in flight the address step shows a small shimmering placeholder instead of the dropdown popping in abruptly after a returning customer's address-step render.
+* **Smooth scroll-into-view on every step change.** Long pages (forms inside a tall hero/header) no longer require manual scrolling after each Continue. Same 80px header offset and rAF deferral as the main `[handik_booking_app]` form.
+* **Success-step disclaimer variant.** After a confirmed booking the footer reads "All set. Alex will be in touch before the visit. · Book another visit" instead of the in-flight "Stuck? Start a new booking" prompt that was nag-shaped on the confirmation card.
+* **Field errors clear when the customer fixes them.** Earlier the `is-invalid` styling and inline error span lingered after a blur on a different field on the same step; now any blur on the contact or address step re-renders so the error span disappears as soon as the value passes validation.
+* **Locale-aware date/time formatting.** Hardcoded `'en-US'` arguments in `toLocaleDateString` / `toLocaleTimeString` removed. Now uses the browser's preferred locale (with fallback to `<html lang>`), so weekday/month names match the customer's language. Time zone still defaults to `America/New_York` per Cal.com setup.
+* **Accessibility additions:**
+  - `<input>` with an inline error now carries `aria-invalid="true"` + `aria-describedby` pointing at the error span. Screen readers pair the message with the field.
+  - Email / tel / url inputs ship with `autocapitalize="off"` + `spellcheck="false"` to stop mobile Safari from autocaps-ing the first letter and underlining the address as misspelled.
+  - The toast container now has `role="region"` + `aria-label="Notifications"` so AT can navigate to it as a landmark.
 
 = 2.1.10.1 =
 * **Sprint 2 — state-machine + Cal-integration bugs in Additional Forms.** Closes the P1 findings from the v2.1.9.10 audit.
