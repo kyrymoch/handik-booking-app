@@ -223,36 +223,67 @@ class Handik_Booking_App_Forms_Router {
 	 */
 	protected function i18n_strings() {
 		return array(
+			// Step titles (h2 in each screen header) — match main app naming.
+			'contactTitle'      => __( 'Contact details', 'handik-booking-app' ),
+			'addressTitle'      => __( 'Address details', 'handik-booking-app' ),
+			'calTitle'          => __( 'Pick a time', 'handik-booking-app' ),
+			'pickDaysTitle'     => __( 'Choose project work days', 'handik-booking-app' ),
+			'reviewTitle'       => __( 'Review your selected days', 'handik-booking-app' ),
+			'successHeading'    => __( 'You\'re all set', 'handik-booking-app' ),
+
+			// Buttons.
 			'continueLabel'     => __( 'Continue', 'handik-booking-app' ),
 			'backLabel'         => __( 'Back', 'handik-booking-app' ),
+
+			// Field labels.
 			'fullNameLabel'     => __( 'Full name', 'handik-booking-app' ),
 			'phoneLabel'        => __( 'Phone', 'handik-booking-app' ),
 			'emailLabel'        => __( 'Email (optional)', 'handik-booking-app' ),
-			'addressLabel'      => __( 'Address', 'handik-booking-app' ),
+			'addressLabel'      => __( 'Address of the job', 'handik-booking-app' ),
 			'addressPlaceholder' => __( 'Start typing the address of the job', 'handik-booking-app' ),
-			'unitLabel'         => __( 'Apt / Unit (optional)', 'handik-booking-app' ),
-			'contactIntro'      => __( 'Tell us how to reach you.', 'handik-booking-app' ),
-			'addressIntro'      => __( 'Where should Alex come for the visit?', 'handik-booking-app' ),
+			'unitLabel'         => __( 'Unit or apartment (optional)', 'handik-booking-app' ),
+			'savedAddressLabel' => __( 'Choose a saved address or enter a new one', 'handik-booking-app' ),
+			'savedAddressPlaceholder' => __( 'Choose saved address', 'handik-booking-app' ),
+			'savedAddressEmpty' => __( 'No saved addresses yet — enter the address below.', 'handik-booking-app' ),
+
+			// Step intros.
+			'contactIntro'      => __( "Tell us how to reach you. If you've booked here before, we'll recognize you.", 'handik-booking-app' ),
 			'calIntro'          => __( 'Pick a time that works for you.', 'handik-booking-app' ),
 			'reviewIntro'       => __( 'Quick review before we confirm with Cal.com.', 'handik-booking-app' ),
+
+			// Validation errors.
 			'errorRequired'     => __( 'Please fill in this field.', 'handik-booking-app' ),
 			'errorPhone'        => __( 'Please enter a valid phone number.', 'handik-booking-app' ),
 			'errorEmail'        => __( 'Please enter a valid email or leave it blank.', 'handik-booking-app' ),
+			'errorAddressInvalid' => __( 'Choose a valid address from the suggestions to continue.', 'handik-booking-app' ),
 			'genericError'      => __( 'Something went wrong. Please try again.', 'handik-booking-app' ),
+
+			// Loaders / Cal embed.
 			'loading'           => __( 'Loading available days…', 'handik-booking-app' ),
 			'calNotReady'       => __( 'Booking calendar is not ready yet.', 'handik-booking-app' ),
 			'openInNewTab'      => __( 'Open the booking page in a new tab', 'handik-booking-app' ),
-			'reviewTitle'       => __( 'Review your selected days', 'handik-booking-app' ),
+
+			// Project flow.
+			'reviewSelectedDaysHeading' => __( 'Selected work days', 'handik-booking-app' ),
 			'confirmCta'        => __( 'Confirm selected days', 'handik-booking-app' ),
 			'selectionCounter'  => __( 'Selected %1$d of %2$d days', 'handik-booking-app' ),
 			'pickHelper'        => __( 'Please select %d work days.', 'handik-booking-app' ),
 			'noSlots'           => __( 'No work days are available in the next 30 days. Please contact Alex directly.', 'handik-booking-app' ),
+			'replacementNeeded' => __( 'One or more selected days are no longer available. Please pick replacements.', 'handik-booking-app' ),
+
+			// Success copy.
 			'successTitle'      => __( 'You\'re all set!', 'handik-booking-app' ),
 			'projectSuccess'    => __( 'Your project work days have been selected. Alex will follow up if anything needs to be adjusted.', 'handik-booking-app' ),
 			'directSuccess'     => __( 'Your visit is booked. Alex will be in touch before the visit.', 'handik-booking-app' ),
-			'replacementNeeded' => __( 'One or more selected days are no longer available. Please pick replacements.', 'handik-booking-app' ),
+
+			// Returning client.
 			'welcomeBack'       => __( 'Welcome back — we found your saved addresses.', 'handik-booking-app' ),
-			'savedAddressesLabel' => __( 'Use a saved address', 'handik-booking-app' ),
+
+			// Footer disclaimer + progress.
+			'stuckPrefix'       => __( 'Stuck?', 'handik-booking-app' ),
+			'restartCta'        => __( 'Start a new booking', 'handik-booking-app' ),
+			'openDirectCta'     => __( 'Open the booking page directly', 'handik-booking-app' ),
+			'progressLabel'     => __( 'Booking progress', 'handik-booking-app' ),
 		);
 	}
 
