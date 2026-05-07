@@ -15,7 +15,7 @@ if ( ! defined( 'ABSPATH' ) ) {
  *   3. Project       — Project Work Days scheduling requests with day-level
  *                      detail.
  *
- * All admin POSTs are nonce-protected with the `manage_options` capability
+ * All admin POSTs are nonce-protected with the `handik_manage_bookings` cap
  * via maybe_save_preset(). The list view always renders shortcode + public
  * URL so admins can copy them with one click.
  */
@@ -267,7 +267,7 @@ class Handik_Booking_App_Admin_Additional_Forms {
 	 * Save handler for the preset edit form.
 	 */
 	public function maybe_save_preset() {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! current_user_can( Handik_Booking_App_Capabilities::MANAGE_BOOKINGS ) ) {
 			return;
 		}
 		if ( empty( $_POST[ self::NONCE_FIELD_SAVE ] ) ) {
@@ -367,7 +367,7 @@ class Handik_Booking_App_Admin_Additional_Forms {
 				$cal_link = '<a href="' . esc_url( (string) $row['cal_booking_url'] ) . '" target="_blank" rel="noreferrer noopener">' . esc_html__( 'Open Cal URL', 'handik-booking-app' ) . '</a>';
 			}
 			echo '<tr>';
-			echo '<td>' . esc_html( (string) $row['created_at'] ) . '</td>';
+			echo '<td>' . esc_html( Handik_Booking_App_Admin_Helpers::format_short( (string) $row['created_at'] ) ) . '</td>';
 			echo '<td>' . esc_html( (string) ( $contact['full_name'] ?? '—' ) ) . '</td>';
 			echo '<td>' . esc_html( (string) ( $contact['phone'] ?? '—' ) ) . '</td>';
 			echo '<td>' . esc_html( $address_text ?: '—' ) . '</td>';
@@ -410,7 +410,7 @@ class Handik_Booking_App_Admin_Additional_Forms {
 				$base
 			);
 			echo '<tr>';
-			echo '<td>' . esc_html( (string) $row['created_at'] ) . '</td>';
+			echo '<td>' . esc_html( Handik_Booking_App_Admin_Helpers::format_short( (string) $row['created_at'] ) ) . '</td>';
 			echo '<td>' . esc_html( (string) ( $contact['full_name'] ?? '—' ) ) . '</td>';
 			echo '<td><code>' . esc_html( (string) $row['preset_slug'] ) . '</code></td>';
 			echo '<td>' . esc_html( (string) $row['required_days'] ) . '</td>';
@@ -503,7 +503,7 @@ class Handik_Booking_App_Admin_Additional_Forms {
 	 * marks the local row, and logs.
 	 */
 	public function maybe_cancel_day() {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! current_user_can( Handik_Booking_App_Capabilities::MANAGE_BOOKINGS ) ) {
 			return;
 		}
 		if ( empty( $_POST[ self::NONCE_FIELD_CANCEL_DAY ] ) ) {

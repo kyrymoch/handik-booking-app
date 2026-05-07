@@ -218,7 +218,13 @@
 .handik-admin-pill--warning { background: #fef3c7; color: #92400e; }
 .handik-admin-pill--danger  { background: #fee2e2; color: #991b1b; }
 .handik-admin-pill--info    { background: #dbeafe; color: #1e3a8a; }
-.handik-admin-pill--muted   { background: #e2e8f0; color: #64748b; }
+/* Sprint 8: separate tone for "completed" so it reads as final-archived,
+ * not just another shade of "in progress". Deep teal — distinct from
+ * green (confirmed) and blue (booked) at a glance. */
+.handik-admin-pill--done    { background: #ccfbf1; color: #115e59; }
+/* Sprint 8: bumped --muted text from #64748b on #e2e8f0 (3.7:1, fails
+ * AA per the v2.1.11.1 audit) to #475569 on #e2e8f0 (≥ 4.5:1). */
+.handik-admin-pill--muted   { background: #e2e8f0; color: #475569; }
 .handik-admin-pill--neutral { background: #e2e8f0; color: #334155; }
 .handik-admin-pill--critical { background: #fecaca; color: #7f1d1d; border: 1px solid #b91c1c; }
 .handik-admin-pill--error   { background: #fee2e2; color: #991b1b; }

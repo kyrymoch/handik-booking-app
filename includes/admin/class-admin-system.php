@@ -84,6 +84,13 @@ class Handik_Booking_App_Admin_System {
 			<h2 class="handik-admin-section-title"><?php esc_html_e( 'Plugin', 'handik-booking-app' ); ?></h2>
 			<?php
 			$cron = wp_next_scheduled( 'handik_booking_app_dummy_cron' ) ? wp_date( 'Y-m-d H:i:s', wp_next_scheduled( 'handik_booking_app_dummy_cron' ) ) : __( 'No plugin cron jobs scheduled', 'handik-booking-app' );
+			// Sprint 8: surface the cron-fallback status so admins can
+			// verify the wp_loaded heartbeat is doing its job on
+			// DISABLE_WP_CRON installs.
+			$cron_disabled = defined( 'DISABLE_WP_CRON' ) && DISABLE_WP_CRON;
+			$fallback_msg  = $cron_disabled
+				? __( 'WP cron disabled — wp_loaded heartbeat fires overdue handik_* events.', 'handik-booking-app' )
+				: __( 'WP cron enabled — fallback heartbeat is dormant.', 'handik-booking-app' );
 
 			echo Handik_Booking_App_Admin_Helpers::detail_list_markup( array(
 				__( 'Plugin version', 'handik-booking-app' )    => HANDIK_BOOKING_APP_VERSION,
@@ -95,6 +102,7 @@ class Handik_Booking_App_Admin_System {
 				__( 'Current MySQL', 'handik-booking-app' )     => (string) $wpdb->db_version(),
 				__( 'WP version', 'handik-booking-app' )        => get_bloginfo( 'version' ),
 				__( 'Cron status', 'handik-booking-app' )       => $cron,
+				__( 'Cron fallback', 'handik-booking-app' )     => $fallback_msg,
 				__( 'Site URL', 'handik-booking-app' )          => home_url(),
 			) );
 			?>

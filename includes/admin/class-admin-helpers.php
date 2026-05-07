@@ -85,6 +85,59 @@ class Handik_Booking_App_Admin_Helpers {
 		return human_time_diff( $ts, time() ) . ' ' . __( 'ago', 'handik-booking-app' );
 	}
 
+	/**
+	 * Sprint 8: unified short datetime — `Mon, Jan 15 · 2:00 PM`.
+	 *
+	 * Replaces the drift across admin pages where `created_at` / `updated_at`
+	 * / `last_seen_at` were printed as raw MySQL DATETIME strings (no
+	 * timezone conversion, no human-readable formatting). Use this for
+	 * single-timestamp cells in tables and list rows. For booking start/end
+	 * windows keep using `format_booking_window()` — that helper renders a
+	 * range, not a point in time.
+	 *
+	 * @param string $datetime  MySQL DATETIME.
+	 * @param bool   $assume_utc Whether the value is UTC (default true; pass
+	 *                          false for `Logger::log()` entries which use
+	 *                          `current_time('mysql')` = site local time).
+	 * @return string
+	 */
+	public static function format_short( $datetime, $assume_utc = true ) {
+		$datetime = trim( (string) $datetime );
+		if ( '' === $datetime ) {
+			return '';
+		}
+		try {
+			$source_tz = $assume_utc ? new DateTimeZone( 'UTC' ) : wp_timezone();
+			$value     = new DateTimeImmutable( $datetime, $source_tz );
+			$value     = $value->setTimezone( new DateTimeZone( self::TIMEZONE ) );
+			return $value->format( 'D, M j · g:i A' );
+		} catch ( Exception $e ) {
+			return $datetime;
+		}
+	}
+
+	/**
+	 * Sprint 8: unified long datetime — `Monday, January 15, 2024 · 2:00 PM ET`.
+	 *
+	 * @param string $datetime   MySQL DATETIME.
+	 * @param bool   $assume_utc See format_short().
+	 * @return string
+	 */
+	public static function format_long( $datetime, $assume_utc = true ) {
+		$datetime = trim( (string) $datetime );
+		if ( '' === $datetime ) {
+			return '';
+		}
+		try {
+			$source_tz = $assume_utc ? new DateTimeZone( 'UTC' ) : wp_timezone();
+			$value     = new DateTimeImmutable( $datetime, $source_tz );
+			$value     = $value->setTimezone( new DateTimeZone( self::TIMEZONE ) );
+			return $value->format( 'l, F j, Y · g:i A' ) . ' ET';
+		} catch ( Exception $e ) {
+			return $datetime;
+		}
+	}
+
 	// ----- Strings ---------------------------------------------------------
 
 	public static function client_type_label( $client_type ) {
@@ -273,14 +326,27 @@ class Handik_Booking_App_Admin_Helpers {
 	}
 
 	public static function status_pill_markup( $status, $label = '' ) {
+		// Sprint 8: differentiate `booked` / `confirmed` / `completed`. They
+		// all collapsed to `success` (one shade of green), so admins lost
+		// the "is this actually done?" signal at a glance — every future
+		// visit looked the same as a finished one. New mapping:
+		//   booked     → info     (blue) — Cal.com webhook acknowledged, on the schedule
+		//   confirmed  → success  (green) — fulfilled by the contractor (post-visit, pre-completed)
+		//   completed  → done     (deep teal) — final, archived
+		// Everything else keeps its prior tone, so existing CSS for
+		// danger/warning/muted/info/neutral still applies.
 		$status = sanitize_key( (string) $status );
 		$label  = '' !== $label ? (string) $label : ucfirst( str_replace( '_', ' ', $status ) );
 		$tone   = 'neutral';
 		switch ( $status ) {
 			case 'booked':
+				$tone = 'info';
+				break;
 			case 'confirmed':
-			case 'completed':
 				$tone = 'success';
+				break;
+			case 'completed':
+				$tone = 'done';
 				break;
 			case 'cancelled':
 			case 'no_show':

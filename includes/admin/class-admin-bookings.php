@@ -809,7 +809,7 @@ class Handik_Booking_App_Admin_Bookings {
 						__( 'Booking status (raw)', 'handik-booking-app' ) => (string) ( $booking['status'] ?? '' ),
 						__( 'Admin status override', 'handik-booking-app' ) => (string) ( $booking['admin_status_override'] ?? '' ),
 						__( 'Duration', 'handik-booking-app' )           => ! empty( $booking['duration_minutes'] ) ? (int) $booking['duration_minutes'] . ' min' : '',
-						__( 'Updated', 'handik-booking-app' )            => (string) ( $booking['updated_at'] ?? '' ),
+						__( 'Updated', 'handik-booking-app' )            => Handik_Booking_App_Admin_Helpers::format_short( (string) ( $booking['updated_at'] ?? '' ) ),
 						__( 'Thread ID', 'handik-booking-app' )          => $request ? (string) ( $request['chat_thread_id'] ?? '' ) : '',
 					) );
 

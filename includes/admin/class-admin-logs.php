@@ -171,7 +171,10 @@ class Handik_Booking_App_Admin_Logs {
 	protected function log_card_markup( array $entry ) {
 		$level = (string) ( $entry['level'] ?? 'info' );
 		$message = (string) ( $entry['message'] ?? '' );
-		$time = (string) ( $entry['time'] ?? '' );
+		// Sprint 8: route through the unified helper. Logger writes
+		// `current_time('mysql')` which returns site-local time, not UTC,
+		// so pass `$assume_utc = false` to avoid a wrong shift.
+		$time = Handik_Booking_App_Admin_Helpers::format_short( (string) ( $entry['time'] ?? '' ), false );
 		$context = is_array( $entry['context'] ?? null ) ? $entry['context'] : array();
 
 		$pieces = array();
@@ -248,7 +251,7 @@ class Handik_Booking_App_Admin_Logs {
 	// ---------- CSV export ------------------------------------------------
 
 	public function maybe_export_csv() {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! current_user_can( Handik_Booking_App_Capabilities::MANAGE_BOOKINGS ) ) {
 			return;
 		}
 		// phpcs:disable WordPress.Security.NonceVerification.Recommended

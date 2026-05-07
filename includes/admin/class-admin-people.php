@@ -175,8 +175,14 @@ class Handik_Booking_App_Admin_People {
 		$detail_url = Handik_Booking_App_Admin_Helpers::admin_url_for( 'handik-booking-app-crm', array( 'contact_id' => (int) $row['id'] ) );
 
 		$phone = (string) ( $row['phone'] ?? '' );
-		$last_seen_ts = ! empty( $row['last_seen_at'] ) ? strtotime( (string) $row['last_seen_at'] ) : 0;
-		$last_seen_text = $last_seen_ts ? human_time_diff( $last_seen_ts, time() ) . ' ' . __( 'ago', 'handik-booking-app' ) : __( 'never', 'handik-booking-app' );
+		// Sprint 8: route through the helper so the "X ago" string matches
+		// other admin pages that already use relative_time().
+		$last_seen_text = ! empty( $row['last_seen_at'] )
+			? Handik_Booking_App_Admin_Helpers::relative_time( (string) $row['last_seen_at'] )
+			: __( 'never', 'handik-booking-app' );
+		if ( '' === $last_seen_text ) {
+			$last_seen_text = __( 'never', 'handik-booking-app' );
+		}
 
 		$counts_text = sprintf(
 			/* translators: 1: addresses 2: requests 3: bookings */
@@ -258,7 +264,7 @@ class Handik_Booking_App_Admin_People {
 							<span class="handik-admin-muted">·
 								<?php echo esc_html( (string) ( $r['app_step'] ?? '' ) ); ?>
 								·
-								<?php echo esc_html( (string) ( $r['updated_at'] ?? '' ) ); ?>
+								<?php echo esc_html( Handik_Booking_App_Admin_Helpers::format_short( (string) ( $r['updated_at'] ?? '' ) ) ); ?>
 							</span>
 							<?php echo Handik_Booking_App_Admin_Helpers::status_pill_markup( (string) ( $r['status'] ?? '' ) ); ?>
 						</a></li>
@@ -434,7 +440,7 @@ class Handik_Booking_App_Admin_People {
 							$status = $this->bookings ? $this->bookings->effective_status( $booking ) : (string) ( $booking['status'] ?? '' );
 						} else {
 							$url = Handik_Booking_App_Admin_Helpers::admin_url_for( 'handik-booking-app-crm', array( 'request_id' => $rid ) );
-							$when = (string) ( $r['updated_at'] ?? '' );
+							$when = Handik_Booking_App_Admin_Helpers::format_short( (string) ( $r['updated_at'] ?? '' ) );
 							$status = (string) ( $r['status'] ?? '' );
 						}
 						$tasks = Handik_Booking_App_Admin_Helpers::task_summary_text(

@@ -145,7 +145,11 @@ class Handik_Booking_App_REST_API {
 	 * @return bool|WP_Error
 	 */
 	public function admin_permission() {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		// Sprint 8: all admin REST routes are booking-side ops (notes,
+		// status, contacts, addresses, catalog, transients, migrations,
+		// CSV exports). They require MANAGE_BOOKINGS only — `manage_options`
+		// users still pass thanks to the user_has_cap filter.
+		if ( ! current_user_can( Handik_Booking_App_Capabilities::MANAGE_BOOKINGS ) ) {
 			return new WP_Error( 'handik_admin_forbidden', __( 'You do not have permission to do that.', 'handik-booking-app' ), array( 'status' => 403 ) );
 		}
 		return true;
