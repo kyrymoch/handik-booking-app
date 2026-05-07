@@ -43,10 +43,11 @@
 		try { window.localStorage.removeItem( VERIFIED_CLIENT_STORAGE_KEY ); }
 		catch ( e ) { /* ignore */ }
 	}
-	// Sprint 7 (a11y): shared focus trap for modals (restart-confirm dialog).
-	// WCAG 2.4.3 — Tab / Shift+Tab cycle within the dialog instead of leaking
-	// into the page below. Returns a release function the caller invokes on
-	// modal close so the previously focused element gets focus back.
+	// Sprint 7 (a11y) + 2.1.15.1 hardening: shared focus trap for modals
+	// (restart-confirm dialog). WCAG 2.4.3. Module-scoped stack so nested
+	// dialogs don't double-handle Tab; release validates that the
+	// previously focused element is still in the DOM before refocusing.
+	const __handikModalTrapStack = [];
 	function trapModalFocus( container ) {
 		if ( ! container ) { return function () {}; }
 		const previouslyFocused = document.activeElement;
@@ -57,8 +58,10 @@
 		function getFocusable() {
 			return Array.prototype.filter.call( container.querySelectorAll( FOCUSABLE ), visible );
 		}
-		function onKey( event ) {
+		const trap = { container: container, onKey: null };
+		trap.onKey = function ( event ) {
 			if ( 'Tab' !== event.key ) { return; }
+			if ( __handikModalTrapStack[ __handikModalTrapStack.length - 1 ] !== trap ) { return; }
 			const list = getFocusable();
 			if ( ! list.length ) { event.preventDefault(); return; }
 			const first = list[ 0 ];
@@ -73,11 +76,18 @@
 				event.preventDefault();
 				first.focus();
 			}
-		}
-		document.addEventListener( 'keydown', onKey, true );
+		};
+		__handikModalTrapStack.push( trap );
+		document.addEventListener( 'keydown', trap.onKey, true );
 		return function release() {
-			document.removeEventListener( 'keydown', onKey, true );
-			if ( previouslyFocused && 'function' === typeof previouslyFocused.focus ) {
+			document.removeEventListener( 'keydown', trap.onKey, true );
+			const idx = __handikModalTrapStack.indexOf( trap );
+			if ( idx > -1 ) { __handikModalTrapStack.splice( idx, 1 ); }
+			if (
+				previouslyFocused
+				&& document.contains( previouslyFocused )
+				&& 'function' === typeof previouslyFocused.focus
+			) {
 				try { previouslyFocused.focus(); } catch ( e ) { /* ignore */ }
 			}
 		};

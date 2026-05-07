@@ -2250,10 +2250,11 @@
 		return '+1 ' + parts.join( ' ' );
 	}
 
-	// Sprint 7 (a11y): shared focus trap for the restart-confirm modal. WCAG
-	// 2.4.3 — Tab / Shift+Tab cycle within the dialog. Mirror of the helper
-	// in booking-app.js / booking-app-admin.js (kept inline because there's
-	// no shared module loader in this build).
+	// Sprint 7 (a11y) + 2.1.15.1 hardening: shared focus trap mirror of
+	// booking-app.js / booking-app-admin.js. Module-scoped stack so nested
+	// dialogs don't double-handle Tab; release validates that the
+	// previously focused element is still in the DOM before refocusing.
+	var __handikModalTrapStack = [];
 	function trapModalFocus( container ) {
 		if ( ! container ) { return function () {}; }
 		var previouslyFocused = document.activeElement;
@@ -2264,8 +2265,10 @@
 		function getFocusable() {
 			return Array.prototype.filter.call( container.querySelectorAll( FOCUSABLE ), visible );
 		}
-		function onKey( event ) {
+		var trap = { container: container, onKey: null };
+		trap.onKey = function ( event ) {
 			if ( 'Tab' !== event.key ) { return; }
+			if ( __handikModalTrapStack[ __handikModalTrapStack.length - 1 ] !== trap ) { return; }
 			var list = getFocusable();
 			if ( ! list.length ) { event.preventDefault(); return; }
 			var first = list[ 0 ];
@@ -2280,11 +2283,18 @@
 				event.preventDefault();
 				first.focus();
 			}
-		}
-		document.addEventListener( 'keydown', onKey, true );
+		};
+		__handikModalTrapStack.push( trap );
+		document.addEventListener( 'keydown', trap.onKey, true );
 		return function release() {
-			document.removeEventListener( 'keydown', onKey, true );
-			if ( previouslyFocused && 'function' === typeof previouslyFocused.focus ) {
+			document.removeEventListener( 'keydown', trap.onKey, true );
+			var idx = __handikModalTrapStack.indexOf( trap );
+			if ( idx > -1 ) { __handikModalTrapStack.splice( idx, 1 ); }
+			if (
+				previouslyFocused
+				&& document.contains( previouslyFocused )
+				&& 'function' === typeof previouslyFocused.focus
+			) {
 				try { previouslyFocused.focus(); } catch ( e ) { /* ignore */ }
 			}
 		};

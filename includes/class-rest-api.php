@@ -495,20 +495,22 @@ class Handik_Booking_App_REST_API {
 		// success. Previously the admin button returned `success=true`
 		// even when nothing happened (or when a step had silently failed
 		// in the legacy code path).
+		// `migrate()` is guaranteed to return the array shape; the
+		// previous defensive is_array() wrappers tripped PHPStan.
+		$ran     = isset( $result['ran'] ) && is_array( $result['ran'] ) ? array_values( $result['ran'] ) : array();
+		$skipped = ! empty( $result['skipped'] );
+		$error   = $result['error'] ?? null;
 		if ( $this->logger ) {
 			$this->logger->info(
 				'Admin re-ran migrations.',
 				array(
 					'admin_id' => get_current_user_id(),
-					'ran'      => is_array( $result ) && isset( $result['ran'] ) ? $result['ran'] : array(),
-					'skipped'  => is_array( $result ) ? ! empty( $result['skipped'] ) : false,
-					'error'    => is_array( $result ) ? ( $result['error'] ?? null ) : null,
+					'ran'      => $ran,
+					'skipped'  => $skipped,
+					'error'    => $error,
 				)
 			);
 		}
-		$ran     = is_array( $result ) && isset( $result['ran'] ) ? array_values( $result['ran'] ) : array();
-		$skipped = is_array( $result ) ? ! empty( $result['skipped'] ) : false;
-		$error   = is_array( $result ) ? ( $result['error'] ?? null ) : null;
 		return rest_ensure_response( array(
 			'success'    => null === $error,
 			'db_version' => (string) get_option( Handik_Booking_App_Migrations::OPTION_NAME, '0.0.0' ),
@@ -562,7 +564,7 @@ class Handik_Booking_App_REST_API {
 		// we drop output to the client as we go via flush().
 		@set_time_limit( 0 ); // phpcs:ignore WordPress.PHP.NoSilencedErrors
 		while ( ob_get_level() > 0 ) { @ob_end_flush(); } // phpcs:ignore WordPress.PHP.NoSilencedErrors
-		@ob_implicit_flush( 1 ); // phpcs:ignore WordPress.PHP.NoSilencedErrors,PHPCompatibility.FunctionUse.NewFunctionParameters.ob_implicit_flushFlagFound
+		@ob_implicit_flush( true ); // phpcs:ignore WordPress.PHP.NoSilencedErrors
 
 		$out         = fopen( 'php://output', 'w' );
 		$batch_size  = 1000;

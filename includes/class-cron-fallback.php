@@ -83,15 +83,29 @@ class Handik_Booking_App_Cron_Fallback {
 		// (which is what triggered us) doesn't wait.
 		$dispatch = function () use ( $pending ) {
 			foreach ( $pending as $event ) {
-				// Remove from queue first so a re-entrant call (or a real
-				// cron hit during processing) won't double-fire.
-				wp_unschedule_event( $event['timestamp'], $event['hook'], $event['args'] );
+				// 2.1.15.1 audit fix (P1 #11): dispatch BEFORE unschedule.
+				// The old order — unschedule then do_action — silently
+				// dropped the event if a service hadn't registered its
+				// listener yet (race against the wp_loaded:99 ordering)
+				// because the unschedule was already committed when the
+				// no-op `do_action` returned. Now we only unschedule when
+				// at least one listener actually consumed the event.
+				$had_listener = has_action( $event['hook'] );
+				$dispatched   = false;
 				try {
 					do_action_ref_array( $event['hook'], $event['args'] );
+					$dispatched = true;
 				} catch ( \Throwable $e ) {
 					if ( function_exists( 'error_log' ) ) {
 						error_log( '[handik cron-fallback] ' . $event['hook'] . ' threw: ' . $e->getMessage() );
 					}
+				}
+				// Unschedule on success OR on definite failure (had listeners
+				// but they threw — same as WP cron's own behaviour). Skip
+				// only the "no listeners at all" case so the event has a
+				// chance to fire once the missing service comes online.
+				if ( $dispatched || $had_listener ) {
+					wp_unschedule_event( $event['timestamp'], $event['hook'], $event['args'] );
 				}
 			}
 		};

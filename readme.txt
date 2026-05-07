@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.1.15.0
+Stable tag: 2.1.15.1
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, silent returning-client recognition, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,15 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.1.15.1 =
+* **Hotfix — Sprint 7/8 independent audit findings.** No new features; only hardens what 2.1.14.0 + 2.1.15.0 introduced.
+* **P0 — Cal.com credentials added to the capability-strip list.** The Sprint 8 capability split moved API-secret writes behind `handik_manage_integrations`, but the strip list omitted `cal_api_key`, `cal_api_base`, `cal_api_version`, `cal_api_timezone`. Those settings live on App Setup → Cal.com (booking-side), not the Integrations tab, so a `MANAGE_BOOKINGS`-only user could craft a settings POST that rotated the Cal.com API key. Strip list now covers them; settings save still falls through for everything else.
+* **P1 — Cron fallback no longer drops events with no listeners.** The Sprint 8 heartbeat unschedule-then-dispatch order silently lost an event if a service hadn't yet registered its listener (race against `wp_loaded:99`). New order: dispatch first, then unschedule only when `has_action()` confirms a listener consumed it (or threw). A truly orphaned event stays queued and retries on the next heartbeat.
+* **P1 — Modal focus trap: nested-dialog stack.** Each `trapModalFocus()` call now pushes onto a module-scoped stack; only the topmost trap responds to Tab. Older traps stay registered (so they can still release their cleanup) but don't double-handle Tab, so opening modal B from modal A no longer makes focus jump unpredictably between dialogs. Release also now validates `document.contains(previouslyFocused)` before refocusing — prevents a silent focus drop when the trigger button was inside a list that re-rendered while the dialog was open.
+* **P2 — Migration lock is now atomic.** Sprint 7 had a check-then-set sequence in `Migrations::acquire_lock()` that two near-simultaneous boots could both pass, defeating the lock. Switched to `add_option()` which the wp_options `option_name` UNIQUE index enforces at the DB level — exactly one caller wins the insert. The 60-second stale-lock recovery branch is preserved for crashed/timed-out callers.
+* **P2 — `ob_implicit_flush()` parameter type.** PHP 8.0+ deprecated the int form. CSV streamer now passes `true`. Also dropped the corresponding PHPCompatibility ignore comment.
+* **PHPStan baseline cleanup.** Removed redundant `is_array($result)` defensive checks in `admin_migrations_run` (the migration runner returns a guaranteed array shape); removed the now-unused `Cannot access offset .* on mixed` ignore pattern from `phpstan.neon.dist`. Touched files are now PHPStan-clean.
 
 = 2.1.15.0 =
 * **Sprint 8 — Cross-cutting polish (4 of the 5 P2 items from the v2.1.11.1 QA report; dark mode skipped per owner).** All admin / ops surface; no public flow changes.
