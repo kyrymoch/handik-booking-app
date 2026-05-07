@@ -149,14 +149,101 @@
 }
 
 /* ===================================================================== */
+/* Saved addresses (returning client)                                     */
+/* ===================================================================== */
+
+.handik-booking-app__saved-addresses {
+	margin-bottom: 12px;
+}
+
+.handik-booking-app__saved-addresses-title {
+	margin: 0 0 8px;
+	font-size: 0.88rem;
+	font-weight: 600;
+	color: var( --handik-muted-text, #64748b );
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+}
+
+.handik-booking-app__saved-addresses-list {
+	display: grid;
+	gap: 8px;
+}
+
+.handik-booking-app__saved-address {
+	appearance: none;
+	display: block;
+	width: 100%;
+	text-align: left;
+	font: inherit;
+	cursor: pointer;
+	padding: 12px 14px;
+	background: #f8fafc;
+	border: 1px solid var( --handik-border, #dbe3ea );
+	border-radius: var( --handik-radius, 18px );
+	color: var( --handik-text, #0f172a );
+	transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+}
+
+.handik-booking-app__saved-address:hover,
+.handik-booking-app__saved-address:focus-visible {
+	border-color: var( --handik-accent, #0f766e );
+	background: #fff;
+	transform: translateY( -1px );
+	outline: none;
+}
+
+.handik-booking-app__saved-address-line {
+	display: block;
+	font-weight: 600;
+	font-size: 0.96rem;
+}
+
+/* ===================================================================== */
+/* Google Places dropdown — force above any Elementor stacking context    */
+/* and make sure pointer events reach the suggestions.                    */
+/*                                                                         */
+/* The previous build used a parent z-index lower than Elementor's site   */
+/* header, so suggestions appeared but clicks went through to the page    */
+/* underneath. `.pac-container` lives directly under <body> so styling it */
+/* globally here is safe even when our shortcode is nested inside another */
+/* widget.                                                                 */
+/* ===================================================================== */
+
+.pac-container {
+	z-index: 2147483647 !important;
+	pointer-events: auto !important;
+	border-radius: 12px;
+	box-shadow: 0 16px 32px rgba( 15, 23, 42, 0.18 );
+	border: 1px solid var( --handik-border, #dbe3ea );
+	font-family: inherit;
+}
+
+.pac-container .pac-item,
+.pac-container .pac-item-query {
+	cursor: pointer !important;
+	pointer-events: auto !important;
+	padding: 8px 12px;
+	font-size: 0.95rem;
+	line-height: 1.4;
+	color: var( --handik-text, #0f172a );
+}
+
+.pac-container .pac-item:hover {
+	background: #f1f5f9;
+}
+
+/* ===================================================================== */
 /* Reduced motion                                                         */
 /* ===================================================================== */
 
 @media ( prefers-reduced-motion: reduce ) {
-	.handik-booking-app__slot {
+	.handik-booking-app__slot,
+	.handik-booking-app__saved-address {
 		transition: none !important;
 	}
-	.handik-booking-app__slot:hover {
+	.handik-booking-app__slot:hover,
+	.handik-booking-app__saved-address:hover {
 		transform: none !important;
 	}
 }
