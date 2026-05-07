@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.1.9.2
+Stable tag: 2.1.9.5
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, silent returning-client recognition, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,16 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.1.9.5 =
+* **Visual parity with the main booking app.** The Additional Booking Forms (`[handik_booking_form]` shortcode and `/booking/{slug}` routes) now reuse the entire `booking-app.css` design system. Same colors, typography, sticky Back/Continue footer, toast notifications, loading bar, and Cal.com embed wrapper as the main `[handik_booking_app]` form — they just skip the AI assistant, photos, and task selection.
+* **Cal.com embed instead of raw iframe.** Direct visit forms now mount the Cal.com embed via `embed.js` (the same loader the main form uses). The customer sees the same calendar UI, with a 15-second fallback to "open in a new tab" when the script fails to load.
+* **Google Maps Places autocomplete.** Address field on every additional form now suggests addresses through the same Google Maps key configured in App Setup → Integrations. Falls back to manual entry when the key is empty or the script blocks.
+* **Appearance tokens forwarded.** All `--handik-*` CSS variables from App Setup → Appearance are inlined onto the form root, so colors, font, button styles, and radius track the rest of the app.
+* **Toast notifications.** Inline error toasts render in the same bottom-right stack as the main app (`.handik-booking-app__notifications` / `.handik-toast`).
+* **Preset editor in admin.** Handik Booking → Additional Forms → Presets now shows an Edit button per row. The form lets you set: title, enabled flag, duration / required days / work-day duration, Cal.com event type id or slug (for project work days), Cal.com URL override (for direct visits), and admin notes. No more MySQL needed to wire a preset to Cal.com.
+* **Code organization.** `booking-forms.css` now holds only the picker/review/success additions; everything else inherits from `booking-app.css` via a `wp_register_style` dependency.
+* **Documentation pass.** All new files carry full PHPDoc + JSDoc explaining responsibilities, contracts, and gotchas.
 
 = 2.1.9.2 =
 * Fixed a public Additional Forms JavaScript error: `this.render is not a function`.
