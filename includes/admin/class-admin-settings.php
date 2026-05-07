@@ -306,7 +306,11 @@ class Handik_Booking_App_Admin_Settings {
 		?>
 		<div class="handik-catalog-group" data-handik-group>
 			<div class="handik-catalog-group__header">
-				<span class="handik-catalog-handle" aria-hidden="true">⋮⋮</span>
+				<?php /* Sprint 7 (a11y): drag handle is a real button so keyboard
+				   users can focus it and use arrow keys to reorder (handler
+				   wired in booking-app-admin.js). SortableJS still picks it up
+				   via the same `.handik-catalog-handle` selector for mouse drag. */ ?>
+				<button type="button" class="handik-catalog-handle" data-handik-reorder="group" aria-label="<?php esc_attr_e( 'Reorder category (arrow keys)', 'handik-booking-app' ); ?>">⋮⋮</button>
 				<label class="handik-admin-field">
 					<span class="handik-admin-field__label"><?php esc_html_e( 'Category title', 'handik-booking-app' ); ?></span>
 					<input type="text" data-handik-group-name value="<?php echo esc_attr( (string) ( $group['group'] ?? '' ) ); ?>" />
@@ -332,7 +336,7 @@ class Handik_Booking_App_Admin_Settings {
 		ob_start();
 		?>
 		<div class="handik-catalog-task" data-handik-task>
-			<span class="handik-catalog-handle" aria-hidden="true">⋮⋮</span>
+			<button type="button" class="handik-catalog-handle" data-handik-reorder="task" aria-label="<?php esc_attr_e( 'Reorder service (arrow keys)', 'handik-booking-app' ); ?>">⋮⋮</button>
 			<div class="handik-catalog-task__fields">
 				<div class="handik-admin-grid">
 					<label class="handik-admin-field"><span><?php esc_html_e( 'Service ID', 'handik-booking-app' ); ?></span><input type="text" data-handik-task-id value="<?php echo esc_attr( (string) ( $task['id'] ?? '' ) ); ?>" /></label>

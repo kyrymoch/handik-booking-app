@@ -248,6 +248,35 @@ class Handik_Booking_App_Job_Requests_Service {
 	}
 
 	/**
+	 * Sprint 7 (admin perf): bulk fetch hydrated rows by ID, keyed by id, for
+	 * the admin-bookings + dashboard "next visits" lists which used to call
+	 * `get()` per booking row. A 100-row dashboard window dropped from
+	 * ~100 queries to one.
+	 *
+	 * @param array<int, int> $ids Request ids.
+	 * @return array<int, array<string, mixed>>
+	 */
+	public function get_many( array $ids ) {
+		$ids = array_values( array_unique( array_map( 'absint', $ids ) ) );
+		$ids = array_filter( $ids );
+		if ( empty( $ids ) ) {
+			return array();
+		}
+		global $wpdb;
+		$table        = Handik_Booking_App_DB::table( 'job_requests' );
+		$placeholders = implode( ',', array_fill( 0, count( $ids ), '%d' ) );
+		$rows         = $wpdb->get_results(
+			$wpdb->prepare( "SELECT * FROM {$table} WHERE id IN ({$placeholders})", $ids ), // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+			ARRAY_A
+		);
+		$out = array();
+		foreach ( (array) $rows as $row ) {
+			$out[ (int) $row['id'] ] = $this->hydrate_row( $row );
+		}
+		return $out;
+	}
+
+	/**
 	 * @param int $limit Limit.
 	 * @return array<int, array<string, mixed>>
 	 */

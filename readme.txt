@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.1.13.1
+Stable tag: 2.1.14.0
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, silent returning-client recognition, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,19 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.1.14.0 =
+* **Sprint 7 — Admin performance + accessibility (5 items from the v2.1.11.1 QA report).** All cross-cutting wins; no public-flow regressions, no DB / REST contract changes.
+* **N+1 admin queries → bulk `get_many()`.** Bookings list (cards + table), Dashboard "Next 5 visits" + today/tomorrow/week previews, and People list focus chips were each fanning out 1-3 single-row queries per row inside a loop. New helpers — `Job_Requests_Service::get_many()`, `Bookings_Service::get_many()`, `Bookings_Service::find_latest_for_requests()` — let each admin page bulk-load decorations in one IN(...) query. Examples: a 100-row bookings page dropped from ~300 round trips to 4. Dashboard cache-miss path: 8 single-row `bookings->get()` calls collapsed into one. Person detail with 30 historical requests: 30 `find_latest_for_request` calls collapsed into one.
+* **CSV export streams instead of buffering the whole table.** `/admin/export/<table>` (System info → "Export tables to CSV") was `SELECT * FROM <table>` with no LIMIT, then loaded the full result set into PHP memory. Fine for `contacts` (1k rows), fatal for `messages` (100k rows = OOM at the PHP memory_limit). The export is now keyset-paginated by `id` in 1000-row batches, written to `php://output` and `flush()`-ed each batch. Peak memory bounded by `$batch_size`, not the table size.
+* **Modal focus trap (WCAG 2.4.3).** Tab and Shift+Tab now cycle within the dialog instead of leaking to the underlying admin / SPA DOM. Added a shared `trapModalFocus()` helper to `booking-app-admin.js`, `booking-app.js`, and `booking-forms.js` (kept inline because there's no shared module loader yet). Wired into the admin `openModal` confirm dialog, the admin "Edit address" modal, and the public-flow "Start over?" restart-confirm dialog (main + Additional Forms). Trap also restores focus to the previously focused element on close so keyboard users don't snap to the top of the page.
+* **Catalog drag-handle keyboard reorder (WCAG 2.1.1).** App Setup → Service catalog used SortableJS only — keyboard users had no way to change order. Handles are now real `<button>` elements with `aria-label` and an arrow-key reorder fallback (Up/Down by one position, Home/End to jump). Move events feed the same `scheduleSave` pipeline SortableJS uses, so the auto-save status pill reports correctly. Polite-live-region announces "Moved to position X of N" after each step. Visible focus ring added.
+* **Migration runner accuracy.** Three QA-found bugs in `Handik_Booking_App_Migrations::migrate()`:
+  1. `LAST_RUN_OPTION` only got written when at least one migration class actually executed — calls that hit a no-op left the System info "Last migration ran" timestamp stuck at whatever a prior version recorded. Now also writes `LAST_ATTEMPT_OPTION` on every invocation.
+  2. The version pointer `OPTION_NAME` was bumped before `up()` ran. A throwing migration left the schema partially migrated AND the pointer past the failed step, so the next attempt skipped it. Now: try/catch around each step, version pointer + `LAST_RUN_OPTION` only updated on success, `LAST_ERROR_OPTION` set on failure.
+  3. Two parallel boots on a fresh upgrade both read the same starting version, both ran the same migration, and the second got "Duplicate column" / "Table already exists". A 60-second `LOCK_OPTION` transient now serialises runs.
+  The admin "Run pending migrations" REST response now reports `ran[]`, `skipped`, `error`, `no_changes` instead of always `success: true` — admins can distinguish "no migrations needed" from "migrations actually ran" from "a step failed".
+* **Bug fix — Selected tasks & rates sheet on desktop.** Owner-reported: on desktop the sheet sat ~80px above the bottom edge AND drifted off-screen to the right. Two underlying issues: (a) base rule had `bottom: 80px + safe-area` to clear a docked footer that's actually `position: static` on desktop, so the offset was just dead space, and (b) `left: 50%` + `transform: translateX(-50%)` silently breaks when an Elementor section / theme wrapper has `transform: …` / `will-change: transform` / `filter: …` — that parent becomes the containing block for `position: fixed`, `50%` resolves against an offset rect, and the sheet ends up off-screen. Fix: anchor to viewport bottom (`bottom: env(safe-area-inset-bottom, 0)`) and use `left: 0; right: 0; margin-inline: auto` for centering — robust against parent transforms. The `is-bouncing` keyframe transforms still win during the bounce animation. Padding on the task list reduced from 168px → 96px to reclaim the space.
 
 = 2.1.13.1 =
 * **Hotfix — Twilio Verify OTP UX.** Three production bugs reported after 2.1.13.0:

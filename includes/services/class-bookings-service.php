@@ -203,6 +203,34 @@ class Handik_Booking_App_Bookings_Service {
 	}
 
 	/**
+	 * Sprint 7 (admin perf): bulk fetch bookings by ID for the dashboard's
+	 * `ensure_next_visit_decorations` loops which used to do one `get()` per
+	 * booking ID across today/tomorrow/week + the next-visits cache.
+	 *
+	 * @param array<int, int> $ids Booking ids.
+	 * @return array<int, array<string, mixed>>
+	 */
+	public function get_many( array $ids ) {
+		$ids = array_values( array_unique( array_map( 'absint', $ids ) ) );
+		$ids = array_filter( $ids );
+		if ( empty( $ids ) ) {
+			return array();
+		}
+		global $wpdb;
+		$table        = Handik_Booking_App_DB::table( 'bookings' );
+		$placeholders = implode( ',', array_fill( 0, count( $ids ), '%d' ) );
+		$rows         = $wpdb->get_results(
+			$wpdb->prepare( "SELECT * FROM {$table} WHERE id IN ({$placeholders})", $ids ), // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+			ARRAY_A
+		);
+		$out = array();
+		foreach ( (array) $rows as $row ) {
+			$out[ (int) $row['id'] ] = $row;
+		}
+		return $out;
+	}
+
+	/**
 	 * @param int $job_request_id Request.
 	 * @return array<string, mixed>|null
 	 */
@@ -211,6 +239,43 @@ class Handik_Booking_App_Bookings_Service {
 		$table = Handik_Booking_App_DB::table( 'bookings' );
 		$row   = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$table} WHERE job_request_id = %d ORDER BY updated_at DESC, id DESC LIMIT 1", $job_request_id ), ARRAY_A );
 		return $row ?: null;
+	}
+
+	/**
+	 * Sprint 7 (admin perf): bulk equivalent of `find_latest_for_request`,
+	 * keyed by job_request_id. Used by `class-admin-people.php::bookings_for_contact`
+	 * which used to fan out N single-row lookups per contact card. Picks
+	 * the highest (updated_at, id) per request_id with one window-style
+	 * pass: ORDER BY descending, then in PHP take the first row we see for
+	 * each request_id (cheaper than a SQL window function on MySQL 5.7).
+	 *
+	 * @param array<int, int> $job_request_ids Job request ids.
+	 * @return array<int, array<string, mixed>> Keyed by job_request_id.
+	 */
+	public function find_latest_for_requests( array $job_request_ids ) {
+		$ids = array_values( array_unique( array_map( 'absint', $job_request_ids ) ) );
+		$ids = array_filter( $ids );
+		if ( empty( $ids ) ) {
+			return array();
+		}
+		global $wpdb;
+		$table        = Handik_Booking_App_DB::table( 'bookings' );
+		$placeholders = implode( ',', array_fill( 0, count( $ids ), '%d' ) );
+		$rows         = $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT * FROM {$table} WHERE job_request_id IN ({$placeholders}) ORDER BY job_request_id ASC, updated_at DESC, id DESC", // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+				$ids
+			),
+			ARRAY_A
+		);
+		$out = array();
+		foreach ( (array) $rows as $row ) {
+			$rid = (int) $row['job_request_id'];
+			if ( ! isset( $out[ $rid ] ) ) {
+				$out[ $rid ] = $row;
+			}
+		}
+		return $out;
 	}
 
 	/**

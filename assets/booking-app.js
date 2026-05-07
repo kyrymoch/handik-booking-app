@@ -43,6 +43,46 @@
 		try { window.localStorage.removeItem( VERIFIED_CLIENT_STORAGE_KEY ); }
 		catch ( e ) { /* ignore */ }
 	}
+	// Sprint 7 (a11y): shared focus trap for modals (restart-confirm dialog).
+	// WCAG 2.4.3 — Tab / Shift+Tab cycle within the dialog instead of leaking
+	// into the page below. Returns a release function the caller invokes on
+	// modal close so the previously focused element gets focus back.
+	function trapModalFocus( container ) {
+		if ( ! container ) { return function () {}; }
+		const previouslyFocused = document.activeElement;
+		const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+		function visible( el ) {
+			return el && ! el.hasAttribute( 'aria-hidden' ) && ( el.offsetWidth || el.offsetHeight || el.getClientRects().length );
+		}
+		function getFocusable() {
+			return Array.prototype.filter.call( container.querySelectorAll( FOCUSABLE ), visible );
+		}
+		function onKey( event ) {
+			if ( 'Tab' !== event.key ) { return; }
+			const list = getFocusable();
+			if ( ! list.length ) { event.preventDefault(); return; }
+			const first = list[ 0 ];
+			const last  = list[ list.length - 1 ];
+			const active = document.activeElement;
+			if ( event.shiftKey ) {
+				if ( active === first || ! container.contains( active ) ) {
+					event.preventDefault();
+					last.focus();
+				}
+			} else if ( active === last ) {
+				event.preventDefault();
+				first.focus();
+			}
+		}
+		document.addEventListener( 'keydown', onKey, true );
+		return function release() {
+			document.removeEventListener( 'keydown', onKey, true );
+			if ( previouslyFocused && 'function' === typeof previouslyFocused.focus ) {
+				try { previouslyFocused.focus(); } catch ( e ) { /* ignore */ }
+			}
+		};
+	}
+
 	const CAL_EMBED_TIMEOUT_MS = 15000;
 	const PERSISTED_STATE_FIELDS = [
 		'step',
@@ -3256,6 +3296,27 @@
 		}
 
 		bind() {
+			// Sprint 7 (a11y): release any prior modal focus trap before
+			// rebinding. The SPA does a full innerHTML re-render on every
+			// state change, so the modal's DOM node is replaced — we have to
+			// re-arm the trap each time the dialog is visible (and tear down
+			// any leftover keydown listener from a previous render).
+			if ( this._releaseModalFocusTrap ) {
+				this._releaseModalFocusTrap();
+				this._releaseModalFocusTrap = null;
+			}
+			if ( this.state.restartConfirmVisible ) {
+				const dialog = this.root.querySelector( '.handik-modal' );
+				if ( dialog ) {
+					this._releaseModalFocusTrap = trapModalFocus( dialog );
+					// Move focus to Cancel so a screen-reader announces the
+					// dialog and Enter doesn't accidentally confirm restart.
+					const cancelBtn = dialog.querySelector( '[data-action="restart-cancel"]' );
+					if ( cancelBtn ) {
+						window.requestAnimationFrame( () => cancelBtn.focus() );
+					}
+				}
+			}
 			this.root.querySelectorAll( '[data-action]' ).forEach( ( button ) => {
 				button.addEventListener( 'click', ( event ) => {
 					event.preventDefault();
