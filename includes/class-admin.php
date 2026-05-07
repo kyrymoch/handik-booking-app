@@ -84,7 +84,13 @@ class Handik_Booking_App_Admin {
 	// =====================================================================
 
 	public function register_menu() {
-		$cap = 'manage_options';
+		// Sprint 8: capability split. The booking-side menus all use the
+		// narrower `handik_manage_bookings` cap so an editor can be granted
+		// day-to-day operations without inheriting access to API keys.
+		// `manage_options` users still see everything because the
+		// `user_has_cap` filter in Handik_Booking_App_Capabilities grants
+		// both new caps to anyone holding `manage_options`.
+		$cap = Handik_Booking_App_Capabilities::MANAGE_BOOKINGS;
 
 		add_menu_page(
 			__( 'Handik Booking', 'handik-booking-app' ),
@@ -111,7 +117,7 @@ class Handik_Booking_App_Admin {
 	// =====================================================================
 
 	public function maybe_save_settings() {
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( ! current_user_can( Handik_Booking_App_Capabilities::MANAGE_BOOKINGS ) ) {
 			return;
 		}
 		if ( empty( $_POST['handik_booking_app_settings_nonce'] ) ) {
@@ -119,7 +125,39 @@ class Handik_Booking_App_Admin {
 		}
 		check_admin_referer( 'handik_booking_app_save_settings', 'handik_booking_app_settings_nonce' );
 
-		$this->settings->update( wp_unslash( $_POST ) );
+		// Sprint 8: if the submission contains any integration-secret
+		// fields (API keys, auth tokens, Cal webhook shared secret), the
+		// user must also hold MANAGE_INTEGRATIONS or those values are
+		// stripped before the settings update — otherwise the rest of the
+		// form (booking flow, appearance, service catalog) saves normally.
+		$payload = wp_unslash( $_POST );
+		if ( ! current_user_can( Handik_Booking_App_Capabilities::MANAGE_INTEGRATIONS ) ) {
+			$integration_keys = array(
+				'openai_api_key', 'openai_workflow_id', 'openai_api_base',
+				'openai_project_id', 'openai_organization_id', 'chatkit_script_url',
+				'google_maps_api_key', 'google_maps_country',
+				'twilio_account_sid', 'twilio_auth_token', 'twilio_verify_service_sid',
+				'github_repo_url', 'github_repo_branch', 'github_access_token',
+				'github_release_asset_pattern', 'cal_webhook_secret',
+			);
+			$dropped = false;
+			foreach ( $integration_keys as $key ) {
+				if ( isset( $payload[ $key ] ) ) {
+					unset( $payload[ $key ] );
+					$dropped = true;
+				}
+			}
+			if ( $dropped ) {
+				add_settings_error(
+					'handik-booking-app',
+					'integrations_blocked',
+					__( 'Integration credentials were ignored — that section needs the “Manage integrations” permission.', 'handik-booking-app' ),
+					'warning'
+				);
+			}
+		}
+
+		$this->settings->update( $payload );
 		add_settings_error( 'handik-booking-app', 'settings_saved', __( 'Settings updated.', 'handik-booking-app' ), 'updated' );
 	}
 

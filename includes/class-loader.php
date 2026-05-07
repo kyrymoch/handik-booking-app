@@ -8,6 +8,8 @@ class Handik_Booking_App_Loader {
 	public static function load() {
 		$files = array(
 			'includes/class-logger.php',
+			'includes/class-capabilities.php',
+			'includes/class-cron-fallback.php',
 			'includes/class-settings.php',
 			'includes/db/class-db.php',
 			'includes/db/class-migrations.php',

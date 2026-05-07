@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.1.14.0
+Stable tag: 2.1.15.0
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, silent returning-client recognition, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,13 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.1.15.0 =
+* **Sprint 8 — Cross-cutting polish (4 of the 5 P2 items from the v2.1.11.1 QA report; dark mode skipped per owner).** All admin / ops surface; no public flow changes.
+* **Date format unification.** Five different date renderings across admin pages (booking cards `D, M j · g:i A`, default `l, F j, Y g:i A`, People list raw `human_time_diff`, Direct/Project lists raw MySQL DATETIME, raw-tables/log time as-stored) collapsed into two shared helpers: `Handik_Booking_App_Admin_Helpers::format_short($datetime, $assume_utc=true)` → `Mon, Jan 15 · 2:00 PM` and `format_long(...)` → `Monday, January 15, 2024 · 2:00 PM ET`. Both convert to Eastern Time using the existing `utc_to_eastern` helper. Logs pass `$assume_utc=false` because `Logger::log()` writes `current_time('mysql')` (site-local). Drift sites fixed: bookings `Updated` cell, People row `last_seen_text`, request focus list `updated_at` (×2), Additional Forms direct/project list `created_at` (×2), Logs card `time`.
+* **Status pill differentiation.** `booked` / `confirmed` / `completed` all collapsed to one shade of green — at-a-glance, a future visit looked the same as a finished one. New mapping: `booked` → blue (info), `confirmed` → green (success), `completed` → deep teal (`pill--done`). All other tones (`danger`, `warning`, `muted`, `info`, `neutral`) unchanged so existing CSS keeps working. Also bumped `--muted` text from `#64748b` on `#e2e8f0` (3.7:1, fails WCAG AA per the audit) to `#475569` (≥ 4.5:1).
+* **Capability split.** Single `manage_options` gate replaced with two custom caps: `handik_manage_bookings` (Dashboard, Bookings, People, Setup, System, Logs, Additional Forms — every day-to-day operations surface) and `handik_manage_integrations` (the Integrations tab on the Operations page only — OpenAI / Twilio / GitHub / Google Maps API keys + Cal.com webhook secret). New `Handik_Booking_App_Capabilities` class registers both caps on `administrator` at activation and grants both transparently to anyone holding `manage_options` via a `user_has_cap` filter, so existing site admins keep working without any data migration. The Integrations tab renders an "insufficient permissions" notice instead of the form when the wider cap is missing; the shared settings POST handler strips integration-credential keys (`openai_api_key`, `twilio_auth_token`, `github_access_token`, etc.) from the payload when the submitter only holds `handik_manage_bookings`. Lets an owner hand the day-to-day off to an editor without exposing rotating tokens.
+* **Cron fallback heartbeat.** Sites with `DISABLE_WP_CRON` (common nginx + page-cache config) lose the auto-trigger that fires `wp-cron.php` on every page load. Single events queued via `wp_schedule_single_event` (photo-analysis refresh, abandoned-draft GC, etc.) silently never fire on those installs. New `Handik_Booking_App_Cron_Fallback` class hooks `wp_loaded`, walks `_get_cron_array()` once per minute (transient-throttled), and inline-fires any overdue **handik_*** events — scoped tightly so we don't second-guess unrelated plugins that opted into manual cron. Heartbeat is dormant (no-op) when WP cron is enabled; it skips AJAX / cron / CLI requests entirely. When PHP-FPM's `fastcgi_finish_request()` is available it ships the page response first and runs the events afterwards so the user's browse isn't slowed down. System info > Plugin now shows whether the fallback is active.
 
 = 2.1.14.0 =
 * **Sprint 7 — Admin performance + accessibility (5 items from the v2.1.11.1 QA report).** All cross-cutting wins; no public-flow regressions, no DB / REST contract changes.

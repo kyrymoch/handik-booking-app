@@ -77,6 +77,19 @@ class Handik_Booking_App_Admin_Integrations {
 	}
 
 	protected function render_integrations_form() {
+		// Sprint 8: integration credentials gated behind a separate cap so
+		// a bookings-only admin doesn't see (or accidentally rotate) API
+		// keys for OpenAI / Twilio / GitHub / Google Maps. The Operations
+		// page itself stays accessible (Logs + Changelog tabs are useful
+		// to a bookings admin), but this tab shows a notice instead of
+		// the form when the user lacks the wider cap.
+		if ( ! current_user_can( Handik_Booking_App_Capabilities::MANAGE_INTEGRATIONS ) ) {
+			echo '<section class="handik-admin-block">';
+			echo '<h2 class="handik-admin-section-title">' . esc_html__( 'Integrations', 'handik-booking-app' ) . '</h2>';
+			echo '<p>' . esc_html__( 'You don’t have permission to manage integration credentials. Ask a site administrator to grant you the “Manage Handik integrations” capability.', 'handik-booking-app' ) . '</p>';
+			echo '</section>';
+			return;
+		}
 		$s = $this->settings->all();
 		?>
 		<form method="post">
