@@ -57,6 +57,12 @@
 		this.googleMapsPromise   = null;
 		this.addressAutocomplete = null;
 
+		// Phone-based contact lookup state. We hit /contacts/lookup once per
+		// unique fully-typed phone number and cache the result so leaving and
+		// re-entering the contact step doesn't spam the endpoint.
+		this.lookupInFlightPhone = '';
+		this.lookupLastPhone     = '';
+
 		this.state = {
 			step: 'contact',          // contact | address | cal | pick-days | review-days | success
 			busy: false,
@@ -78,7 +84,10 @@
 			slots: [],
 			slotsLoaded: false,
 			selectedSlots: [],
-			confirmedDays: []
+			confirmedDays: [],
+			savedAddresses: [],   // populated by /contacts/lookup
+			isReturningClient: false,
+			profileContactId: 0
 		};
 
 		this.applyAppearance();
@@ -163,12 +172,10 @@
 	};
 
 	HandikBookingForm.prototype.afterRender = function () {
-		// Move focus to the new heading for screen-reader announcement.
-		var heading = this.shell.querySelector( '.handik-booking-app__screen-header h2' );
-		if ( heading ) {
-			heading.setAttribute( 'tabindex', '-1' );
-			try { heading.focus( { preventScroll: true } ); } catch ( e ) { /* ignore */ }
-		}
+		// Note: we deliberately do NOT move focus to the new <h2> on every
+		// step transition. The main [handik_booking_app] form removed that
+		// behavior because it caused mobile keyboards to dismiss and screen
+		// magnifiers to jump unpredictably. Keep parity here.
 
 		if ( 'address' === this.state.step ) {
 			this.mountAddressAutocomplete();
@@ -243,19 +250,47 @@
 			: '';
 		var hasMaps = !! this.config.googleMapsApiKey;
 
+		// Saved addresses surface when /contacts/lookup matched the customer's
+		// phone with an existing CRM contact. Click → fills the form.
+		var savedAddresses = Array.isArray( this.state.savedAddresses ) ? this.state.savedAddresses : [];
+		var savedMarkup = '';
+		if ( savedAddresses.length ) {
+			savedMarkup += '<div class="handik-booking-app__saved-addresses" role="region" aria-label="' + escapeAttr( this.t( 'savedAddressesLabel' ) ) + '">';
+			savedMarkup += '<p class="handik-booking-app__saved-addresses-title">' + escapeHtml( this.t( 'savedAddressesLabel' ) ) + '</p>';
+			savedMarkup += '<div class="handik-booking-app__saved-addresses-list">';
+			savedAddresses.forEach( function ( addr, idx ) {
+				var line = String( addr.address_full || addr.address_line_1 || '' ).trim();
+				var unit = String( addr.address_unit || '' ).trim();
+				var fullDisplay = line + ( unit ? ', ' + unit : '' );
+				savedMarkup += '<button type="button" class="handik-booking-app__saved-address" data-action="select-saved-address" data-saved-index="' + idx + '">';
+				savedMarkup += '<span class="handik-booking-app__saved-address-line">' + escapeHtml( fullDisplay ) + '</span>';
+				savedMarkup += '</button>';
+			} );
+			savedMarkup += '</div></div>';
+		}
+
+		// `name="handik_job_location_query"` + `autocomplete="new-password"` is
+		// the same combo the main app uses to suppress Chrome/Safari's native
+		// address autofill, which competes with Google's Places dropdown and
+		// makes suggestions seem unclickable.
+		var inputAutocomplete = hasMaps ? 'new-password' : 'street-address';
+
 		return [
 			'<p class="handik-booking-app__intro">', escapeHtml( this.t( 'addressIntro' ) ), '</p>',
+			savedMarkup,
 			this.fieldMarkup( {
 				name: 'address.address_full',
 				label: this.t( 'addressLabel' ),
 				type: 'text',
 				value: a.address_full,
-				autocomplete: hasMaps ? 'off' : 'street-address',
+				autocomplete: inputAutocomplete,
 				placeholder: this.t( 'addressPlaceholder' ),
 				inputId: 'handik-form-address',
 				error: addressError,
 				required: true,
-				dataAttrs: hasMaps ? { 'handik-google-address': '1' } : {}
+				extraAttrs: hasMaps
+					? 'autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" data-form-type="other"'
+					: ''
 			} ),
 			this.fieldMarkup( {
 				name: 'address.address_unit',
@@ -420,12 +455,6 @@
 		opts = opts || {};
 		var inputId = opts.inputId || ( 'handik-form-' + opts.name.replace( /[^a-z0-9]/gi, '-' ) );
 		var fieldClass = 'handik-field' + ( opts.error ? ' is-invalid' : '' );
-		var data = '';
-		if ( opts.dataAttrs ) {
-			Object.keys( opts.dataAttrs ).forEach( function ( k ) {
-				data += ' data-' + k + '="' + escapeAttr( opts.dataAttrs[ k ] ) + '"';
-			} );
-		}
 
 		var inputAttrs = [
 			'type="' + escapeAttr( opts.type || 'text' ) + '"',
@@ -437,8 +466,9 @@
 		if ( opts.inputmode ) { inputAttrs.push( 'inputmode="' + escapeAttr( opts.inputmode ) + '"' ); }
 		if ( opts.placeholder ) { inputAttrs.push( 'placeholder="' + escapeAttr( opts.placeholder ) + '"' ); }
 		if ( opts.required ) { inputAttrs.push( 'required' ); }
+		if ( opts.extraAttrs ) { inputAttrs.push( opts.extraAttrs ); }
 
-		return '<label class="' + fieldClass + '" for="' + escapeAttr( inputId ) + '"' + data + '>' +
+		return '<label class="' + fieldClass + '" for="' + escapeAttr( inputId ) + '">' +
 				'<span>' + escapeHtml( opts.label ) + '</span>' +
 				'<input ' + inputAttrs.join( ' ' ) + '>' +
 				( opts.error ? '<span class="handik-field__help is-error">' + escapeHtml( opts.error ) + '</span>' : '' ) +
@@ -545,7 +575,13 @@
 					this.toast( 'warning', this.t( 'errorRequired' ) );
 					return;
 				}
-				this.go( 'address' );
+				// Fire the contact lookup BEFORE navigating to address — if it
+				// returns a returning-client profile, prefill name/email and
+				// stash saved addresses for the next step.
+				this.lookupContactAndAdvance();
+				break;
+			case 'select-saved-address':
+				this.applySavedAddress( parseInt( btn.getAttribute( 'data-saved-index' ), 10 ) );
 				break;
 			case 'address-back':
 				this.go( 'contact' );
@@ -755,6 +791,84 @@
 		};
 	};
 
+	/**
+	 * Look up the customer by phone number against the existing CRM. If we
+	 * find a match, prefill name + email and stash any saved addresses so
+	 * the address step can offer them. Always advances to the address step
+	 * — even when the lookup fails — so a network blip never strands the
+	 * customer on the contact screen.
+	 */
+	HandikBookingForm.prototype.lookupContactAndAdvance = function () {
+		var self = this;
+		var phoneApi = phoneApiValue( this.state.contact.phone );
+		// No valid 10-digit phone yet → just advance, no lookup possible.
+		if ( ! phoneApi ) {
+			this.go( 'address' );
+			return;
+		}
+		// Already looked up this exact number — skip.
+		if ( phoneApi === this.lookupLastPhone || phoneApi === this.lookupInFlightPhone ) {
+			this.go( 'address' );
+			return;
+		}
+		this.lookupInFlightPhone = phoneApi;
+		this.busy( true );
+
+		this.api( 'POST', 'contacts/lookup', { phone: phoneApi } )
+			.then( function ( res ) {
+				self.lookupLastPhone     = phoneApi;
+				self.lookupInFlightPhone = '';
+				if ( res && res.profile && res.profile.contact ) {
+					var p = res.profile;
+					self.state.profileContactId   = parseInt( p.contact.id, 10 ) || 0;
+					self.state.isReturningClient  = true;
+					if ( ! String( self.state.contact.full_name || '' ).trim() && p.contact.full_name ) {
+						self.state.contact.full_name = String( p.contact.full_name );
+					}
+					if ( ! String( self.state.contact.email || '' ).trim() && p.contact.email ) {
+						self.state.contact.email = String( p.contact.email );
+					}
+					self.state.savedAddresses = Array.isArray( p.addresses ) ? p.addresses : [];
+					if ( self.state.savedAddresses.length ) {
+						self.toast( 'info', self.t( 'welcomeBack' ) );
+					}
+				} else {
+					self.state.isReturningClient = false;
+					self.state.savedAddresses    = [];
+				}
+				self.go( 'address' );
+			} )
+			.catch( function () {
+				// Lookup failures are non-blocking. Treat as a brand-new client.
+				self.lookupInFlightPhone = '';
+				self.go( 'address' );
+			} )
+			.then( function () { self.busy( false ); } );
+	};
+
+	/**
+	 * Fill the address form from a saved address card and advance focus to
+	 * the unit field so a returning customer can confirm in two clicks.
+	 */
+	HandikBookingForm.prototype.applySavedAddress = function ( index ) {
+		var addr = this.state.savedAddresses[ index ];
+		if ( ! addr ) { return; }
+		this.state.address = {
+			address_full:   String( addr.address_full || addr.address_line_1 || '' ),
+			address_unit:   String( addr.address_unit || '' ),
+			address_line_1: String( addr.address_line_1 || '' ),
+			city:           String( addr.city || '' ),
+			state:          String( addr.state || '' ),
+			zip_code:       String( addr.zip_code || '' ),
+			is_valid:       true
+		};
+		this.render();
+		var unit = this.shell.querySelector( 'input[name="address.address_unit"]' );
+		if ( unit ) {
+			try { unit.focus( { preventScroll: true } ); } catch ( e ) { /* ignore */ }
+		}
+	};
+
 	HandikBookingForm.prototype.busy = function ( on ) {
 		this.state.busy = !! on;
 		// Visually muted Continue buttons while busy.
@@ -943,13 +1057,29 @@
 		return this.googleMapsPromise;
 	};
 
+	/**
+	 * Suppress Chrome/Safari's native address-fill so the Google Places
+	 * dropdown doesn't fight it. Mirrors the main app's identical helper.
+	 */
+	HandikBookingForm.prototype.disableNativeAddressAutofill = function ( input ) {
+		if ( ! input ) { return; }
+		input.setAttribute( 'autocomplete', 'new-password' );
+		input.setAttribute( 'autocorrect', 'off' );
+		input.setAttribute( 'autocapitalize', 'off' );
+		input.setAttribute( 'spellcheck', 'false' );
+		input.setAttribute( 'data-lpignore', 'true' );
+		input.setAttribute( 'data-1p-ignore', 'true' );
+		input.setAttribute( 'data-form-type', 'other' );
+		// Renaming the field also confuses the browser's heuristic.
+		input.setAttribute( 'name', 'handik_form_location_query' );
+	};
+
 	HandikBookingForm.prototype.mountAddressAutocomplete = function () {
 		var self = this;
 		var input = this.shell.querySelector( '#handik-form-address' );
 		if ( ! input || ! this.config.googleMapsApiKey ) { return; }
+		this.disableNativeAddressAutofill( input );
 		if ( '1' === input.getAttribute( 'data-google-mounted' ) ) { return; }
-		// Suppress browser's native autofill so it doesn't compete with Places.
-		input.setAttribute( 'autocomplete', 'off' );
 
 		this.loadGoogleMapsPlaces().then( function ( gm ) {
 			if ( ! gm || ! gm.places ) { return; }
@@ -963,10 +1093,14 @@
 				if ( ! place ) { return; }
 				var parsed = parseAddressComponents( place );
 				self.state.address = Object.assign( {}, self.state.address, parsed );
-				input.value = self.state.address.address_full || input.value;
+				// Re-render so the form reflects the chosen address. The next
+				// render will re-mount the autocomplete on the fresh input.
 				self.render();
 			} );
 			input.setAttribute( 'data-google-mounted', '1' );
+			// Re-apply the autofill suppression — Google can rewrite the
+			// `autocomplete` attribute internally when it binds.
+			self.disableNativeAddressAutofill( input );
 		} ).catch( function ( err ) {
 			// Soft-fail — the user can still type the address manually.
 			self.googleMapsPromise = Promise.resolve( null );
@@ -1000,8 +1134,13 @@
 			'<button type="button" class="handik-toast__close" data-notification-dismiss="' + id + '" aria-label="Dismiss notification">&times;</button>';
 
 		this.notificationsRoot.appendChild( item );
-		// Ensure transition fires.
-		window.requestAnimationFrame( function () { item.classList.add( 'is-visible' ); } );
+		// Force a synchronous layout pass so the browser commits opacity:0 +
+		// the transform before we toggle `is-visible`. Without this, some
+		// browsers batch the append + class change into one frame and skip
+		// the entrance animation, which made earlier builds look like the
+		// toast wasn't appearing at all.
+		void item.offsetWidth;
+		item.classList.add( 'is-visible' );
 		var timer = window.setTimeout( function () {
 			item.classList.remove( 'is-visible' );
 			item.classList.add( 'is-closing' );
@@ -1051,6 +1190,14 @@
 	}
 	function validatePhone( v ) {
 		return 10 === phoneDigits( v ).length;
+	}
+	/**
+	 * Returns the +1NNNNNNNNNN format the REST API expects, or '' if the
+	 * input doesn't have 10 digits yet.
+	 */
+	function phoneApiValue( v ) {
+		var d = phoneDigits( v );
+		return 10 === d.length ? '+1' + d : '';
 	}
 	function formatPhoneAsYouType( v ) {
 		var d = phoneDigits( v );

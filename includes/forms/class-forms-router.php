@@ -251,6 +251,8 @@ class Handik_Booking_App_Forms_Router {
 			'projectSuccess'    => __( 'Your project work days have been selected. Alex will follow up if anything needs to be adjusted.', 'handik-booking-app' ),
 			'directSuccess'     => __( 'Your visit is booked. Alex will be in touch before the visit.', 'handik-booking-app' ),
 			'replacementNeeded' => __( 'One or more selected days are no longer available. Please pick replacements.', 'handik-booking-app' ),
+			'welcomeBack'       => __( 'Welcome back — we found your saved addresses.', 'handik-booking-app' ),
+			'savedAddressesLabel' => __( 'Use a saved address', 'handik-booking-app' ),
 		);
 	}
 

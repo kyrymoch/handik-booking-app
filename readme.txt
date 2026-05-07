@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.1.9.5
+Stable tag: 2.1.9.6
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, silent returning-client recognition, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,13 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.1.9.6 =
+* **Fixed: Google Maps suggestions were unclickable.** Two root causes — the page's stacking context (often Elementor) was rendering above Google's `.pac-container`, and the browser's native address-fill heuristic was competing with the Places dropdown for input focus. Fix raises `.pac-container { z-index: 2147483647 !important; pointer-events: auto !important }` and applies the same autofill-suppression attributes (`autocomplete="new-password"`, `data-lpignore`, `data-1p-ignore`, renamed input field) the main `[handik_booking_app]` form uses.
+* **Fixed: saved addresses for returning clients.** When the customer types a phone number that matches an existing CRM contact, the address step now shows that contact's saved addresses as one-click cards above the address input. Click → fills address + unit, focuses the unit field. Lookup is cached per-phone so re-typing the same number doesn't spam the endpoint. Soft-fails to a fresh-customer flow on network error.
+* **Fixed: removed `<h2>` focus-on-step-change.** The new forms inherited an obsolete a11y pattern that the main form had already rolled back (it was dismissing mobile keyboards and confusing screen magnifiers on every transition).
+* **Fixed: toast notifications now reliably animate in.** A subtle browser-batching issue made the entrance transition occasionally drop frames so toasts looked invisible. The notification builder now forces a synchronous reflow (`void item.offsetWidth`) after appending the element, before adding `is-visible`.
+* **New microcopy:** "Welcome back — we found your saved addresses." toast on returning-client match, "Use a saved address" header above the cards.
 
 = 2.1.9.5 =
 * **Visual parity with the main booking app.** The Additional Booking Forms (`[handik_booking_form]` shortcode and `/booking/{slug}` routes) now reuse the entire `booking-app.css` design system. Same colors, typography, sticky Back/Continue footer, toast notifications, loading bar, and Cal.com embed wrapper as the main `[handik_booking_app]` form — they just skip the AI assistant, photos, and task selection.
