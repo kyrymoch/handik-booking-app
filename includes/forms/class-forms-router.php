@@ -130,11 +130,17 @@ class Handik_Booking_App_Forms_Router {
 		}
 
 		$preset = $this->presets->find_by_slug( $slug );
+		// Disabled or missing presets MUST NOT advertise the form title in
+		// <title> — that was leaking offerings the admin had explicitly
+		// turned off. Fall back to a generic "Book a visit" label.
+		$is_public = $preset && ! empty( $preset['enabled'] );
 
 		add_filter(
 			'pre_get_document_title',
-			function () use ( $preset ) {
-				$title = $preset ? (string) $preset['form_title'] : __( 'Book a visit', 'handik-booking-app' );
+			function () use ( $preset, $is_public ) {
+				$title = $is_public
+					? (string) $preset['form_title']
+					: __( 'Book a visit', 'handik-booking-app' );
 				return $title . ' — ' . get_bloginfo( 'name' );
 			}
 		);

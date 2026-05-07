@@ -88,7 +88,7 @@ class Handik_Booking_App_Direct_Booking_Service {
 				'status' => 400,
 			);
 		}
-		$address_id = $this->addresses->sync(
+		$address_id = (int) $this->addresses->sync(
 			$contact_id,
 			array(
 				'address_full' => $address_full,
@@ -96,14 +96,28 @@ class Handik_Booking_App_Direct_Booking_Service {
 				'is_default'   => 1,
 			)
 		);
+		// Defensive: addresses->sync returns 0 on validation failure. We
+		// already validated address_full above, so 0 here means a wpdb-level
+		// failure or an unknown contact_id (also already checked). Bail with
+		// an explicit error rather than persisting a row pointing at #0.
+		if ( $address_id <= 0 ) {
+			return array(
+				'error'  => __( 'Could not save the address. Please try again.', 'handik-booking-app' ),
+				'status' => 500,
+			);
+		}
 
 		// Insert/update direct request row.
 		global $wpdb;
 		$table = Handik_Booking_App_DB::table( 'direct_booking_requests' );
 
+		// Per-row capture_token closes the IDOR on /forms/direct/{id}/capture.
+		// 32 unguessable chars; compared with hash_equals on capture.
+		$capture_token = wp_generate_password( 32, false, false );
+
 		$row = array(
 			'contact_id'        => $contact_id,
-			'address_id'        => (int) $address_id,
+			'address_id'        => $address_id,
 			'preset_slug'       => (string) $preset['preset_slug'],
 			'form_title'        => (string) $preset['form_title'],
 			'booking_type'      => (string) $preset['booking_type'],
@@ -112,6 +126,7 @@ class Handik_Booking_App_Direct_Booking_Service {
 			'source_url'        => isset( $payload['source_url'] ) ? esc_url_raw( (string) $payload['source_url'] ) : '',
 			'client_type'       => isset( $payload['client_type'] ) ? sanitize_key( (string) $payload['client_type'] ) : 'new_client',
 			'client_ip'         => $this->client_ip_packed(),
+			'capture_token'     => $capture_token,
 		);
 		$wpdb->insert( $table, $row );
 		$request_id = (int) $wpdb->insert_id;
@@ -153,20 +168,75 @@ class Handik_Booking_App_Direct_Booking_Service {
 			'request_id'      => $request_id,
 			'cal_booking_url' => $cal_url,
 			'preset_slug'     => $preset['preset_slug'],
+			// Issued once per submit; the SPA stores it in state and sends it
+			// back on /forms/direct/{id}/capture so anonymous parties can't
+			// overwrite the booking record by guessing incrementing IDs.
+			'capture_token'   => $capture_token,
 		);
 	}
 
 	/**
 	 * Called by the SPA when Cal.com's onBookingSuccessful fires.
 	 *
-	 * @param int                  $request_id Direct request ID.
-	 * @param array<string, mixed> $payload    Cal booking shape (best-effort).
-	 * @return array{success: true}
+	 * Security:
+	 *   1. The presented `capture_token` must match the one issued on submit
+	 *      (timing-safe `hash_equals`).
+	 *   2. Only rows currently in the OPENED state (i.e. an iframe was
+	 *      mounted) can transition to BOOKED. Already-booked rows are an
+	 *      idempotent no-op so a Cal embed that double-fires
+	 *      `bookingSuccessful` doesn't re-overwrite IDs. Cancelled rows
+	 *      cannot be re-opened.
+	 *
+	 * @param int                  $request_id    Direct request ID.
+	 * @param array<string, mixed> $payload       Cal booking shape (best-effort).
+	 * @param string               $capture_token Token from the submit response.
+	 * @return array{success?: true, error?: string, status?: int}
 	 */
-	public function capture_booking( $request_id, $payload ) {
+	public function capture_booking( $request_id, $payload, $capture_token = '' ) {
 		global $wpdb;
 		$table   = Handik_Booking_App_DB::table( 'direct_booking_requests' );
 		$payload = is_array( $payload ) ? $payload : array();
+
+		$row = $this->get( $request_id );
+		if ( ! $row ) {
+			return array(
+				'error'  => __( 'Booking request not found.', 'handik-booking-app' ),
+				'status' => 404,
+			);
+		}
+		// Token check (closes the IDOR). Never accept blank tokens — older
+		// clients on 1.4.0 will simply re-submit and pick up a fresh one.
+		$expected = (string) ( $row['capture_token'] ?? '' );
+		if ( '' === $expected || '' === (string) $capture_token || ! hash_equals( $expected, (string) $capture_token ) ) {
+			if ( $this->logger ) {
+				$this->logger->warning(
+					'Direct capture rejected: capture_token mismatch.',
+					array( 'request_id' => $request_id )
+				);
+			}
+			return array(
+				'error'  => __( 'This booking session has expired. Please reload the page and try again.', 'handik-booking-app' ),
+				'status' => 403,
+			);
+		}
+		// State precondition.
+		$status = (string) ( $row['status'] ?? '' );
+		if ( self::STATUS_BOOKED === $status ) {
+			// Idempotent — Cal embed sometimes fires bookingSuccessful twice.
+			return array( 'success' => true );
+		}
+		if ( self::STATUS_CANCELLED === $status ) {
+			return array(
+				'error'  => __( 'This request has been cancelled.', 'handik-booking-app' ),
+				'status' => 409,
+			);
+		}
+		if ( self::STATUS_READY !== $status && self::STATUS_OPENED !== $status ) {
+			return array(
+				'error'  => __( 'Cannot capture booking from this state.', 'handik-booking-app' ),
+				'status' => 409,
+			);
+		}
 
 		$booking_id  = '';
 		$booking_uid = '';

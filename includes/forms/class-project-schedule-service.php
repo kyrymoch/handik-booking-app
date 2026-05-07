@@ -118,7 +118,7 @@ class Handik_Booking_App_Project_Schedule_Service {
 				'status' => 400,
 			);
 		}
-		$address_id = $this->addresses->sync(
+		$address_id = (int) $this->addresses->sync(
 			$contact_id,
 			array(
 				'address_full' => $address_full,
@@ -126,13 +126,22 @@ class Handik_Booking_App_Project_Schedule_Service {
 				'is_default'   => 1,
 			)
 		);
+		// Defensive: addresses->sync returns 0 on validation failure. We
+		// already validated address_full above; bail explicitly rather than
+		// persisting a row pointing at #0.
+		if ( $address_id <= 0 ) {
+			return array(
+				'error'  => __( 'Could not save the address. Please try again.', 'handik-booking-app' ),
+				'status' => 500,
+			);
+		}
 
 		global $wpdb;
 		$table = Handik_Booking_App_DB::table( 'project_scheduling_requests' );
 
 		$row = array(
 			'contact_id'                => $contact_id,
-			'address_id'                => (int) $address_id,
+			'address_id'                => $address_id,
 			'preset_slug'               => (string) $preset['preset_slug'],
 			'form_title'                => (string) $preset['form_title'],
 			'required_days'             => $required_days,
