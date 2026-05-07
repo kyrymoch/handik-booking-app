@@ -989,6 +989,24 @@
 	HandikBookingForm.prototype.bindEvents = function () {
 		var self = this;
 
+		// Sprint 7 (a11y): release any prior modal focus trap before the
+		// re-render swaps the dialog's DOM out, then re-arm if the
+		// restart-confirm dialog is visible in the new render.
+		if ( this._releaseModalFocusTrap ) {
+			this._releaseModalFocusTrap();
+			this._releaseModalFocusTrap = null;
+		}
+		if ( this.state && this.state.restartConfirmVisible ) {
+			var dialog = this.shell.querySelector( '.handik-modal' );
+			if ( dialog ) {
+				this._releaseModalFocusTrap = trapModalFocus( dialog );
+				var cancelBtn = dialog.querySelector( '[data-action="restart-cancel"]' );
+				if ( cancelBtn ) {
+					window.requestAnimationFrame( function () { cancelBtn.focus(); } );
+				}
+			}
+		}
+
 		this.shell.querySelectorAll( '[data-model]' ).forEach( function ( input ) {
 			input.addEventListener( 'input', function () { self.onInput( input ); } );
 			input.addEventListener( 'blur',  function () { self.onBlur( input ); } );
@@ -2230,6 +2248,46 @@
 		if ( d.length > 6 ) { parts.push( d.slice( 6, Math.min( 8, d.length ) ) ); }
 		if ( d.length > 8 ) { parts.push( d.slice( 8, Math.min( 10, d.length ) ) ); }
 		return '+1 ' + parts.join( ' ' );
+	}
+
+	// Sprint 7 (a11y): shared focus trap for the restart-confirm modal. WCAG
+	// 2.4.3 — Tab / Shift+Tab cycle within the dialog. Mirror of the helper
+	// in booking-app.js / booking-app-admin.js (kept inline because there's
+	// no shared module loader in this build).
+	function trapModalFocus( container ) {
+		if ( ! container ) { return function () {}; }
+		var previouslyFocused = document.activeElement;
+		var FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+		function visible( el ) {
+			return el && ! el.hasAttribute( 'aria-hidden' ) && ( el.offsetWidth || el.offsetHeight || el.getClientRects().length );
+		}
+		function getFocusable() {
+			return Array.prototype.filter.call( container.querySelectorAll( FOCUSABLE ), visible );
+		}
+		function onKey( event ) {
+			if ( 'Tab' !== event.key ) { return; }
+			var list = getFocusable();
+			if ( ! list.length ) { event.preventDefault(); return; }
+			var first = list[ 0 ];
+			var last  = list[ list.length - 1 ];
+			var active = document.activeElement;
+			if ( event.shiftKey ) {
+				if ( active === first || ! container.contains( active ) ) {
+					event.preventDefault();
+					last.focus();
+				}
+			} else if ( active === last ) {
+				event.preventDefault();
+				first.focus();
+			}
+		}
+		document.addEventListener( 'keydown', onKey, true );
+		return function release() {
+			document.removeEventListener( 'keydown', onKey, true );
+			if ( previouslyFocused && 'function' === typeof previouslyFocused.focus ) {
+				try { previouslyFocused.focus(); } catch ( e ) { /* ignore */ }
+			}
+		};
 	}
 
 	function escapeHtml( s ) {

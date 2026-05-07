@@ -106,6 +106,49 @@
 	// Modal
 	// ============================================================
 
+	// Sprint 7 (a11y): shared focus trap. WCAG 2.4.3 — when a modal is open,
+	// Tab and Shift+Tab must cycle within the dialog and never escape into the
+	// underlying admin DOM. The trap also remembers the previously focused
+	// element so we can restore focus when the modal closes (so keyboard
+	// users don't snap to the top of the page).
+	function trapModalFocus( container ) {
+		if ( ! container ) { return function () {}; }
+		const previouslyFocused = document.activeElement;
+		const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+		function visible( el ) {
+			return el && ! el.hasAttribute( 'aria-hidden' ) && ( el.offsetWidth || el.offsetHeight || el.getClientRects().length );
+		}
+		function getFocusable() {
+			return Array.prototype.filter.call( container.querySelectorAll( FOCUSABLE ), visible );
+		}
+		function onKey( event ) {
+			if ( 'Tab' !== event.key ) { return; }
+			const list = getFocusable();
+			if ( ! list.length ) { event.preventDefault(); container.focus(); return; }
+			const first = list[ 0 ];
+			const last  = list[ list.length - 1 ];
+			const active = document.activeElement;
+			if ( event.shiftKey ) {
+				if ( active === first || ! container.contains( active ) ) {
+					event.preventDefault();
+					last.focus();
+				}
+			} else {
+				if ( active === last ) {
+					event.preventDefault();
+					first.focus();
+				}
+			}
+		}
+		document.addEventListener( 'keydown', onKey, true );
+		return function release() {
+			document.removeEventListener( 'keydown', onKey, true );
+			if ( previouslyFocused && 'function' === typeof previouslyFocused.focus ) {
+				try { previouslyFocused.focus(); } catch ( e ) { /* ignore */ }
+			}
+		};
+	}
+
 	function openModal( opts ) {
 		opts = opts || {};
 		return new Promise( function( resolve ) {
@@ -162,7 +205,9 @@
 			modal.appendChild( actions );
 			backdrop.appendChild( modal );
 
+			let releaseFocusTrap = function () {};
 			function close( value ) {
+				releaseFocusTrap();
 				if ( backdrop.parentNode ) {
 					backdrop.parentNode.removeChild( backdrop );
 				}
@@ -183,6 +228,7 @@
 			} );
 
 			document.body.appendChild( backdrop );
+			releaseFocusTrap = trapModalFocus( modal );
 			window.setTimeout( function() {
 				if ( textarea ) {
 					textarea.focus();
@@ -216,7 +262,9 @@
 						'<button type="button" class="button button-primary" data-action="save">' + ( i18n.save || 'Save' ) + '</button>' +
 					'</div>' +
 				'</div>';
+			let releaseFocusTrap = function () {};
 			function close( result ) {
+				releaseFocusTrap();
 				if ( backdrop.parentNode ) { backdrop.parentNode.removeChild( backdrop ); }
 				document.removeEventListener( 'keydown', onKey, true );
 				resolve( result );
@@ -239,6 +287,7 @@
 				}
 			} );
 			document.body.appendChild( backdrop );
+			releaseFocusTrap = trapModalFocus( backdrop.querySelector( '.handik-admin-modal' ) );
 			window.setTimeout( function() {
 				const first = backdrop.querySelector( '[data-field="address_full"]' );
 				if ( first ) { first.focus(); }
@@ -525,6 +574,65 @@
 			editor.addEventListener( 'change', scheduleSave );
 			editor.addEventListener( 'blur', scheduleSave, true );
 
+			// Sprint 7 (a11y): arrow-key reorder for the drag handles. WCAG
+			// 2.1.1 — SortableJS is mouse/touch only, so keyboard users
+			// previously had no way to change order. Up/Down moves the row
+			// among its siblings; Home/End jumps to top/bottom; Enter/Space
+			// announces a brief "moved to position X of N" via a polite
+			// live region. Save is debounced via the existing scheduleSave.
+			let liveRegion = editor.querySelector( '[data-handik-catalog-live]' );
+			if ( ! liveRegion ) {
+				liveRegion = document.createElement( 'div' );
+				liveRegion.setAttribute( 'aria-live', 'polite' );
+				liveRegion.setAttribute( 'aria-atomic', 'true' );
+				liveRegion.className = 'screen-reader-text';
+				liveRegion.dataset.handikCatalogLive = '1';
+				editor.appendChild( liveRegion );
+			}
+			function announce( msg ) {
+				liveRegion.textContent = '';
+				window.setTimeout( function () { liveRegion.textContent = msg; }, 30 );
+			}
+			function moveAmongSiblings( handle, delta ) {
+				const kind = handle.dataset.handikReorder;
+				if ( ! kind ) { return; }
+				const item = 'group' === kind ? handle.closest( '[data-handik-group]' ) : handle.closest( '[data-handik-task]' );
+				if ( ! item || ! item.parentElement ) { return; }
+				const parent = item.parentElement;
+				const siblings = Array.prototype.filter.call(
+					parent.children,
+					function ( el ) { return el === item || el.matches( '[data-handik-group]' ) || el.matches( '[data-handik-task]' ); }
+				);
+				const currentIndex = siblings.indexOf( item );
+				let nextIndex = currentIndex + delta;
+				if ( delta === Infinity ) { nextIndex = siblings.length - 1; }
+				if ( delta === -Infinity ) { nextIndex = 0; }
+				if ( nextIndex < 0 || nextIndex >= siblings.length || nextIndex === currentIndex ) { return; }
+				if ( nextIndex < currentIndex ) {
+					parent.insertBefore( item, siblings[ nextIndex ] );
+				} else {
+					const after = siblings[ nextIndex ];
+					if ( after.nextSibling ) {
+						parent.insertBefore( item, after.nextSibling );
+					} else {
+						parent.appendChild( item );
+					}
+				}
+				handle.focus();
+				announce( ( i18n.reorderedTo || 'Moved to position %1 of %2' )
+					.replace( '%1', String( nextIndex + 1 ) )
+					.replace( '%2', String( siblings.length ) ) );
+				scheduleSave();
+			}
+			editor.addEventListener( 'keydown', function ( event ) {
+				const handle = event.target.closest && event.target.closest( '.handik-catalog-handle' );
+				if ( ! handle || ! handle.dataset.handikReorder ) { return; }
+				if ( 'ArrowUp' === event.key ) { event.preventDefault(); moveAmongSiblings( handle, -1 ); }
+				else if ( 'ArrowDown' === event.key ) { event.preventDefault(); moveAmongSiblings( handle, 1 ); }
+				else if ( 'Home' === event.key ) { event.preventDefault(); moveAmongSiblings( handle, -Infinity ); }
+				else if ( 'End' === event.key ) { event.preventDefault(); moveAmongSiblings( handle, Infinity ); }
+			} );
+
 			function attachGroupSortables() {
 				if ( ! window.Sortable ) { return; }
 				if ( ! groupsRoot.dataset.sortableInit ) {
@@ -565,7 +673,7 @@
 	function groupTemplate() {
 		return '<div class="handik-catalog-group" data-handik-group>' +
 			'<div class="handik-catalog-group__header">' +
-				'<span class="handik-catalog-handle" aria-hidden="true">⋮⋮</span>' +
+				'<button type="button" class="handik-catalog-handle" data-handik-reorder="group" aria-label="' + ( i18n.reorderCategory || 'Reorder category (arrow keys)' ) + '">⋮⋮</button>' +
 				'<label class="handik-admin-field"><span class="handik-admin-field__label">Category title</span><input type="text" data-handik-group-name /></label>' +
 				'<button type="button" class="button-link-delete" data-handik-remove-group>Remove</button>' +
 			'</div>' +
@@ -576,7 +684,7 @@
 
 	function taskTemplate() {
 		return '<div class="handik-catalog-task" data-handik-task>' +
-			'<span class="handik-catalog-handle" aria-hidden="true">⋮⋮</span>' +
+			'<button type="button" class="handik-catalog-handle" data-handik-reorder="task" aria-label="' + ( i18n.reorderService || 'Reorder service (arrow keys)' ) + '">⋮⋮</button>' +
 			'<div class="handik-catalog-task__fields">' +
 				'<div class="handik-admin-grid">' +
 					'<label class="handik-admin-field"><span>Service ID</span><input type="text" data-handik-task-id /></label>' +

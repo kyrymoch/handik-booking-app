@@ -1047,6 +1047,9 @@ a.handik-admin-today-card-link:focus-visible .handik-admin-today-card {
 }
 
 .handik-catalog-handle {
+	/* Sprint 7 (a11y): handle is now a real <button> for keyboard reorder.
+	 * Strip browser button chrome so it matches the previous span look,
+	 * but keep a visible focus ring so keyboard users can see selection. */
 	cursor: grab;
 	color: #94a3b8;
 	font-weight: bold;
@@ -1054,10 +1057,21 @@ a.handik-admin-today-card-link:focus-visible .handik-admin-today-card {
 	font-size: 1.2rem;
 	display: inline-flex;
 	align-items: center;
+	background: transparent;
+	border: 0;
+	padding: 0 4px;
+	line-height: 1;
 }
 
 .handik-catalog-handle:hover {
 	color: #475569;
+}
+
+.handik-catalog-handle:focus-visible {
+	outline: 2px solid #2563eb;
+	outline-offset: 2px;
+	border-radius: 4px;
+	color: #1d4ed8;
 }
 
 .handik-catalog-task[data-handik-task].sortable-ghost,

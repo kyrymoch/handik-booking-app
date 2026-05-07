@@ -131,9 +131,35 @@ class Handik_Booking_App_Admin_Dashboard {
 	}
 
 	protected function ensure_next_visit_decorations( array $data ) {
+		// Sprint 7 (admin perf): bulk-load all the booking rows the dashboard
+		// needs (next-visits + today/tomorrow/week previews) in a single
+		// `bookings->get_many()` call. Was 8 single-row `get()` lookups in
+		// the worst case (5 next-visits + 3 previews) — every dashboard
+		// hit, on a 60-second cache miss.
+		$wanted_ids = array();
+		foreach ( ( $data['next_visit_ids'] ?? array() ) as $booking_id ) {
+			$bid = (int) $booking_id;
+			if ( $bid > 0 ) { $wanted_ids[] = $bid; }
+		}
+		foreach ( array( 'today', 'tomorrow', 'week' ) as $key ) {
+			$bid = (int) ( $data[ $key . '_preview_id' ] ?? 0 );
+			if ( $bid > 0 ) { $wanted_ids[] = $bid; }
+		}
+
+		$bulk = ( $this->bookings && method_exists( $this->bookings, 'get_many' ) )
+			? $this->bookings->get_many( $wanted_ids )
+			: array();
+		$resolve = function ( $id ) use ( $bulk ) {
+			$id = (int) $id;
+			if ( ! $id ) { return null; }
+			if ( isset( $bulk[ $id ] ) ) { return $bulk[ $id ]; }
+			// Fallback for environments where get_many isn't available.
+			return $this->bookings ? $this->bookings->get( $id ) : null;
+		};
+
 		$decorated = array();
 		foreach ( ( $data['next_visit_ids'] ?? array() ) as $booking_id ) {
-			$row = $booking_id && $this->bookings ? $this->bookings->get( (int) $booking_id ) : null;
+			$row = $resolve( $booking_id );
 			if ( $row ) {
 				$decorated[] = $row;
 			}
@@ -141,8 +167,7 @@ class Handik_Booking_App_Admin_Dashboard {
 		$data['next_visits'] = $decorated;
 
 		foreach ( array( 'today', 'tomorrow', 'week' ) as $key ) {
-			$booking_id = (int) ( $data[ $key . '_preview_id' ] ?? 0 );
-			$row = $booking_id && $this->bookings ? $this->bookings->get( $booking_id ) : null;
+			$row = $resolve( (int) ( $data[ $key . '_preview_id' ] ?? 0 ) );
 			$data[ $key . '_preview' ] = $row ? $this->preview_for_booking( $row ) : '';
 		}
 		return $data;
@@ -223,6 +248,11 @@ class Handik_Booking_App_Admin_Dashboard {
 	// -------- block 2: next 5 visits --------------------------------------
 
 	protected function next_visits_markup( array $rows ) {
+		// Sprint 7 (admin perf): bulk-load decorations once for the 5-row
+		// visit list. Each row used to fan out 3 single-row `get()` calls
+		// (request/contact/address) → 15 queries per dashboard cache miss.
+		$decorations = $this->decorate_next_visits( $rows );
+
 		ob_start();
 		?>
 		<section class="handik-admin-dashboard__section">
@@ -236,7 +266,7 @@ class Handik_Booking_App_Admin_Dashboard {
 			<?php else : ?>
 				<ul class="handik-admin-visit-list">
 					<?php foreach ( $rows as $row ) : ?>
-						<?php echo $this->next_visit_row( $row ); ?>
+						<?php echo $this->next_visit_row( $row, $decorations ); ?>
 					<?php endforeach; ?>
 				</ul>
 			<?php endif; ?>
@@ -245,14 +275,67 @@ class Handik_Booking_App_Admin_Dashboard {
 		return (string) ob_get_clean();
 	}
 
-	protected function next_visit_row( array $booking ) {
+	/**
+	 * Sprint 7 (admin perf): bulk-load request/contact/address records keyed
+	 * by booking id. Mirrors `class-admin-bookings.php::decorate_bookings()`.
+	 *
+	 * @param array<int, array<string, mixed>> $rows Booking rows.
+	 * @return array<int, array{request: ?array, contact: ?array, address: ?array}>
+	 */
+	protected function decorate_next_visits( array $rows ) {
+		if ( empty( $rows ) ) {
+			return array();
+		}
+		$request_ids = array();
+		foreach ( $rows as $row ) {
+			$rid = (int) ( $row['job_request_id'] ?? 0 );
+			if ( $rid > 0 ) { $request_ids[] = $rid; }
+		}
+		$requests = ( $this->job_requests && method_exists( $this->job_requests, 'get_many' ) )
+			? $this->job_requests->get_many( $request_ids )
+			: array();
+		$contact_ids = array();
+		$address_ids = array();
+		foreach ( $requests as $request ) {
+			$cid = (int) ( $request['contact_id'] ?? 0 );
+			$aid = (int) ( $request['address_id'] ?? 0 );
+			if ( $cid > 0 ) { $contact_ids[] = $cid; }
+			if ( $aid > 0 ) { $address_ids[] = $aid; }
+		}
+		$contacts  = ( $this->contacts  && method_exists( $this->contacts,  'get_many' ) ) ? $this->contacts->get_many( $contact_ids )  : array();
+		$addresses = ( $this->addresses && method_exists( $this->addresses, 'get_many' ) ) ? $this->addresses->get_many( $address_ids ) : array();
+
+		$out = array();
+		foreach ( $rows as $row ) {
+			$bid = (int) ( $row['id'] ?? 0 );
+			$rid = (int) ( $row['job_request_id'] ?? 0 );
+			$req = $rid && isset( $requests[ $rid ] ) ? $requests[ $rid ] : null;
+			$cid = $req ? (int) ( $req['contact_id'] ?? 0 ) : 0;
+			$aid = $req ? (int) ( $req['address_id'] ?? 0 ) : 0;
+			$out[ $bid ] = array(
+				'request' => $req,
+				'contact' => $cid && isset( $contacts[ $cid ] )  ? $contacts[ $cid ]   : null,
+				'address' => $aid && isset( $addresses[ $aid ] ) ? $addresses[ $aid ] : null,
+			);
+		}
+		return $out;
+	}
+
+	protected function next_visit_row( array $booking, ?array $decorations = null ) {
 		$detail_url = Handik_Booking_App_Admin_Helpers::admin_url_for(
 			'handik-booking-app-bookings',
 			array( 'booking_id' => (int) ( $booking['id'] ?? 0 ) )
 		);
-		$request = ! empty( $booking['job_request_id'] ) && $this->job_requests ? $this->job_requests->get( (int) $booking['job_request_id'] ) : null;
-		$contact = ( $request && ! empty( $request['contact_id'] ) && $this->contacts ) ? $this->contacts->get( (int) $request['contact_id'] ) : null;
-		$address = ( $request && ! empty( $request['address_id'] ) && $this->addresses ) ? $this->addresses->get( (int) $request['address_id'] ) : null;
+		if ( null !== $decorations && isset( $decorations[ (int) ( $booking['id'] ?? 0 ) ] ) ) {
+			$bundle  = $decorations[ (int) $booking['id'] ];
+			$request = $bundle['request'];
+			$contact = $bundle['contact'];
+			$address = $bundle['address'];
+		} else {
+			$request = ! empty( $booking['job_request_id'] ) && $this->job_requests ? $this->job_requests->get( (int) $booking['job_request_id'] ) : null;
+			$contact = ( $request && ! empty( $request['contact_id'] ) && $this->contacts ) ? $this->contacts->get( (int) $request['contact_id'] ) : null;
+			$address = ( $request && ! empty( $request['address_id'] ) && $this->addresses ) ? $this->addresses->get( (int) $request['address_id'] ) : null;
+		}
 
 		$when_text  = Handik_Booking_App_Admin_Helpers::format_booking_window( $booking, 'compact' );
 		$client     = $contact ? (string) ( $contact['full_name'] ?? '' ) : __( 'Unknown client', 'handik-booking-app' );

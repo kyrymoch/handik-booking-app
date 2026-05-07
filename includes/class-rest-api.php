@@ -486,13 +486,32 @@ class Handik_Booking_App_REST_API {
 
 	public function admin_migrations_run( WP_REST_Request $request ) {
 		$migrations = new Handik_Booking_App_Migrations();
-		$migrations->migrate();
+		$result     = $migrations->migrate();
+		// Sprint 7: surface the actual outcome instead of always claiming
+		// success. Previously the admin button returned `success=true`
+		// even when nothing happened (or when a step had silently failed
+		// in the legacy code path).
 		if ( $this->logger ) {
-			$this->logger->info( 'Admin re-ran migrations.', array( 'admin_id' => get_current_user_id() ) );
+			$this->logger->info(
+				'Admin re-ran migrations.',
+				array(
+					'admin_id' => get_current_user_id(),
+					'ran'      => is_array( $result ) && isset( $result['ran'] ) ? $result['ran'] : array(),
+					'skipped'  => is_array( $result ) ? ! empty( $result['skipped'] ) : false,
+					'error'    => is_array( $result ) ? ( $result['error'] ?? null ) : null,
+				)
+			);
 		}
+		$ran     = is_array( $result ) && isset( $result['ran'] ) ? array_values( $result['ran'] ) : array();
+		$skipped = is_array( $result ) ? ! empty( $result['skipped'] ) : false;
+		$error   = is_array( $result ) ? ( $result['error'] ?? null ) : null;
 		return rest_ensure_response( array(
-			'success'    => true,
+			'success'    => null === $error,
 			'db_version' => (string) get_option( Handik_Booking_App_Migrations::OPTION_NAME, '0.0.0' ),
+			'ran'        => $ran,
+			'skipped'    => $skipped,
+			'error'      => $error,
+			'no_changes' => ! $error && ! $skipped && empty( $ran ),
 		) );
 	}
 
@@ -526,21 +545,51 @@ class Handik_Booking_App_REST_API {
 		if ( ! $exists ) {
 			return new WP_Error( 'handik_no_table', __( 'Table missing — run migrations first.', 'handik-booking-app' ), array( 'status' => 404 ) );
 		}
-		$rows = $wpdb->get_results( "SELECT * FROM {$table} ORDER BY id ASC", ARRAY_A );
-		$rows = is_array( $rows ) ? $rows : array();
 
 		nocache_headers();
 		header( 'Content-Type: text/csv; charset=UTF-8' );
 		header( 'Content-Disposition: attachment; filename="handik-' . $table_short . '-' . gmdate( 'Y-m-d-His' ) . '.csv"' );
-		$out = fopen( 'php://output', 'w' );
-		if ( ! empty( $rows ) ) {
-			fputcsv( $out, array_keys( $rows[0] ) );
-			foreach ( $rows as $row ) {
+
+		// Sprint 7 (admin perf): stream the export in keyset-paginated batches
+		// instead of loading the whole table into PHP memory. The old path
+		// was `SELECT *` with no LIMIT — fine for a 1k-row contacts table,
+		// fatal on a 100k-row messages table (OOM at PHP's memory_limit).
+		// We page on the primary key (`id`) so OFFSET cost stays O(1) and
+		// we drop output to the client as we go via flush().
+		@set_time_limit( 0 ); // phpcs:ignore WordPress.PHP.NoSilencedErrors
+		while ( ob_get_level() > 0 ) { @ob_end_flush(); } // phpcs:ignore WordPress.PHP.NoSilencedErrors
+		@ob_implicit_flush( 1 ); // phpcs:ignore WordPress.PHP.NoSilencedErrors,PHPCompatibility.FunctionUse.NewFunctionParameters.ob_implicit_flushFlagFound
+
+		$out         = fopen( 'php://output', 'w' );
+		$batch_size  = 1000;
+		$last_id     = 0;
+		$header_done = false;
+		$any_row     = false;
+		while ( true ) {
+			$batch = $wpdb->get_results(
+				$wpdb->prepare( "SELECT * FROM {$table} WHERE id > %d ORDER BY id ASC LIMIT %d", $last_id, $batch_size ), // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+				ARRAY_A
+			);
+			if ( empty( $batch ) ) {
+				break;
+			}
+			$any_row = true;
+			foreach ( $batch as $row ) {
+				if ( ! $header_done ) {
+					fputcsv( $out, array_keys( $row ) );
+					$header_done = true;
+				}
 				fputcsv( $out, array_map( static function( $v ) {
 					return is_null( $v ) ? '' : (string) $v;
 				}, $row ) );
+				$last_id = (int) $row['id'];
 			}
-		} else {
+			// Free the batch's memory before the next round so peak usage
+			// stays bounded by `$batch_size` rows, not the whole table.
+			unset( $batch );
+			if ( function_exists( 'flush' ) ) { flush(); }
+		}
+		if ( ! $any_row ) {
 			fputcsv( $out, array( 'empty' ) );
 		}
 		fclose( $out );

@@ -225,6 +225,19 @@ class Handik_Booking_App_Admin_People {
 				return '';
 		}
 
+		// Sprint 7 (admin perf): bulk-load contacts for the focus list. The
+		// dashboard "drafts older than X" / "ready not booked" / "unsafe"
+		// chips each show up to 10 rows; without this every chip was 10
+		// per-row `contacts->get()` queries. Now: one IN(...) query per chip.
+		$focus_contact_ids = array();
+		foreach ( $rows as $r ) {
+			$cid = (int) ( $r['contact_id'] ?? 0 );
+			if ( $cid > 0 ) { $focus_contact_ids[] = $cid; }
+		}
+		$focus_contacts = ( $this->contacts && method_exists( $this->contacts, 'get_many' ) )
+			? $this->contacts->get_many( $focus_contact_ids )
+			: array();
+
 		ob_start();
 		?>
 		<section class="handik-admin-block">
@@ -234,7 +247,10 @@ class Handik_Booking_App_Admin_People {
 			<?php else : ?>
 				<ul class="handik-admin-request-list">
 					<?php foreach ( $rows as $r ) :
-						$contact = ! empty( $r['contact_id'] ) ? $this->contacts->get( (int) $r['contact_id'] ) : null;
+						$cid = (int) ( $r['contact_id'] ?? 0 );
+						$contact = $cid && isset( $focus_contacts[ $cid ] )
+							? $focus_contacts[ $cid ]
+							: ( $cid ? $this->contacts->get( $cid ) : null );
 						$url = Handik_Booking_App_Admin_Helpers::admin_url_for( 'handik-booking-app-crm', array( 'request_id' => (int) $r['id'] ) );
 					?>
 						<li><a href="<?php echo esc_url( $url ); ?>">
@@ -282,12 +298,23 @@ class Handik_Booking_App_Admin_People {
 	}
 
 	protected function bookings_for_contact( array $requests ) {
-		$out = array();
+		// Sprint 7 (admin perf): one IN(...) round trip instead of N
+		// `find_latest_for_request` lookups (one per request). On a person
+		// with 30 historical requests this dropped from 30 queries to 1.
+		if ( empty( $requests ) || ! $this->bookings ) {
+			return array();
+		}
+		$ids = array();
 		foreach ( $requests as $r ) {
 			$rid = (int) ( $r['id'] ?? 0 );
-			if ( ! $rid || ! $this->bookings ) {
-				continue;
-			}
+			if ( $rid > 0 ) { $ids[] = $rid; }
+		}
+		if ( method_exists( $this->bookings, 'find_latest_for_requests' ) ) {
+			return $this->bookings->find_latest_for_requests( $ids );
+		}
+		// Fallback if running against an older bookings service.
+		$out = array();
+		foreach ( $ids as $rid ) {
 			$b = $this->bookings->find_latest_for_request( $rid );
 			if ( $b ) {
 				$out[ $rid ] = $b;
