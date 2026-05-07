@@ -111,6 +111,14 @@
 	// underlying admin DOM. The trap also remembers the previously focused
 	// element so we can restore focus when the modal closes (so keyboard
 	// users don't snap to the top of the page).
+	//
+	// 2.1.15.1 audit fix (P1 #6): a single module-scoped stack so nested
+	// modals don't double-handle Tab. Only the topmost trap responds; older
+	// traps (still in the stack until their owner releases) sit dormant.
+	// 2.1.15.1 audit fix (P2 #7): on release, only restore focus to the
+	// previously focused element if it's still in the live DOM — the
+	// trigger button may have been re-rendered while the dialog was open.
+	const __handikModalTrapStack = [];
 	function trapModalFocus( container ) {
 		if ( ! container ) { return function () {}; }
 		const previouslyFocused = document.activeElement;
@@ -121,8 +129,11 @@
 		function getFocusable() {
 			return Array.prototype.filter.call( container.querySelectorAll( FOCUSABLE ), visible );
 		}
-		function onKey( event ) {
+		const trap = { container: container, onKey: null };
+		trap.onKey = function ( event ) {
 			if ( 'Tab' !== event.key ) { return; }
+			// Only the topmost trap on the stack is active.
+			if ( __handikModalTrapStack[ __handikModalTrapStack.length - 1 ] !== trap ) { return; }
 			const list = getFocusable();
 			if ( ! list.length ) { event.preventDefault(); container.focus(); return; }
 			const first = list[ 0 ];
@@ -133,17 +144,22 @@
 					event.preventDefault();
 					last.focus();
 				}
-			} else {
-				if ( active === last ) {
-					event.preventDefault();
-					first.focus();
-				}
+			} else if ( active === last ) {
+				event.preventDefault();
+				first.focus();
 			}
-		}
-		document.addEventListener( 'keydown', onKey, true );
+		};
+		__handikModalTrapStack.push( trap );
+		document.addEventListener( 'keydown', trap.onKey, true );
 		return function release() {
-			document.removeEventListener( 'keydown', onKey, true );
-			if ( previouslyFocused && 'function' === typeof previouslyFocused.focus ) {
+			document.removeEventListener( 'keydown', trap.onKey, true );
+			const idx = __handikModalTrapStack.indexOf( trap );
+			if ( idx > -1 ) { __handikModalTrapStack.splice( idx, 1 ); }
+			if (
+				previouslyFocused
+				&& document.contains( previouslyFocused )
+				&& 'function' === typeof previouslyFocused.focus
+			) {
 				try { previouslyFocused.focus(); } catch ( e ) { /* ignore */ }
 			}
 		};

@@ -96,18 +96,27 @@ class Handik_Booking_App_Migrations {
 	}
 
 	protected function acquire_lock() {
-		// `add_option` with autoload=false is the closest WP gives us to
-		// SETNX — returns true only if the option didn't exist. We attach
-		// a timestamp so a stuck lock from a fatal can be force-recovered
-		// after 60 seconds without manual intervention.
+		// 2.1.15.1 audit fix (P2 #1): atomic SETNX via `add_option`.
+		// The previous version was a classic TOCTOU — get_option then
+		// update_option — which two near-simultaneous boots could both
+		// pass, defeating the parallel-run protection the lock was meant
+		// to add. `add_option` is enforced by the wp_options
+		// `option_name` UNIQUE index at the DB level, so exactly one
+		// caller wins the insert.
 		$now = time();
-		$existing = get_option( self::LOCK_OPTION, 0 );
-		if ( $existing && ( $now - (int) $existing ) < 60 ) {
-			return false;
+		if ( add_option( self::LOCK_OPTION, $now, '', false ) ) {
+			return true;
 		}
-		// Either no lock or expired — claim it.
-		update_option( self::LOCK_OPTION, $now, false );
-		return true;
+		// Insert lost — someone holds the lock. Recover if the existing
+		// row is older than 60s (assumed crashed/timed-out caller).
+		// This recovery branch isn't atomic, but the worst case is the
+		// SAME race the activation path now prevents — rare and bounded.
+		$existing = (int) get_option( self::LOCK_OPTION, 0 );
+		if ( $existing && ( $now - $existing ) >= 60 ) {
+			update_option( self::LOCK_OPTION, $now, false );
+			return true;
+		}
+		return false;
 	}
 
 	protected function release_lock() {

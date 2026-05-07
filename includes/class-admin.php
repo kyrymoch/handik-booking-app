@@ -125,11 +125,18 @@ class Handik_Booking_App_Admin {
 		}
 		check_admin_referer( 'handik_booking_app_save_settings', 'handik_booking_app_settings_nonce' );
 
-		// Sprint 8: if the submission contains any integration-secret
-		// fields (API keys, auth tokens, Cal webhook shared secret), the
-		// user must also hold MANAGE_INTEGRATIONS or those values are
-		// stripped before the settings update — otherwise the rest of the
-		// form (booking flow, appearance, service catalog) saves normally.
+		// Sprint 8 (hotfix 2.1.15.1): if the submission contains any
+		// integration-secret fields (API keys, auth tokens, Cal webhook
+		// shared secret, Cal.com API credentials), the user must also
+		// hold MANAGE_INTEGRATIONS or those values are stripped before
+		// the settings update — otherwise the rest of the form (booking
+		// flow, appearance, service catalog) saves normally.
+		//
+		// 2.1.15.1 P0 audit fix: list expanded to include cal_api_key /
+		// cal_api_base / cal_api_version / cal_api_timezone. Those live
+		// on App Setup → Cal.com (not the Integrations tab) but they ARE
+		// rotating credentials — a MANAGE_BOOKINGS-only user could otherwise
+		// craft a POST that swapped the Cal.com API key.
 		$payload = wp_unslash( $_POST );
 		if ( ! current_user_can( Handik_Booking_App_Capabilities::MANAGE_INTEGRATIONS ) ) {
 			$integration_keys = array(
@@ -138,7 +145,9 @@ class Handik_Booking_App_Admin {
 				'google_maps_api_key', 'google_maps_country',
 				'twilio_account_sid', 'twilio_auth_token', 'twilio_verify_service_sid',
 				'github_repo_url', 'github_repo_branch', 'github_access_token',
-				'github_release_asset_pattern', 'cal_webhook_secret',
+				'github_release_asset_pattern',
+				'cal_webhook_secret', 'cal_api_key', 'cal_api_base',
+				'cal_api_version', 'cal_api_timezone',
 			);
 			$dropped = false;
 			foreach ( $integration_keys as $key ) {

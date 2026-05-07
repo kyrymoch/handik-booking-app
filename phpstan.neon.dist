@@ -12,9 +12,11 @@ parameters:
     bootstrapFiles:
         - %currentWorkingDirectory%/handik-booking-app.php
     treatPhpDocTypesAsCertain: false
-    ignoreErrors:
-        # WordPress hooks intentionally accept mixed callbacks.
-        - '#Cannot access offset .* on mixed#'
+    # 2.1.15.1: removed the stale `#Cannot access offset .* on mixed#`
+    # ignore pattern — Sprint 7+8 cleaned up the call sites it covered,
+    # and the audit cleanup tightened admin_migrations_run typing so
+    # nothing matches it anymore. Re-add only if a real new violation
+    # surfaces (and consider fixing it instead).
 
 includes:
     - vendor/szepeviktor/phpstan-wordpress/extension.neon
