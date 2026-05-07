@@ -270,7 +270,7 @@ class Handik_Booking_App_Forms_Router {
 			'phoneStepIntro'    => __( "We'll text you a one-time code to confirm.", 'handik-booking-app' ),
 			'otpStepTitle'      => __( 'Enter the code', 'handik-booking-app' ),
 			/* translators: %s: phone number with country code. */
-			'otpIntro'          => __( 'Enter the 6-digit code we just sent to %s.', 'handik-booking-app' ),
+			'otpIntro'          => __( 'Enter the 6-digit code we just sent to %s. We will verify it automatically.', 'handik-booking-app' ),
 			'otpCodeLabel'      => __( 'Verification code', 'handik-booking-app' ),
 			'otpPlaceholder'    => __( '6-digit code', 'handik-booking-app' ),
 			'otpInvalid'        => __( 'That code is invalid or expired. Please try again.', 'handik-booking-app' ),

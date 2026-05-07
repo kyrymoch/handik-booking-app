@@ -506,11 +506,14 @@
 					escapeHtml( this.t( 'otpDifferentNumberCta' ) ),
 				'</button>',
 			'</div>',
+			// Hotfix 2.1.13.1: Verify is now automatic — the moment the
+			// customer types the 6th digit (or the SMS-autofill chip is
+			// tapped) `onInput` calls `verifyPhoneOtp`. The button is hidden
+			// to remove the dead-state UI ("can't tap, can't tell why")
+			// reported by the owner.
 			this.footerActionsMarkup( {
-				continueAction: 'otp-verify',
-				continueLabel: this.t( 'verifyCta' ),
 				hideBack: true,
-				continueMuted: this.state.otpCode.length < 4 || this.state.busy
+				hideContinue: true
 			} )
 		].join( '' );
 	};
@@ -1044,6 +1047,20 @@
 		}
 		this.setFieldValue( model, value );
 		this.scheduleDraftSave();
+
+		// Hotfix 2.1.13.1: auto-advance the OTP step as soon as the customer
+		// has typed a full 6-digit code. The Verify button has been removed
+		// from the markup in this build — typing the last digit (or pasting
+		// the SMS autofill suggestion) verifies immediately. Guarded against
+		// re-entry while the verify request is in flight.
+		if ( 'otpCode' === model && 'otp' === this.state.step ) {
+			var digits = String( value || '' ).replace( /\D/g, '' );
+			if ( digits.length >= 6 && ! this.state.busy && ! this._otpVerifyInFlight ) {
+				this.state.otpCode = digits.slice( 0, 6 );
+				input.value = this.state.otpCode;
+				this.verifyPhoneOtp();
+			}
+		}
 	};
 
 	HandikBookingForm.prototype.onBlur = function ( input ) {
@@ -1118,6 +1135,14 @@
 
 	HandikBookingForm.prototype.setFieldValue = function ( path, value ) {
 		var parts = path.split( '.' );
+		// Single-key models live directly on `state` (otpCode lived here and was
+		// silently dropped when the helper only knew about 2-part paths — the
+		// typed OTP digits were never persisted, so a blur re-render flushed
+		// the field back to its initial empty value).
+		if ( 1 === parts.length ) {
+			this.state[ parts[0] ] = value;
+			return;
+		}
 		if ( 2 === parts.length && this.state[ parts[0] ] ) {
 			this.state[ parts[0] ][ parts[1] ] = value;
 		}
@@ -1460,6 +1485,13 @@
 	 */
 	HandikBookingForm.prototype.verifyPhoneOtp = function () {
 		var self = this;
+		// Hotfix 2.1.13.1: re-entry guard — auto-advance fires this on the
+		// keystroke that completes the 6th digit, but iOS-autofill paths can
+		// also fire a duplicate input event right after. Without this guard
+		// we'd POST /phone-verify/check twice and Twilio invalidates the
+		// verification on the first hit, so the second returns 404.
+		if ( this._otpVerifyInFlight ) { return; }
+		this._otpVerifyInFlight = true;
 		var phoneApi = phoneApiValue( this.state.contact.phone );
 		this.busy( true );
 		this.api( 'POST', 'phone-verify/check', { phone: phoneApi, code: this.state.otpCode } )
@@ -1497,9 +1529,16 @@
 			} )
 			.catch( function ( err ) {
 				self.state.otpError = ( err && err.message ) || self.t( 'otpInvalid' );
+				// Wipe the buffer so the customer can retype without having to
+				// hit "Use a different number" / clear by hand. The auto-advance
+				// will re-fire when they type a fresh 6 digits.
+				self.state.otpCode = '';
 				self.render();
 			} )
-			.then( function () { self.busy( false ); } );
+			.then( function () {
+				self._otpVerifyInFlight = false;
+				self.busy( false );
+			} );
 	};
 
 	/**

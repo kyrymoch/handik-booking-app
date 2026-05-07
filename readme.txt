@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.1.13.0
+Stable tag: 2.1.13.1
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, silent returning-client recognition, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,15 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.1.13.1 =
+* **Hotfix — Twilio Verify OTP UX.** Three production bugs reported after 2.1.13.0:
+  1. **Additional Forms — typed code disappeared on blur, Verify stayed disabled.** The `setFieldValue` helper only handled 2-part state paths (`contact.phone`, `address.address_full`); `otpCode` is a single-key path so the typed digits were silently dropped. The next blur re-render flushed the field back to the empty initial value. Fix: `setFieldValue` now writes single-key paths directly onto `state`.
+  2. **Both forms — manual Verify button is gone.** The 6-digit code now verifies automatically the moment the customer types the last digit (or accepts the iOS one-time-code autofill chip). Visible-but-disabled Verify buttons were a dead-end UX — and removing them removes a whole class of "did I tap?" double-submit failures. Re-entry guard on `verifyPhoneOtp` blocks duplicate POSTs from the same input event (iOS autofill fires both `input` and `change` in the same tick).
+  3. **Main form — premature "Welcome back" notification.** The legacy `/contacts/lookup` was firing on phone-field input/blur, BEFORE OTP verification, leaking returning-client status to anyone who guessed a phone number AND showing the welcome toast in the wrong order. The lookup is removed from the contact-details handlers; `/phone-verify/check` already returns the same profile after Twilio approves, and `verifyPhoneOtp` owns the welcome toast on the post-OTP path.
+  4. **Main form — Twilio "VerificationCheck not found" 404.** Caused by double-firing `/phone-verify/check` when the customer double-tapped Verify (or the click and an iOS autofill input event landed in the same tick): the first call approved the verification and Twilio retired it, the second hit returned 404. The new re-entry guard plus the auto-advance flow (one input → one POST) close this off. On error the OTP buffer is cleared so the customer can retype without manually clearing the field.
+* OTP intro copy updated everywhere: "Enter the 6-digit code we just sent to %s. We will verify it automatically."
+* No DB / schema changes. No REST contract changes. Drop-in over 2.1.13.0.
 
 = 2.1.13.0 =
 * **Sprint 6 — phone-first OTP comes to the main `[handik_booking_app]` form.** The Additional Forms cohort has been on the new flow since 2.1.12.0; this release completes the migration.
