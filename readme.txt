@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.1.11.1
+Stable tag: 2.1.12.0
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, silent returning-client recognition, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,25 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.1.12.0 =
+* **Sprint 5 — phone-first contact flow.** Re-introduces Twilio Verify SMS as the primary identity step for the Additional Booking Forms (the main `[handik_booking_app]` form follows in 2.1.13.0). The new journey is: phone → SMS code → branch.
+  - **New customer**: name + email + address on a single screen.
+  - **Returning customer**: saved-address picker + address on a single screen, name and email already prefilled from CRM.
+  - **30-day verified-client cache** in `localStorage` (HMAC-signed token, validated server-side per request) — a customer who verified yesterday opens the form straight on the address screen with no OTP at all. Cleared on "Start over" + on cookie/cache expiry.
+* **PII fix on `/contacts/lookup` path.** The new `/phone-verify/check` endpoint only returns the customer's profile AFTER Twilio confirms the phone is in their possession. The legacy `/contacts/lookup` lookup is no longer the gate to the CRM — closing the audit-flagged P0 where any phone could fish out names/emails.
+* **Soft phone input.** Removed the per-keystroke reformat — typing produces no mutated value, no caret jumps, no "+1 1 1" artifacts. Display is normalized once on blur (only when the value parses to a 10-digit US number); the API still receives the canonical E.164 form. Owner-reported regression closed.
+* **Selected tasks & rates sheet now sits ABOVE the footer.** The desktop sheet was `position: sticky` with `z-index: 35` (footer is `40`), so the Continue button visibly covered the rate summary on long flows. It's now `position: fixed; z-index: 50; bottom: 80px` on every viewport, centered up to 980px wide, with extra bottom padding on the task-selection step body so the sheet doesn't overlap the last task chips. Mobile rules unchanged.
+* **Placeholders on every customer-facing input.** Added `placeholder=""` for phone (`+1 555 123 4567`), full name (`Jane Smith`), email (`you@example.com`), unit (`Apt 3B`), and the OTP code (`6-digit code`). Address still uses the existing "Start typing the address of the job" placeholder.
+* **Address autocomplete: prefill-vs-typed collision.** Browser autofill / Google Places suggestion fights are mostly resolved already; this release also tracks whether the customer has actually typed since the Places binding completed (a `__handikUserTyped` flag on the input). When `address.address_full` changes from autofill / pre-population, we no longer invalidate the Places verification — the next render keeps the customer's verified address valid. Only an actual keypress flips it back to "needs to be re-picked."
+* **REST surface.** Four new public endpoints under `handik-booking-app/v1`:
+  - `POST /phone-verify/start` — start a Twilio Verify (rate-limited per phone).
+  - `POST /phone-verify/check` — submit OTP, get `{is_new_client, contact_id, profile?, verified_token, verified_phone}`.
+  - `POST /phone-verify/restore` — revalidate a stored token + return profile.
+  - `POST /phone-verify/bind-contact` — attach a contact_id to a new-client token after submit creates the row.
+* **Architecture note.** The main `[handik_booking_app]` form keeps the existing contact step UNCHANGED in 2.1.12.0. The Twilio Verify rewrite for it lands in 2.1.13.0 once the Additional Forms cohort confirms the new flow is solid. The server endpoints in this release are designed to serve both forms.
+
+DB schema unchanged. The verified-client cookie reuses the existing `handik_booking_app_client` HMAC cookie from the email magic-link flow.
 
 = 2.1.11.1 =
 * **Sprint 4 — admin polish + operational hygiene for Additional Forms.** Closes the P3 audit findings.

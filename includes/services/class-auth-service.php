@@ -215,6 +215,263 @@ class Handik_Booking_App_Auth_Service {
 		);
 	}
 
+	// =========================================================================
+	// Phone-only OTP flow (Sprint 5).
+	//
+	// Replaces the old "type name + email + phone, then verify" contact step
+	// with a phone-first journey: phone → SMS code → branch (returning
+	// customer skips name/email entry; new customer continues to a slim
+	// name/email screen). Supports BOTH the main [handik_booking_app] and the
+	// new Additional Forms.
+	//
+	// On verify success, the existing HMAC-signed cookie is set so subsequent
+	// page loads recognise the customer without another OTP. The cookie is
+	// the same one used by the email magic-link flow — see set_cookie() at
+	// the bottom of this file.
+	// =========================================================================
+
+	/**
+	 * Start a phone-only verification for ANY caller (new OR returning client).
+	 * The caller must have Twilio Verify configured; we no longer fall back
+	 * to email here because the new contact flow is phone-only by design.
+	 *
+	 * Rate-limited per normalized phone — same window as the legacy
+	 * request_code path.
+	 *
+	 * @param string $phone Raw phone input.
+	 * @return array{success?: true, message?: string, error?: string, status?: int}
+	 */
+	public function start_phone_otp( $phone ) {
+		$normalized = $this->contacts->normalize_phone( $phone );
+		if ( ! $normalized ) {
+			return array(
+				'error'  => __( 'Please enter a valid phone number.', 'handik-booking-app' ),
+				'status' => 400,
+			);
+		}
+		if ( ! $this->twilio_verify_configured() ) {
+			$this->logger->error( 'Phone OTP requested but Twilio Verify is not configured.' );
+			return array(
+				'error'  => __( 'Phone verification is not available right now.', 'handik-booking-app' ),
+				'status' => 503,
+			);
+		}
+		$limit = $this->rate_limit( 'otp:' . $normalized );
+		if ( is_wp_error( $limit ) ) {
+			return array( 'error' => $limit->get_error_message(), 'status' => 429 );
+		}
+
+		// Existing helper handles the actual Twilio HTTP call + logging.
+		// Pass contact_id 0 because we don't necessarily have a contact yet.
+		$response = $this->start_twilio_phone_verification( 0, $normalized );
+		if ( ! empty( $response['error'] ) ) {
+			return $response;
+		}
+		return array(
+			'success' => true,
+			'message' => __( 'A one-time code has been sent.', 'handik-booking-app' ),
+		);
+	}
+
+	/**
+	 * Check a phone OTP. On approved, look up an existing contact (or signal
+	 * "new client" so the SPA can ask for name/email next), set the auth
+	 * cookie, and return a short-lived bearer token the SPA can also stash
+	 * in localStorage.
+	 *
+	 * @param string $phone Phone (raw).
+	 * @param string $code  6-digit OTP from the customer.
+	 * @return array{success?: true, profile?: array, contact_id?: int, is_new_client?: bool, verified_token?: string, verified_phone?: string, error?: string, status?: int}
+	 */
+	public function check_phone_otp( $phone, $code ) {
+		$normalized = $this->contacts->normalize_phone( $phone );
+		$code       = sanitize_text_field( $code );
+		if ( ! $normalized ) {
+			return array(
+				'error'  => __( 'Please enter a valid phone number.', 'handik-booking-app' ),
+				'status' => 400,
+			);
+		}
+		if ( '' === $code ) {
+			return array(
+				'error'  => __( 'Please enter the verification code.', 'handik-booking-app' ),
+				'status' => 400,
+			);
+		}
+		if ( ! $this->twilio_verify_configured() ) {
+			return array(
+				'error'  => __( 'Phone verification is not available right now.', 'handik-booking-app' ),
+				'status' => 503,
+			);
+		}
+
+		$twilio = $this->check_twilio_phone_verification( $normalized, $code );
+		if ( ! empty( $twilio['error'] ) ) {
+			return $twilio;
+		}
+
+		$contact = $this->contacts->find_by_email_or_phone( '', $normalized );
+		$contact_id = $contact ? (int) $contact['id'] : 0;
+		$is_new = 0 === $contact_id;
+
+		// Issue the same HMAC cookie the magic-link flow uses, but only when
+		// we matched a real contact. New clients get the verified token so
+		// the next step (name/email) can attach the contact later.
+		if ( $contact_id ) {
+			$this->set_cookie( $contact_id );
+		}
+		$token = $this->build_verified_token( $normalized, $contact_id );
+
+		$result = array(
+			'success'        => true,
+			'is_new_client'  => $is_new,
+			'contact_id'     => $contact_id,
+			'verified_phone' => $normalized,
+			'verified_token' => $token,
+		);
+		// Only return profile (with addresses) when we matched a contact —
+		// new-client path skips this and asks for name/email on the next
+		// screen. This keeps the lookup endpoint from leaking PII to anyone
+		// who guesses a phone number (audit P0): they need a working OTP.
+		if ( $contact_id ) {
+			$result['profile'] = $this->profile( $contact_id, true );
+		}
+		return $result;
+	}
+
+	/**
+	 * Validate a previously-issued verified-client token. Used by the SPA on
+	 * page load: if the customer returns within the TTL, we skip the OTP
+	 * step entirely and just rehydrate their saved profile.
+	 *
+	 * @param string $token Token from local storage.
+	 * @return array{profile?: array, contact_id?: int, verified_phone?: string, error?: string, status?: int}
+	 */
+	public function restore_verified_client( $token ) {
+		$parsed = $this->parse_verified_token( (string) $token );
+		if ( ! $parsed ) {
+			return array(
+				'error'  => __( 'This verification has expired. Please verify your phone again.', 'handik-booking-app' ),
+				'status' => 401,
+			);
+		}
+		$contact_id = (int) $parsed['contact_id'];
+		// The token may have been issued on the new-client branch (contact_id=0).
+		// In that case there's no profile to restore yet — surface the verified
+		// phone so the SPA can keep the session warm.
+		if ( $contact_id <= 0 ) {
+			return array(
+				'success'        => true,
+				'is_new_client'  => true,
+				'contact_id'     => 0,
+				'verified_phone' => (string) $parsed['phone'],
+			);
+		}
+		$contact = $this->contacts->get( $contact_id );
+		if ( ! $contact ) {
+			return array(
+				'error'  => __( 'This verification has expired. Please verify your phone again.', 'handik-booking-app' ),
+				'status' => 401,
+			);
+		}
+		// Refresh the cookie too so the auth window slides forward.
+		$this->set_cookie( $contact_id );
+		return array(
+			'success'        => true,
+			'is_new_client'  => false,
+			'contact_id'     => $contact_id,
+			'verified_phone' => (string) $parsed['phone'],
+			'profile'        => $this->profile( $contact_id, true ),
+		);
+	}
+
+	/**
+	 * Build a `payload.signature` token. Payload is `phone|contact_id|expires`
+	 * URL-safe base64 encoded, signature is HMAC-SHA256 with `wp_salt('auth')`.
+	 * No JWT — keeps the surface tiny and dependency-free.
+	 *
+	 * @param string $phone_e164  Normalized phone.
+	 * @param int    $contact_id  0 for new-client tokens.
+	 * @return string
+	 */
+	protected function build_verified_token( $phone_e164, $contact_id ) {
+		$ttl_days = (int) apply_filters( 'handik_booking_app_verified_client_ttl_days', 30 );
+		$expires  = time() + max( 1, $ttl_days ) * DAY_IN_SECONDS;
+		$payload  = $phone_e164 . '|' . (int) $contact_id . '|' . $expires;
+		$encoded  = rtrim( strtr( base64_encode( $payload ), '+/', '-_' ), '=' ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode
+		$sig      = hash_hmac( 'sha256', $encoded, wp_salt( 'auth' ) );
+		return $encoded . '.' . $sig;
+	}
+
+	/**
+	 * @param string $token Token to parse.
+	 * @return array{phone: string, contact_id: int, expires: int}|null
+	 */
+	protected function parse_verified_token( $token ) {
+		if ( '' === $token || false === strpos( $token, '.' ) ) {
+			return null;
+		}
+		list( $encoded, $sig ) = explode( '.', $token, 2 );
+		$expected = hash_hmac( 'sha256', $encoded, wp_salt( 'auth' ) );
+		if ( ! hash_equals( $expected, (string) $sig ) ) {
+			return null;
+		}
+		$payload = base64_decode( strtr( $encoded, '-_', '+/' ), true ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode
+		if ( ! $payload || 2 !== substr_count( $payload, '|' ) ) {
+			return null;
+		}
+		list( $phone, $contact_id, $expires ) = explode( '|', $payload );
+		if ( time() >= (int) $expires ) {
+			return null;
+		}
+		return array(
+			'phone'      => (string) $phone,
+			'contact_id' => (int) $contact_id,
+			'expires'    => (int) $expires,
+		);
+	}
+
+	/**
+	 * Attach a contact_id to a previously-issued new-client token (after the
+	 * SPA has collected name/email). Returns a fresh token + profile so the
+	 * SPA can keep state in sync.
+	 *
+	 * @param string $token Existing token.
+	 * @param int    $contact_id Newly-created contact id.
+	 * @return array{verified_token?: string, profile?: array, error?: string, status?: int}
+	 */
+	public function bind_verified_token_to_contact( $token, $contact_id ) {
+		$parsed = $this->parse_verified_token( (string) $token );
+		if ( ! $parsed ) {
+			return array(
+				'error'  => __( 'This verification has expired. Please verify your phone again.', 'handik-booking-app' ),
+				'status' => 401,
+			);
+		}
+		$contact_id = (int) $contact_id;
+		$contact    = $contact_id > 0 ? $this->contacts->get( $contact_id ) : null;
+		if ( ! $contact ) {
+			return array(
+				'error'  => __( 'Contact not found.', 'handik-booking-app' ),
+				'status' => 404,
+			);
+		}
+		// Sanity: only allow binding when phone matches.
+		$contact_phone = $this->contacts->normalize_phone( (string) $contact['phone'] );
+		if ( $contact_phone && $contact_phone !== $parsed['phone'] ) {
+			return array(
+				'error'  => __( 'Phone mismatch.', 'handik-booking-app' ),
+				'status' => 409,
+			);
+		}
+		$this->set_cookie( $contact_id );
+		return array(
+			'success'        => true,
+			'verified_token' => $this->build_verified_token( $parsed['phone'], $contact_id ),
+			'profile'        => $this->profile( $contact_id, true ),
+		);
+	}
+
 	/**
 	 * @return int
 	 */

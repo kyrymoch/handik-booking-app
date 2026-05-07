@@ -55,6 +55,13 @@ class Handik_Booking_App_REST_API {
 		$this->route( $namespace, '/app/upload', array( $this, 'upload' ), WP_REST_Server::CREATABLE );
 		$this->route( $namespace, '/auth/request-code', array( $this, 'request_code' ), WP_REST_Server::CREATABLE );
 		$this->route( $namespace, '/auth/verify', array( $this, 'verify_code' ), WP_REST_Server::CREATABLE );
+		// Sprint 5 — phone-first OTP routes used by both the main SPA and the
+		// Additional Forms. The legacy /auth/* routes stay for back-compat
+		// with the email magic-link flow.
+		$this->route( $namespace, '/phone-verify/start', array( $this, 'phone_verify_start' ), WP_REST_Server::CREATABLE );
+		$this->route( $namespace, '/phone-verify/check', array( $this, 'phone_verify_check' ), WP_REST_Server::CREATABLE );
+		$this->route( $namespace, '/phone-verify/restore', array( $this, 'phone_verify_restore' ), WP_REST_Server::CREATABLE );
+		$this->route( $namespace, '/phone-verify/bind-contact', array( $this, 'phone_verify_bind_contact' ), WP_REST_Server::CREATABLE );
 		$this->route( $namespace, '/contacts/lookup', array( $this, 'contact_lookup' ), WP_REST_Server::CREATABLE );
 		$this->route( $namespace, '/chatkit-session', array( $this, 'chatkit_session' ), WP_REST_Server::CREATABLE );
 		$this->route( $namespace, '/photo-analysis', array( $this, 'photo_analysis' ), WP_REST_Server::CREATABLE );
@@ -188,6 +195,32 @@ class Handik_Booking_App_REST_API {
 
 	public function verify_code( WP_REST_Request $request ) {
 		return $this->respond( $this->auth->verify( (string) $request->get_param( 'email' ), (string) $request->get_param( 'phone' ), (string) $request->get_param( 'code' ), (string) $request->get_param( 'token' ) ) );
+	}
+
+	public function phone_verify_start( WP_REST_Request $request ) {
+		return $this->respond( $this->auth->start_phone_otp( (string) $request->get_param( 'phone' ) ) );
+	}
+
+	public function phone_verify_check( WP_REST_Request $request ) {
+		return $this->respond(
+			$this->auth->check_phone_otp(
+				(string) $request->get_param( 'phone' ),
+				(string) $request->get_param( 'code' )
+			)
+		);
+	}
+
+	public function phone_verify_restore( WP_REST_Request $request ) {
+		return $this->respond( $this->auth->restore_verified_client( (string) $request->get_param( 'verified_token' ) ) );
+	}
+
+	public function phone_verify_bind_contact( WP_REST_Request $request ) {
+		return $this->respond(
+			$this->auth->bind_verified_token_to_contact(
+				(string) $request->get_param( 'verified_token' ),
+				(int) $request->get_param( 'contact_id' )
+			)
+		);
 	}
 
 	public function contact_lookup( WP_REST_Request $request ) {

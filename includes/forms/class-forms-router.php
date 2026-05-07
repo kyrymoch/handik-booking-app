@@ -262,14 +262,40 @@ class Handik_Booking_App_Forms_Router {
 			// Buttons.
 			'continueLabel'     => __( 'Continue', 'handik-booking-app' ),
 			'backLabel'         => __( 'Back', 'handik-booking-app' ),
+			'sendCodeCta'       => __( 'Send code', 'handik-booking-app' ),
+			'verifyCta'         => __( 'Verify', 'handik-booking-app' ),
+
+			// Sprint 5 — phone-first flow step titles + intros.
+			'phoneStepTitle'    => __( 'Your phone', 'handik-booking-app' ),
+			'phoneStepIntro'    => __( "We'll text you a one-time code to confirm.", 'handik-booking-app' ),
+			'otpStepTitle'      => __( 'Enter the code', 'handik-booking-app' ),
+			/* translators: %s: phone number with country code. */
+			'otpIntro'          => __( 'Enter the 6-digit code we just sent to %s.', 'handik-booking-app' ),
+			'otpCodeLabel'      => __( 'Verification code', 'handik-booking-app' ),
+			'otpPlaceholder'    => __( '6-digit code', 'handik-booking-app' ),
+			'otpInvalid'        => __( 'That code is invalid or expired. Please try again.', 'handik-booking-app' ),
+			'otpResendCta'      => __( 'Resend code', 'handik-booking-app' ),
+			/* translators: %d: seconds remaining. */
+			'otpResendIn'       => __( 'You can resend in %ds', 'handik-booking-app' ),
+			'otpDifferentNumberCta' => __( 'Use a different number', 'handik-booking-app' ),
+			'otpSentToast'      => __( 'Code sent.', 'handik-booking-app' ),
+			'detailsNewTitle'   => __( 'Tell us how to reach you', 'handik-booking-app' ),
+			'detailsReturningTitle' => __( 'Where should we go?', 'handik-booking-app' ),
+			'detailsNewIntro'   => __( 'Just a few details so we can prepare.', 'handik-booking-app' ),
+			/* translators: %s: customer first name (or phone, if name not yet known). */
+			'detailsReturningIntro' => __( 'Welcome back, %s. Pick a saved address or enter a new one.', 'handik-booking-app' ),
 
 			// Field labels.
 			'fullNameLabel'     => __( 'Full name', 'handik-booking-app' ),
+			'fullNamePlaceholder' => __( 'Jane Smith', 'handik-booking-app' ),
 			'phoneLabel'        => __( 'Phone', 'handik-booking-app' ),
+			'phonePlaceholder'  => __( '+1 555 123 4567', 'handik-booking-app' ),
 			'emailLabel'        => __( 'Email (optional)', 'handik-booking-app' ),
+			'emailPlaceholder'  => __( 'you@example.com', 'handik-booking-app' ),
 			'addressLabel'      => __( 'Address of the job', 'handik-booking-app' ),
 			'addressPlaceholder' => __( 'Start typing the address of the job', 'handik-booking-app' ),
 			'unitLabel'         => __( 'Unit or apartment (optional)', 'handik-booking-app' ),
+			'unitPlaceholder'   => __( 'Apt 3B', 'handik-booking-app' ),
 			'savedAddressLabel' => __( 'Choose a saved address or enter a new one', 'handik-booking-app' ),
 			'savedAddressPlaceholder' => __( 'Choose saved address', 'handik-booking-app' ),
 			'savedAddressEmpty' => __( 'No saved addresses yet — enter the address below.', 'handik-booking-app' ),
