@@ -210,6 +210,15 @@
 			// the bootstrap call so a returning customer's profile is in
 			// state when the first render runs.
 			try { await this.tryRestoreVerifiedClient(); } catch ( e ) { /* ignore */ }
+			// Sprint 9 fix: if the cache restored the verified state and a
+			// stored draft happens to be parked on `contact_details` /
+			// `otp_verify` (because the customer abandoned mid-OTP last
+			// time), bump the step to the next non-skipped one — those
+			// two are now removed from `applicableSteps()`, so leaving
+			// them in `state.step` would render an empty dot timeline.
+			if ( this.state.phoneVerified && ( 'contact_details' === this.state.step || 'otp_verify' === this.state.step ) ) {
+				this.state.step = 'address_details';
+			}
 			try {
 				this.bootstrap = await this.api( 'app/bootstrap', {}, 'GET' );
 				if ( this.bootstrap.verified_profile ) {
@@ -1267,7 +1276,15 @@
 					await this.saveContactAndPrepareBooking();
 					break;
 				case 'photos-next':
-					this.goTo( 'contact_details' );
+					// Sprint 9 fix: skip the contact + OTP steps entirely
+					// when the verified-client cache has already restored
+					// the profile on init. Mirrors the behaviour after a
+					// fresh OTP (`verifyPhoneOtp` → goTo('address_details')).
+					if ( this.state.phoneVerified ) {
+						this.goTo( 'address_details' );
+					} else {
+						this.goTo( 'contact_details' );
+					}
 					break;
 				case 'contact-next':
 					// Sprint 6: contact_details is now phone-only. Continue
@@ -2818,7 +2835,10 @@
 			}
 			const steps = this.applicableSteps();
 			const activeIndex = Math.max( 0, steps.indexOf( this.state.step ) );
-			return '<ol class="handik-progress-dots" aria-label="Booking progress">' +
+			// Sprint 9 fix: pass the actual step count to CSS via a custom
+			// property so the grid always lays the dots out on a single row,
+			// regardless of how many steps `applicableSteps()` returns.
+			return '<ol class="handik-progress-dots" aria-label="Booking progress" style="--handik-progress-step-count:' + steps.length + ';">' +
 				steps.map( ( step, index ) => '<li class="' + ( index <= activeIndex ? 'is-done' : '' ) + ( index === activeIndex ? ' is-current' : '' ) + '"></li>' ).join( '' ) +
 			'</ol>';
 		}
@@ -2827,6 +2847,19 @@
 			// Sprint 6: phone-first OTP gates entry to address_details. The
 			// new 'otp_verify' step lives between contact_details (now phone-only)
 			// and address_details (now branched: returning vs new client).
+			//
+			// Sprint 9 fix: when the customer was already restored from the
+			// 30-day verified-client cache (or just finished OTP and is
+			// navigating back), drop `contact_details` and `otp_verify`
+			// from the timeline. The progress bar then shows the 5 steps
+			// they actually take, and the contact step never appears as a
+			// dot the user can reach via back-navigation. Owner-reported:
+			// previously the cache restored the profile but the SPA still
+			// asked for the phone again at contact_details, defeating the
+			// "no second OTP for 30 days" promise.
+			if ( this.state.phoneVerified ) {
+				return [ 'task_selection', 'photos', 'address_details', 'assistant', 'booking' ];
+			}
 			return [ 'task_selection', 'photos', 'contact_details', 'otp_verify', 'address_details', 'assistant', 'booking' ];
 		}
 

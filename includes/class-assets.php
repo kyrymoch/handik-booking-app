@@ -111,7 +111,24 @@ class Handik_Booking_App_Assets {
 				'googleMapsApiKey' => (string) $this->settings->get( 'google_maps_api_key', '' ),
 				'googleMapsCountry' => strtolower( (string) $this->settings->get( 'google_maps_country', 'us' ) ),
 				'calFallbackUrl' => esc_url_raw( (string) ( $this->settings->get( 'cal_fallback_url', '' ) ?: $this->settings->get( 'cal_standard_event_url', '' ) ) ),
-				'serviceableZips' => array_values( array_filter( array_map( 'trim', preg_split( '/\R+/', (string) $this->settings->get( 'serviceable_zips', '' ) ) ?: array() ) ) ),
+				/* Sprint 9 fix: was reading the orphan `serviceable_zips` key — the
+				 * admin "Allowed ZIP codes" textarea writes to `service_area_zips`,
+				 * so the client list was always empty no matter what the owner
+				 * typed. Now mirrors the server-side `App_Controller::serviceable_zips()`
+				 * (new key first, legacy key as fallback) and accepts comma /
+				 * semicolon / whitespace separators so a paste of "10001, 10002"
+				 * works identically to one ZIP per line. */
+				'serviceableZips' => ( function () {
+					$raw = (string) $this->settings->get( 'service_area_zips', '' );
+					if ( '' === trim( $raw ) ) {
+						$raw = (string) $this->settings->get( 'serviceable_zips', '' );
+					}
+					$parts = preg_split( '/[\s,;]+/', $raw ) ?: array();
+					return array_values( array_filter( array_map( static function ( $z ) {
+						$digits = preg_replace( '/\D/', '', (string) $z );
+						return 5 === strlen( (string) $digits ) ? (string) $digits : '';
+					}, $parts ) ) );
+				} )(),
 				'strings'    => array(
 					'loading'            => (string) $this->settings->get( 'ui_loading_title', 'Loading...' ),
 					'loadingSubtext'     => (string) $this->settings->get( 'ui_loading_subtitle', '' ),

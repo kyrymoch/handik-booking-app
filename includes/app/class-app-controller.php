@@ -178,11 +178,20 @@ class Handik_Booking_App_Controller {
 	}
 
 	/**
+	 * Sprint 9 fix: read from `service_area_zips` (the key the admin
+	 * "Allowed ZIP codes" textarea writes to — see App Setup → Service area)
+	 * with `serviceable_zips` as a legacy fallback for installs that may
+	 * have populated the older orphan key. Before this fix the two keys
+	 * were unrelated and the setting was effectively ignored end-to-end.
+	 *
 	 * @return array<int, string>
 	 */
 	protected function serviceable_zips() {
-		$raw = (string) $this->settings->get( 'serviceable_zips', '' );
-		$zips = preg_split( '/\R+/', $raw );
+		$raw = (string) $this->settings->get( 'service_area_zips', '' );
+		if ( '' === trim( $raw ) ) {
+			$raw = (string) $this->settings->get( 'serviceable_zips', '' );
+		}
+		$zips = preg_split( '/[\s,;]+/', $raw );
 		$zips = is_array( $zips ) ? $zips : array();
 		return array_values(
 			array_unique(
@@ -209,6 +218,25 @@ class Handik_Booking_App_Controller {
 
 		if ( $request_id && ! $this->job_requests->verify_draft_token( $request_id, $draft_token ) ) {
 			return array( 'error' => __( 'Invalid draft token.', 'handik-booking-app' ), 'status' => 403 );
+		}
+
+		// Sprint 9 fix: server-side enforcement of "Allowed ZIP codes"
+		// (App Setup → Service area). The SPA already shows a hint at
+		// `BookingApp.isServiceableZip()` and refuses to advance, but a
+		// stale or hostile client could still POST a save with an
+		// out-of-area ZIP — the addresses table would happily accept it
+		// and the job would route to assistant. Defense in depth: when
+		// the admin has populated a non-empty list, reject saves that
+		// carry a 5-digit ZIP not on the list. Empty list = accept any.
+		$serviceable = $this->serviceable_zips();
+		if ( ! empty( $serviceable ) ) {
+			$submitted_zip = preg_replace( '/\D/', '', (string) ( $payload['zip_code'] ?? '' ) );
+			if ( '' !== $submitted_zip && 5 === strlen( $submitted_zip ) && ! in_array( $submitted_zip, $serviceable, true ) ) {
+				return array(
+					'error'  => __( "We don't currently provide service to this ZIP code. Please contact us if you need help in this area.", 'handik-booking-app' ),
+					'status' => 422,
+				);
+			}
 		}
 
 		$selected_tasks = array_values(

@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.1.15.1
+Stable tag: 2.1.16.0
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, silent returning-client recognition, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,19 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.1.16.0 =
+* **Three owner-reported regression fixes.** No new features; closes the gaps in flows that were partially built but never wired through.
+* **Progress bar wraps to a second row on the main SPA.** `applicableSteps()` returns 7 step ids (task_selection / photos / contact_details / otp_verify / address_details / assistant / booking) but `.handik-progress-dots` was hard-coded to a 6-column grid, so the 7th dot dropped to the next line. Switched the grid to `repeat(var(--handik-progress-step-count, 7), …)` and the renderer now writes the actual step count into the inline style — bar always lays out on a single row, and adding / removing a step in the future doesn't require touching this rule.
+* **30-day verified-client cache no longer asks for the phone again on the next visit.** The cache (HMAC-signed token in localStorage, server-rehydrated via `/phone-verify/restore`) was already writing on OTP success and reading on boot — `state.phoneVerified` flipped to `true`, the profile was prefilled, and a comment in `contactMarkup()` even promised "Returning customers will auto-skip to address_details on success" — but no code performed the skip. The customer landed on `contact_details` and was prompted for the phone all over again, defeating the changelog promise. Three fixes:
+  1. `applicableSteps()` now drops `contact_details` and `otp_verify` from the timeline when `phoneVerified` is true, so the progress bar reflects the customer's actual flow (5 steps instead of 7).
+  2. `photos-next` action handler now jumps straight to `address_details` when the cache has restored the verified state — mirroring what `verifyPhoneOtp()` does after a fresh OTP.
+  3. `init()` advances `state.step` past `contact_details` / `otp_verify` if the local draft happened to be parked on one of those steps when the cache restore succeeded (would otherwise leave the SPA on a step that no longer exists in the timeline).
+  Restart still clears the cache as before, so the "log out / different customer on shared device" path is unaffected.
+* **App Setup → Service area → Allowed ZIP codes finally works.** Two unrelated keys had drifted apart since 2.1.8.5: the admin textarea wrote to `service_area_zips`, but the only validator (`App_Controller::serviceable_zips()`) read from `serviceable_zips` — which the admin UI never populated. Result: the SPA's `isServiceableZip()` check always saw an empty list and accepted any ZIP, server-side accepted any ZIP, and the assistant was never told the address was out of area. Even the help text ("Booking app will only accept addresses whose ZIP appears here") was a lie. Three fixes:
+  1. `App_Controller::serviceable_zips()` now reads `service_area_zips` first, with `serviceable_zips` as a legacy fallback for installs that may have populated the older orphan key. Same separator handling as the admin (whitespace / comma / semicolon all work).
+  2. `class-assets.php` mirrors the same logic when bootstrapping `config.serviceableZips` for the SPA, so the client-side "We don't currently provide service to this ZIP code" hint at the address step finally fires.
+  3. New server-side gate in `App_Controller::save_draft()` returns a 422 with a friendly message when the admin has populated a non-empty list and the submitted ZIP isn't on it. Defense-in-depth — a stale or hostile client can no longer bypass the check by skipping the SPA's hint. Empty list = accept any (unchanged).
 
 = 2.1.15.1 =
 * **Hotfix — Sprint 7/8 independent audit findings.** No new features; only hardens what 2.1.14.0 + 2.1.15.0 introduced.
