@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.1.9.7
+Stable tag: 2.1.9.8
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, silent returning-client recognition, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,11 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.1.9.8 =
+* **Fixed: "Cal is not defined" white screen on direct visit forms.** The 2.1.9.5 → 2.1.9.7 builds installed a minimal Cal.com embed queue stub that worked for the main `[handik_booking_app]` form but not for the new Additional Forms because the new SPA called `Cal('init', namespace, …)` BEFORE the embed.js script finished loading. When the script then loaded, it sometimes hit the queue stub in an inconsistent state and threw `Cal is not defined. This shouldn't happen` from inside embed.js. Replaced the loader with the canonical Cal.com bootstrap pattern (the same one the main form has been shipping for months): a queue function that lazily appends the embed script on first invocation, sets up `cal.ns` namespaces, intercepts `init` to allocate per-namespace queues, and is polled with a 5-second timeout to confirm it's installed. Calls made before embed.js finishes loading are queued and drained automatically when the script runs.
+* **Fixed: progress dots left-aligned with empty cells on the right.** Main form uses `grid-template-columns: repeat(6, 1fr)` to fit its 6 steps. Additional Forms have 4 (direct) or 5 (project) steps so two cells stayed empty, leaving the dots flush-left within the centered band. The Additional Forms SPA now overrides the column count inline (`grid-template-columns: repeat(<step-count>, minmax(0, 1fr))`) so the dots fill the centered `.handik-global-progress` band evenly.
+* **Idempotent Cal mount per DOM node.** Replaced the previous `calMounted` instance flag (which made re-entry to the cal step after a `Back` skip the mount on the new DOM container) with a `data-handik-cal-mounted="1"` attribute on the embed container itself. A re-render WITHIN the cal step is a no-op, but a step-change-and-return rebuilds the container so the embed mounts cleanly.
 
 = 2.1.9.7 =
 * **Full visual parity audit + rewrite of the public Additional Forms SPA.** A line-by-line review of `assets/booking-forms.js` against `assets/booking-app.js` surfaced six structural gaps that were keeping the new forms from looking and behaving like the main `[handik_booking_app]` flow. Fixed all of them in one pass:

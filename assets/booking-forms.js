@@ -56,7 +56,6 @@
 
 		this.calEmbedPromise   = null;
 		this.calEmbedNamespace = '';
-		this.calMounted        = false;
 
 		this.googleMapsPromise   = null;
 		this.addressAutocomplete = null;
@@ -177,7 +176,11 @@
 		if ( 'address' === this.state.step ) {
 			this.mountAddressAutocomplete();
 		}
-		if ( 'cal' === this.state.step && ! this.calMounted ) {
+		if ( 'cal' === this.state.step ) {
+			// Idempotent per DOM node: mountCalEmbed checks the container's
+			// `data-handik-cal-mounted` attribute so re-renders inside the
+			// cal step don't re-mount, but a step-change-and-return (which
+			// rebuilds the container) re-mounts cleanly.
 			this.mountCalEmbed();
 		}
 	};
@@ -487,7 +490,12 @@
 		}
 		var steps = this.applicableSteps();
 		var activeIndex = Math.max( 0, steps.indexOf( this.state.step ) );
-		var html = '<div class="handik-global-progress"><ol class="handik-progress-dots" aria-label="' + escapeAttr( this.t( 'progressLabel' ) ) + '">';
+		// Main app uses `grid-template-columns: repeat(6, 1fr)` to fit 6 steps.
+		// Our flows are shorter (4 or 5 steps), so override the column count
+		// inline so the dots fill the centered .handik-global-progress band
+		// evenly instead of left-aligning with empty cells on the right.
+		var style = 'grid-template-columns: repeat(' + steps.length + ', minmax(0, 1fr));';
+		var html = '<div class="handik-global-progress"><ol class="handik-progress-dots" style="' + style + '" aria-label="' + escapeAttr( this.t( 'progressLabel' ) ) + '">';
 		steps.forEach( function ( step, idx ) {
 			var classes = '';
 			if ( idx <= activeIndex ) { classes += ' is-done'; }
@@ -761,7 +769,6 @@
 		this.state.profileContactId  = 0;
 		this.lookupLastPhone        = '';
 		this.lookupInFlightPhone    = '';
-		this.calMounted             = false;
 		this.render();
 	};
 
@@ -919,7 +926,6 @@
 			.then( function ( res ) {
 				self.state.directRequestId = parseInt( res.request_id, 10 ) || 0;
 				self.state.calBookingUrl   = String( res.cal_booking_url || '' );
-				self.calMounted = false;
 				self.go( 'cal' );
 			} )
 			.catch( function ( err ) { self.toast( 'error', err.message ); } )
@@ -1035,6 +1041,22 @@
 	// Cal embed (matches main app's window.Cal API)
 	// ===================================================================
 
+	/**
+	 * Bootstrap the Cal.com embed loader using the same pattern the main app
+	 * uses — which is the canonical pattern Cal.com publishes in its embed
+	 * docs.
+	 *
+	 * Why this is more involved than a plain `<script src="…/embed.js">`:
+	 * embed.js, once it runs, expects `window.Cal` to already be a queue
+	 * function so it can drain pending calls (made before the script loaded)
+	 * and replace itself with the real implementation. If `window.Cal` is
+	 * undefined when embed.js executes, you get the "Cal is not defined.
+	 * This shouldn't happen" error and a white iframe.
+	 *
+	 * The fix: install a queue stub that, on first invocation, appends the
+	 * embed script and tracks namespace-scoped queues. Then poll for the
+	 * stub to be present before resolving the load promise.
+	 */
 	HandikBookingForm.prototype.loadCalScript = function ( origin ) {
 		if ( window.Cal && 'function' === typeof window.Cal ) {
 			return Promise.resolve( window.Cal );
@@ -1042,34 +1064,79 @@
 		if ( this.calEmbedPromise ) {
 			return this.calEmbedPromise;
 		}
-		var embedOrigin = origin || 'https://app.cal.com';
-		var embedUrl    = embedOrigin.replace( /\/+$/, '' ) + '/embed/embed.js';
 
 		this.calEmbedPromise = new Promise( function ( resolve, reject ) {
-			if ( window.Cal && 'function' === typeof window.Cal ) {
-				resolve( window.Cal );
-				return;
-			}
-			window.Cal = window.Cal || function () {
-				var cal = window.Cal;
-				cal.q = cal.q || [];
-				cal.q.push( arguments );
+			var embedOrigin = origin || 'https://app.cal.com';
+			var embedUrl    = embedOrigin.replace( /\/+$/, '' ) + '/embed/embed.js';
+
+			var bootstrap = function () {
+				if ( window.Cal && 'function' === typeof window.Cal ) {
+					return;
+				}
+				window.Cal = window.Cal || function () {
+					var cal  = window.Cal;
+					var args = arguments;
+					var push = function ( api, apiArgs ) {
+						api.q = api.q || [];
+						api.q.push( apiArgs );
+					};
+
+					if ( ! cal.loaded ) {
+						cal.ns = cal.ns || {};
+						cal.q  = cal.q || [];
+						var existing = document.getElementById( CAL_EMBED_SCRIPT_ID );
+						if ( ! existing ) {
+							var script = document.createElement( 'script' );
+							script.id    = CAL_EMBED_SCRIPT_ID;
+							script.async = true;
+							script.src   = embedUrl;
+							script.addEventListener( 'error', function () {
+								reject( new Error( 'Cal.com embed failed to load.' ) );
+							} );
+							document.head.appendChild( script );
+						}
+						cal.loaded = true;
+					}
+
+					if ( 'init' === args[0] ) {
+						var namespace = args[1];
+						var api = function () { push( api, arguments ); };
+						api.q = api.q || [];
+						if ( 'string' === typeof namespace ) {
+							cal.ns[ namespace ] = cal.ns[ namespace ] || api;
+							push( cal.ns[ namespace ], args );
+							push( cal, [ 'initNamespace', namespace ] );
+						} else {
+							push( cal, args );
+						}
+						return;
+					}
+
+					push( cal, args );
+				};
 			};
-			var existing = document.getElementById( CAL_EMBED_SCRIPT_ID );
-			if ( ! existing ) {
-				var script = document.createElement( 'script' );
-				script.id    = CAL_EMBED_SCRIPT_ID;
-				script.async = true;
-				script.defer = true;
-				script.src   = embedUrl;
-				script.onload  = function () { resolve( window.Cal ); };
-				script.onerror = function () { reject( new Error( 'Cal embed script failed to load.' ) ); };
-				document.head.appendChild( script );
-			} else {
-				existing.addEventListener( 'load',  function () { resolve( window.Cal ); }, { once: true } );
-				existing.addEventListener( 'error', function () { reject( new Error( 'Cal embed script failed to load.' ) ); }, { once: true } );
-			}
+
+			bootstrap();
+
+			// Poll for the queue stub to be present (it should be set by
+			// bootstrap() synchronously, but stay defensive in case a third
+			// party clobbers window.Cal). Up to 5 seconds (50 × 100ms).
+			var attempts = 0;
+			var poll = function () {
+				attempts += 1;
+				if ( window.Cal && 'function' === typeof window.Cal ) {
+					resolve( window.Cal );
+					return;
+				}
+				if ( attempts >= 50 ) {
+					reject( new Error( 'Cal.com embed API is not available.' ) );
+					return;
+				}
+				window.setTimeout( poll, 100 );
+			};
+			poll();
 		} );
+
 		return this.calEmbedPromise;
 	};
 
@@ -1101,12 +1168,22 @@
 		var self = this;
 		var container = this.shell.querySelector( '[data-handik-cal-embed]' );
 		if ( ! container ) { return; }
+		// Per-node idempotency: if this exact container has already been
+		// mounted, skip. A step-change-and-return rebuilds the container so
+		// the attribute is fresh, allowing re-mount on a different DOM node.
+		if ( '1' === container.getAttribute( 'data-handik-cal-mounted' ) ) {
+			return;
+		}
+		container.setAttribute( 'data-handik-cal-mounted', '1' );
+
 		var parsed = this.parseCalEmbedConfig();
 		if ( ! parsed ) {
 			container.innerHTML = '<div class="handik-booking-app__alert is-error" role="alert">' + escapeHtml( this.t( 'calNotReady' ) ) + '</div>';
 			return;
 		}
 
+		// 15s timeout falls back to a single "Open in new tab" CTA when the
+		// embed script never loads (ad-block, network failure, CSP, etc).
 		var fallbackTimer = window.setTimeout( function () {
 			if ( self.state.calBookingUrl ) {
 				container.innerHTML = '<div class="handik-booking-app__booking-direct">' +
@@ -1117,16 +1194,24 @@
 
 		this.loadCalScript( parsed.origin )
 			.then( function () {
-				self.calMounted = true;
 				container.innerHTML = '<div class="handik-booking-app__booking-frame-wrap" data-handik-cal-frame></div>';
+
+				// Namespace the embed instance per form so multiple forms on
+				// the same page (rare but possible) don't fight over the
+				// global Cal namespace map.
 				var namespace = 'handik_form_' + self.instanceId;
 				self.calEmbedNamespace = namespace;
 				window.__handikCalNamespaces = window.__handikCalNamespaces || {};
+
 				if ( ! window.__handikCalNamespaces[ namespace ] ) {
+					// `init` runs through the queue stub: it appends the
+					// embed script (if not already), creates cal.ns[namespace]
+					// as its own queue function, and queues the init payload
+					// for embed.js to drain when it loads.
 					window.Cal( 'init', namespace, { origin: parsed.origin } );
 					window.__handikCalNamespaces[ namespace ] = true;
 				}
-				var ns = window.Cal.ns && window.Cal.ns[ namespace ] ? window.Cal.ns[ namespace ] : window.Cal;
+				var ns = ( window.Cal.ns && window.Cal.ns[ namespace ] ) ? window.Cal.ns[ namespace ] : window.Cal;
 				ns( 'inline', {
 					elementOrSelector: container.querySelector( '[data-handik-cal-frame]' ),
 					calLink: parsed.calLink,
