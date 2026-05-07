@@ -96,8 +96,75 @@
 
 		this.applyAppearance();
 		this.ensureNotificationsRoot();
+		this.attachHistoryListener();
+		this.replaceHistoryState( this.state.step );
 		this.render();
 	}
+
+	// ===================================================================
+	// Browser history (back/forward navigation between form steps)
+	// ===================================================================
+
+	/**
+	 * Listen once for popstate events. When the customer hits the browser
+	 * back button, we navigate to the previous step instead of leaving the
+	 * page. State entries are stamped with our `instanceId` so we don't
+	 * react to popstate from other apps on the same page.
+	 *
+	 * Mirrors the main app's identical implementation.
+	 */
+	HandikBookingForm.prototype.attachHistoryListener = function () {
+		if ( this._popstateBound ) {
+			return;
+		}
+		this._popstateBound = true;
+		var self = this;
+		window.addEventListener( 'popstate', function ( event ) {
+			var data = event && event.state ? event.state : null;
+			if ( ! data || ! data.handikBookingForm || data.instanceId !== self.instanceId ) {
+				return;
+			}
+			if ( ! data.step || data.step === self.state.step ) {
+				return;
+			}
+			self._navigatingFromHistory = true;
+			self.go( data.step );
+			self._navigatingFromHistory = false;
+		} );
+	};
+
+	HandikBookingForm.prototype.replaceHistoryState = function ( step ) {
+		if ( ! window.history || 'function' !== typeof window.history.replaceState ) {
+			return;
+		}
+		try {
+			window.history.replaceState(
+				{ handikBookingForm: true, instanceId: this.instanceId, step: step },
+				'',
+				window.location.href
+			);
+		} catch ( e ) {
+			// SecurityError on file:// or some restricted iframes — fail silently.
+		}
+	};
+
+	HandikBookingForm.prototype.pushHistoryState = function ( step ) {
+		if ( this._navigatingFromHistory ) {
+			return;
+		}
+		if ( ! window.history || 'function' !== typeof window.history.pushState ) {
+			return;
+		}
+		try {
+			window.history.pushState(
+				{ handikBookingForm: true, instanceId: this.instanceId, step: step },
+				'',
+				window.location.href
+			);
+		} catch ( e ) {
+			// Ignore — history is best-effort.
+		}
+	};
 
 	HandikBookingForm.prototype.applyAppearance = function () {
 		var vars = this.config.appearance || {};
@@ -348,13 +415,13 @@
 				new Array( 9 ).join( '<div class="handik-skeleton__cell"></div>' ) + '<div class="handik-skeleton__cell"></div>' +
 			'</div></div>';
 
+		// Cal step is the FINAL step in the direct flow — same as the main
+		// app's `booking` step. No Back/Continue footer; the customer either
+		// books inside the iframe (success comes from the Cal webhook +
+		// captureDirectBooking handler) or uses the Stuck disclaimer below.
 		return [
 			'<p class="handik-booking-app__intro">', escapeHtml( this.t( 'calIntro' ) ), '</p>',
-			'<div class="handik-booking-app__booking-embed" data-handik-cal-embed>', skeleton, '</div>',
-			this.footerActionsMarkup( {
-				backAction: 'cal-back',
-				hideContinue: true
-			} )
+			'<div class="handik-booking-app__booking-embed" data-handik-cal-embed>', skeleton, '</div>'
 		].join( '' );
 	};
 
@@ -479,9 +546,14 @@
 	// ===================================================================
 
 	HandikBookingForm.prototype.applicableSteps = function () {
+		// Steps shown in the progress dots. The terminal `success` step is
+		// excluded so the dots reflect only the user-facing progression and
+		// the count matches the actual screens the customer touches before
+		// the confirmation card. Mirrors the main app, which keeps `booking`
+		// as the last dot and never adds a separate success entry.
 		return this.isProject
-			? [ 'contact', 'address', 'pick-days', 'review-days', 'success' ]
-			: [ 'contact', 'address', 'cal', 'success' ];
+			? [ 'contact', 'address', 'pick-days', 'review-days' ]
+			: [ 'contact', 'address', 'cal' ];
 	};
 
 	HandikBookingForm.prototype.progressMarkup = function () {
@@ -711,9 +783,6 @@
 					this.submitDirect();
 				}
 				break;
-			case 'cal-back':
-				this.go( 'address' );
-				break;
 			case 'pick-back':
 				this.go( 'address' );
 				break;
@@ -739,7 +808,15 @@
 	};
 
 	HandikBookingForm.prototype.go = function ( step ) {
+		var previous = this.state.step;
 		this.state.step = step;
+		// Push a new history entry only on real step transitions, and never
+		// when we're responding to a popstate (would loop). The replace path
+		// covers the initial mount; subsequent forward moves push so the
+		// browser back button can rewind us one step at a time.
+		if ( previous !== step && ! this._navigatingFromHistory ) {
+			this.pushHistoryState( step );
+		}
 		this.render();
 	};
 
@@ -1024,17 +1101,22 @@
 		};
 	};
 
+	/**
+	 * Toggle the busy flag and re-render so the Continue button reflects
+	 * the new state. Earlier builds tried to mutate aria-busy / aria-disabled
+	 * directly on existing button DOM nodes, but `aria-disabled` lingered
+	 * after the request finished — leaving the Confirm button stuck on
+	 * follow-up screens (Project Work Days → Review → "Confirm selected
+	 * days" was un-clickable). Re-rendering keeps render() as the single
+	 * source of truth: the markup helpers compute `continueMuted` from
+	 * state.busy + validation, so the button is always in sync.
+	 *
+	 * busy() is only called from network-action paths (no input is in focus)
+	 * so the re-render doesn't disrupt typing.
+	 */
 	HandikBookingForm.prototype.busy = function ( on ) {
 		this.state.busy = !! on;
-		var primaries = this.shell ? this.shell.querySelectorAll( '.handik-btn.is-primary, .handik-btn.is-pending' ) : [];
-		primaries.forEach( function ( b ) {
-			if ( on ) {
-				b.setAttribute( 'aria-busy', 'true' );
-				b.setAttribute( 'aria-disabled', 'true' );
-			} else {
-				b.removeAttribute( 'aria-busy' );
-			}
-		} );
+		this.render();
 	};
 
 	// ===================================================================

@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.1.9.9
+Stable tag: 2.1.9.10
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, silent returning-client recognition, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,12 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.1.9.10 =
+* **Direct Visit progress dots count fixed.** Direct flows (Standard / Extended / Large Visit) now show 3 dots in the progress bar — Contact → Address → Pick a time — instead of 4. The terminal `success` step (the confirmation card) is no longer counted as a separate dot, matching the main `[handik_booking_app]` form which keeps `booking` as the last dot and never adds a separate success entry. Project Work Days flows correctly show 4 dots (Contact → Address → Choose days → Review).
+* **Pick a time has no Back/Continue.** The Cal.com embed step is the final step of the direct flow, same as the main form's `booking` step, so it no longer renders a footer with a Back button. The customer either books inside the iframe or uses the "Stuck? / Open the booking page directly" disclaimer.
+* **Project Work Days "Confirm selected days" button is no longer stuck disabled.** After save_selection completed the busy flag was reset to false but the Confirm button on the next screen kept its `aria-disabled="true"` because earlier code mutated DOM attributes directly instead of re-rendering. The busy() helper now updates `state.busy` and triggers a single re-render — render() recomputes `continueMuted` from busy + validation, so the button is always in sync.
+* **Browser back / forward buttons now navigate between steps.** Wired History API the same way the main form does it: `replaceState` on initial mount, `pushState` on every step transition (skipping the navigation-from-popstate case to avoid loops), and a single `popstate` listener that scopes by `instanceId` so other apps on the page can't trigger us. Hitting the browser back button rewinds one step at a time instead of leaving the page.
 
 = 2.1.9.9 =
 * **Fixed: Project Work Days slot loader returned 404 from Cal.com.** The Cal.com Platform API v2 versions each endpoint independently — `GET /v2/slots` only exists on `cal-api-version: 2024-09-04`, while `POST /v2/bookings` and `POST /v2/bookings/{uid}/cancel` still expect `cal-api-version: 2024-08-13`. The plugin was sending `2024-08-13` for everything, so the slots fetch hit `Cannot GET /v2/slots` from Cal.com's NestJS router. Each public method on `Handik_Booking_App_Cal_Api_Service` now passes its own pinned version (`SLOTS_API_VERSION` / `BOOKINGS_API_VERSION` constants), and the `request()` helper accepts a per-call `version` override. The `cal_api_version` admin setting is now a global fallback only — used when no per-endpoint pin applies.
