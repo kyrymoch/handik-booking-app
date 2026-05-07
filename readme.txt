@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.1.12.0
+Stable tag: 2.1.13.0
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, silent returning-client recognition, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,22 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.1.13.0 =
+* **Sprint 6 — phone-first OTP comes to the main `[handik_booking_app]` form.** The Additional Forms cohort has been on the new flow since 2.1.12.0; this release completes the migration.
+* **What customers see**:
+  - **Contact details step** is now phone-only. One field, one CTA ("Send code"). Twilio Verify SMS goes out.
+  - **New OTP step** between contact and address: 6-digit code field with `inputmode="numeric"` + `autocomplete="one-time-code"` (so iOS Mail / Android SMS-autofill can drop the code in), plus a 30-second-locked Resend button and a "Use a different number" link to bounce back to the phone screen.
+  - **Address step is now the combined "details" screen**:
+    - **Returning customer** (verified profile matched a CRM contact): saved-address `<select>` + address + unit. Name and email are already on file.
+    - **New customer**: full name + email + address + unit, all on one screen.
+* **Verified-client cache (30 days)**. Same `handik_verified_client_v1` localStorage key as the Additional Forms — a customer who verified on either form is recognized on the other. On boot, `/phone-verify/restore` revalidates the HMAC-signed token and rehydrates the profile, so a returning visitor opens the app straight on the address screen with no OTP at all. "Start over" wipes both the draft and the verified-client token.
+* **PII closure on the main form** matches Sprint 5: `/phone-verify/check` is the only path that returns saved profile data, and only AFTER Twilio confirms the customer owns the phone. The legacy `/contacts/lookup` round-trip is no longer the gate.
+* **Placeholders** on every input across the contact + address screens (phone `+1 555 123 4567`, full name `Jane Smith`, email `you@example.com`, OTP `6-digit code`).
+* **`inputmode` / `autocomplete` hints**: tel for phone, numeric+one-time-code for OTP, email for email, name for full name. Mobile keyboards get the right layout on first focus.
+* **Compatibility**: the verified-client token format is identical between the main form and the Additional Forms (single `Auth_Service::build_verified_token` issuer, single REST endpoint set under `handik-booking-app/v1/phone-verify/*`). Sites can run both forms with one Twilio Verify configuration.
+
+DB schema unchanged. The verified-client cookie reuses the existing `handik_booking_app_client` HMAC cookie from the email magic-link flow.
 
 = 2.1.12.0 =
 * **Sprint 5 — phone-first contact flow.** Re-introduces Twilio Verify SMS as the primary identity step for the Additional Booking Forms (the main `[handik_booking_app]` form follows in 2.1.13.0). The new journey is: phone → SMS code → branch.

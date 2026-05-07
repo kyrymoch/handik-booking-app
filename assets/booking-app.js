@@ -6,6 +6,43 @@
 	const CAL_EMBED_SCRIPT_ID = 'handik-cal-embed-script';
 	const DRAFT_STORAGE_KEY = 'handik_booking_app_draft_v1';
 	const DRAFT_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours.
+
+	// Sprint 6 — verified-client cache (shared key with Additional Forms so
+	// a customer who verified there is recognized here too, and vice versa).
+	const VERIFIED_CLIENT_STORAGE_KEY = 'handik_verified_client_v1';
+	const VERIFIED_CLIENT_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
+	function readVerifiedClient() {
+		if ( ! window.localStorage ) { return null; }
+		let raw;
+		try { raw = window.localStorage.getItem( VERIFIED_CLIENT_STORAGE_KEY ); }
+		catch ( e ) { return null; }
+		if ( ! raw ) { return null; }
+		try {
+			const v = JSON.parse( raw );
+			if ( ! v || ! v.token ) { return null; }
+			if ( v.savedAt && Date.now() - v.savedAt > VERIFIED_CLIENT_TTL_MS ) {
+				clearVerifiedClient();
+				return null;
+			}
+			return v;
+		} catch ( e ) {
+			clearVerifiedClient();
+			return null;
+		}
+	}
+
+	function saveVerifiedClient( v ) {
+		if ( ! window.localStorage ) { return; }
+		try { window.localStorage.setItem( VERIFIED_CLIENT_STORAGE_KEY, JSON.stringify( v ) ); }
+		catch ( e ) { /* quota; ignore */ }
+	}
+
+	function clearVerifiedClient() {
+		if ( ! window.localStorage ) { return; }
+		try { window.localStorage.removeItem( VERIFIED_CLIENT_STORAGE_KEY ); }
+		catch ( e ) { /* ignore */ }
+	}
 	const CAL_EMBED_TIMEOUT_MS = 15000;
 	const PERSISTED_STATE_FIELDS = [
 		'step',
@@ -88,6 +125,13 @@
 				assistantThreadId: '',
 				contact: { first_name: '', last_name: '', full_name: '', email: '', phone: '' },
 				touched: { full_name: false, email: false, phone: false },
+				// Sprint 6 — phone-first OTP flow.
+				otpCode: '',
+				otpError: '',
+				otpResendDisabledUntil: 0,
+				verifiedPhone: '',
+				verifiedToken: '',
+				phoneVerified: false,
 				bookingUrl: '',
 				bookingUrlLocked: false,
 				bookingStatus: '',
@@ -112,6 +156,10 @@
 			this.renderLoading();
 			this.restoreDraftFromStorage();
 			this.attachHistoryListener();
+			// Sprint 6: try to revalidate the verified-client token before
+			// the bootstrap call so a returning customer's profile is in
+			// state when the first render runs.
+			try { await this.tryRestoreVerifiedClient(); } catch ( e ) { /* ignore */ }
 			try {
 				this.bootstrap = await this.api( 'app/bootstrap', {}, 'GET' );
 				if ( this.bootstrap.verified_profile ) {
@@ -799,13 +847,26 @@
 				case 'task_selection':
 					return !! ( this.state.selectedTasks.length || this.state.isProject );
 				case 'address_details':
-					return !! ( this.state.address.address_full && this.state.address.is_valid && ! this.state.photoUploading );
+					// Returning customers: just a valid address is enough.
+					// New customers: also require name (email stays optional).
+					if ( ! this.state.address.address_full || ! this.state.address.is_valid || this.state.photoUploading ) {
+						return false;
+					}
+					if ( ! this.state.isReturningClient ) {
+						if ( ! this.validateFullName( this.state.contact.full_name ) ) { return false; }
+						if ( this.state.contact.email && ! this.validateEmail( this.state.contact.email ) ) { return false; }
+					}
+					return true;
 				case 'photos':
 					return ! this.state.photoUploading;
 				case 'assistant':
 					return this.assistantCanContinue();
 				case 'contact_details':
-					return this.validateContactFields().valid;
+					// Sprint 6: contact_details is now phone-only.
+					return this.validatePhone( this.state.contact.phone );
+				case 'otp_verify':
+					// Active when the customer has typed enough digits to verify.
+					return String( this.state.otpCode || '' ).replace( /\D/g, '' ).length >= 4;
 				default:
 					return true;
 			}
@@ -1159,16 +1220,28 @@
 					this.goTo( 'contact_details' );
 					break;
 				case 'contact-next':
+					// Sprint 6: contact_details is now phone-only. Continue
+					// fires Twilio Verify and routes to the OTP screen.
 					if ( ! this.stepCanContinue( 'contact_details' ) ) {
-						this.state.touched.full_name = true;
-						this.state.touched.email = true;
 						this.state.touched.phone = true;
 						this.render();
 						this.setFooterHint( this.contactValidationMessage(), true );
 						return;
 					}
-					await this.maybeLookupContact( true );
-					this.goTo( 'address_details' );
+					await this.startPhoneOtp();
+					break;
+				case 'otp-verify':
+					if ( ! this.stepCanContinue( 'otp_verify' ) ) { return; }
+					await this.verifyPhoneOtp();
+					break;
+				case 'otp-resend':
+					if ( Date.now() < this.state.otpResendDisabledUntil ) { return; }
+					await this.startPhoneOtp( /* isResend */ true );
+					break;
+				case 'otp-back':
+					this.state.otpCode = '';
+					this.state.otpError = '';
+					this.goTo( 'contact_details' );
 					break;
 				case 'open-booking':
 					if ( this.state.bookingUrl ) {
@@ -1238,7 +1311,12 @@
 					}
 					break;
 				case 'back-address':
-					this.goTo( 'contact_details' );
+					// Sprint 6: address_details is now post-OTP. "Back" goes
+					// to the OTP screen if the customer might want to
+					// re-enter the code, or further back to phone if their
+					// session is verified (they can re-verify a different
+					// number from there).
+					this.goTo( this.state.phoneVerified ? 'contact_details' : 'otp_verify' );
 					break;
 				case 'back-photos':
 					this.goTo( 'task_selection' );
@@ -1291,6 +1369,10 @@
 			this.assistantPrewarmedSession = null;
 			this.assistantPrewarmedRequestId = 0;
 					this.clearDraftStorage();
+					// Sprint 6: also drop the verified-client token so a
+					// fresh customer can use the same browser without
+					// inheriting the previous session's identity.
+					clearVerifiedClient();
 					if ( window.HandikChatKitBridge && typeof window.HandikChatKitBridge.reset === 'function' && this.state.requestId ) {
 						window.HandikChatKitBridge.reset( 'request_' + String( this.state.requestId ) );
 					}
@@ -1418,6 +1500,96 @@
 				if ( shouldRender && 'address_details' === this.state.step ) {
 					this.render();
 				}
+			}
+		}
+
+		// =====================================================================
+		// Sprint 6 — phone-first OTP flow.
+		// =====================================================================
+
+		async startPhoneOtp( isResend ) {
+			const phoneRaw = String( this.state.contact.phone || '' );
+			if ( ! this.validatePhone( phoneRaw ) ) {
+				this.notify( 'warning', '', config.strings.errors && config.strings.errors.invalidPhone || 'Please enter a valid phone number.', 4200 );
+				return;
+			}
+			const phoneApi = this.phoneApiValue ? this.phoneApiValue( phoneRaw ) : phoneRaw;
+			this.state.loading = true;
+			this.render();
+			try {
+				const res = await this.api( 'phone-verify/start', { phone: phoneApi }, 'POST' );
+				this.state.otpError = '';
+				this.state.otpResendDisabledUntil = Date.now() + 30 * 1000;
+				if ( ! isResend ) {
+					this.goTo( 'otp_verify' );
+				}
+				this.notify( 'info', '', ( res && res.message ) || ( config.strings.otpSentToast || 'Code sent.' ), 3200 );
+			} catch ( error ) {
+				this.notify( 'error', '', error.message || 'Could not send code.', 5000 );
+			} finally {
+				this.state.loading = false;
+				this.render();
+			}
+		}
+
+		async verifyPhoneOtp() {
+			const phoneRaw = String( this.state.contact.phone || '' );
+			const phoneApi = this.phoneApiValue ? this.phoneApiValue( phoneRaw ) : phoneRaw;
+			const code = String( this.state.otpCode || '' ).replace( /\D/g, '' );
+			this.state.loading = true;
+			this.render();
+			try {
+				const res = await this.api( 'phone-verify/check', { phone: phoneApi, code: code }, 'POST' );
+				this.state.otpError = '';
+				this.state.verifiedPhone = String( res.verified_phone || phoneApi );
+				this.state.verifiedToken = String( res.verified_token || '' );
+				this.state.phoneVerified = true;
+				this.state.isReturningClient = ! res.is_new_client;
+				if ( res.profile && res.profile.contact ) {
+					// Re-use the existing verifiedProfile slot so the rest of
+					// the SPA (saved-address dropdown, prefillFromProfile)
+					// keeps working unchanged.
+					this.state.verifiedProfile = res.profile;
+					this.prefillFromProfile();
+				}
+				saveVerifiedClient( {
+					token: this.state.verifiedToken,
+					phone: this.state.verifiedPhone,
+					savedAt: Date.now()
+				} );
+				if ( this.state.isReturningClient ) {
+					this.notify( 'info', '', config.strings.welcomeBack || 'Welcome back — we found your saved details.', 3600 );
+				}
+				this.goTo( 'address_details' );
+			} catch ( error ) {
+				this.state.otpError = error.message || ( config.strings.otpInvalid || 'That code is invalid or expired.' );
+				this.render();
+			} finally {
+				this.state.loading = false;
+				this.render();
+			}
+		}
+
+		async tryRestoreVerifiedClient() {
+			const stored = readVerifiedClient();
+			if ( ! stored || ! stored.token ) { return false; }
+			try {
+				const res = await this.api( 'phone-verify/restore', { verified_token: stored.token }, 'POST' );
+				this.state.verifiedToken = stored.token;
+				this.state.verifiedPhone = String( res.verified_phone || stored.phone || '' );
+				this.state.phoneVerified = true;
+				this.state.isReturningClient = ! res.is_new_client;
+				if ( this.state.verifiedPhone && ! this.state.contact.phone ) {
+					this.state.contact.phone = this.state.verifiedPhone;
+				}
+				if ( res.profile && res.profile.contact ) {
+					this.state.verifiedProfile = res.profile;
+					this.prefillFromProfile();
+				}
+				return true;
+			} catch ( e ) {
+				clearVerifiedClient();
+				return false;
 			}
 		}
 
@@ -2588,7 +2760,10 @@
 		}
 
 		applicableSteps() {
-			return [ 'task_selection', 'photos', 'contact_details', 'address_details', 'assistant', 'booking' ];
+			// Sprint 6: phone-first OTP gates entry to address_details. The
+			// new 'otp_verify' step lives between contact_details (now phone-only)
+			// and address_details (now branched: returning vs new client).
+			return [ 'task_selection', 'photos', 'contact_details', 'otp_verify', 'address_details', 'assistant', 'booking' ];
 		}
 
 		render() {
@@ -2636,7 +2811,9 @@
 				case 'assistant':
 					return this.screen( config.strings.assistantTitle || 'Virtual assistant', this.assistantMarkup(), 'is-wide' );
 				case 'contact_details':
-					return this.screen( config.strings.contactTitle || 'Contact details', this.contactMarkup() );
+					return this.screen( config.strings.contactTitle || 'Your phone', this.contactMarkup() );
+				case 'otp_verify':
+					return this.screen( config.strings.otpStepTitle || 'Enter the code', this.otpVerifyMarkup() );
 				case 'booking':
 					return this.screen( config.strings.bookingTitle || 'Book your time slot', this.bookingMarkup() );
 				case 'unsafe':
@@ -2712,6 +2889,7 @@
 					attrs.autocomplete = 'name';
 					attrs.autocapitalize = 'words';
 					attrs.spellcheck = 'false';
+					attrs.placeholder = config.strings.fullNamePlaceholder || 'Jane Smith';
 					break;
 				case 'contact.first_name':
 					attrs.autocomplete = 'given-name';
@@ -2726,10 +2904,25 @@
 					attrs.inputmode = 'email';
 					attrs.autocapitalize = 'off';
 					attrs.spellcheck = 'false';
+					attrs.placeholder = config.strings.emailPlaceholder || 'you@example.com';
 					break;
 				case 'contact.phone':
 					attrs.autocomplete = 'tel';
 					attrs.inputmode = 'tel';
+					attrs.placeholder = config.strings.phonePlaceholder || '+1 555 123 4567';
+					break;
+				case 'contact.full_name':
+					// (already set above) — this branch is unreachable but kept for grep safety.
+					break;
+				case 'otpCode':
+					// SMS-autofill hint, numeric keypad on mobile, no autocaps.
+					attrs.autocomplete = 'one-time-code';
+					attrs.inputmode = 'numeric';
+					attrs.maxlength = '8';
+					attrs.pattern = '[0-9]*';
+					attrs.autocapitalize = 'off';
+					attrs.spellcheck = 'false';
+					attrs.placeholder = config.strings.otpPlaceholder || '6-digit code';
 					break;
 				default:
 					if ( 'email' === type ) {
@@ -2778,8 +2971,21 @@
 		}
 
 		addressMarkup() {
+			// Sprint 6: address_details is now the combined "details" screen
+			// for the post-OTP flow. Returning customers (verified profile)
+			// see the saved-address picker; new customers also see name +
+			// email fields above the address inputs (phone is already
+			// verified, so it's gone from this screen).
 			const addressOptions = this.state.verifiedProfile && Array.isArray( this.state.verifiedProfile.addresses ) ? this.state.verifiedProfile.addresses : [];
 			const isReturningProfile = !! ( this.state.verifiedProfile && this.state.verifiedProfile.contact );
+			const newClientFields = ( ! isReturningProfile && this.state.phoneVerified )
+				? this.input( config.strings.fullNameLabel || 'Full name', 'contact.full_name', 'text',
+						this.isFieldInvalid( 'full_name' ) ? 'is-invalid' : '', '',
+						this.contactFieldError( 'full_name' ) ) +
+					this.input( config.strings.emailLabel || 'Email (optional)', 'contact.email', 'email',
+						this.isFieldInvalid( 'email' ) ? 'is-invalid' : '', '',
+						this.contactFieldError( 'email' ) )
+				: '';
 			const addressAntiAutofillAttrs = ' autocomplete="new-password" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" data-form-type="other" name="handik_job_location_query"';
 			const unitAntiAutofillAttrs = ' autocomplete="new-password" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" data-form-type="other" name="handik_job_unit_detail"';
 			let savedAddressMarkup = '';
@@ -2792,6 +2998,7 @@
 			}
 
 			return (
+				newClientFields +
 				savedAddressMarkup +
 				'<label class="handik-field handik-field--address' + ( this.state.address.is_valid || ! this.state.address.address_full ? '' : ' is-invalid' ) + '"><span>' + this.escape( config.strings.addressLabel || 'Address of the job' ) + '</span><input id="handik-job-address" type="text" data-model="address.address_full"' + addressAntiAutofillAttrs + ' placeholder="' + this.escape( config.strings.addressPlaceholder || 'Start typing the address of the job' ) + '" value="' + this.escape( this.state.address.address_full || '' ) + '" />' +
 					( this.state.address.address_full && ! this.state.address.is_valid ? '<span class="handik-field__error" role="alert">' + this.escape( ( config.strings.errors && config.strings.errors.addressRequired ) || 'Choose a valid address from the suggestions to continue.' ) + '</span>' : '' ) +
@@ -2825,16 +3032,54 @@
 		}
 
 		contactMarkup() {
+			// Sprint 6: contact_details is now phone-only. SMS code goes
+			// next via /phone-verify/start. Returning customers will
+			// auto-skip to address_details on success.
 			if ( this.state.verifiedProfile && this.state.verifiedProfile.contact && ! this.state.contact.full_name ) {
 				this.prefillFromProfile();
 			}
-			return '<p class="handik-booking-app__intro">' + this.escape( config.strings.contactIntro || "Tell us how to reach you. If you've booked here before, we'll recognize you." ) + '</p>' +
-				this.input( 'Full name', 'contact.full_name', 'text', this.isFieldInvalid( 'full_name' ) ? 'is-invalid' : '', '', this.contactFieldError( 'full_name' ) ) +
-				'<div class="handik-grid-2">' +
-				this.input( 'Phone', 'contact.phone', 'tel', this.isFieldInvalid( 'phone' ) ? 'is-invalid' : '', '', this.contactFieldError( 'phone' ) ) +
-				this.input( 'Email (optional)', 'contact.email', 'email', this.isFieldInvalid( 'email' ) ? 'is-invalid' : '', '', this.contactFieldError( 'email' ) ) +
+			const phoneError = this.isFieldInvalid( 'phone' ) ? this.contactFieldError( 'phone' ) : '';
+			const introCopy = config.strings.phoneStepIntro || "We'll text you a one-time code to confirm.";
+			return '<p class="handik-booking-app__intro">' + this.escape( introCopy ) + '</p>' +
+				this.input( config.strings.phoneLabel || 'Phone', 'contact.phone', 'tel',
+					this.isFieldInvalid( 'phone' ) ? 'is-invalid' : '',
+					'', phoneError ) +
+				this.footerActions( '', 'contact-next',
+					this.escape( config.strings.sendCodeCta || 'Send code' ), '',
+					{ continueMuted: ! this.stepCanContinue( 'contact_details' ), hideBack: true } );
+		}
+
+		/**
+		 * OTP step. 6-digit code entry + Verify CTA + Resend (30s lockout)
+		 * + "Use a different number" link. Mirrors the Additional Forms
+		 * implementation byte-for-byte.
+		 */
+		otpVerifyMarkup() {
+			const error = this.state.otpError ? this.state.otpError : '';
+			const now = Date.now();
+			const resendIn = Math.max( 0, Math.ceil( ( this.state.otpResendDisabledUntil - now ) / 1000 ) );
+			const introTpl = config.strings.otpIntro || 'Enter the 6-digit code we just sent to %s.';
+			const intro = introTpl.replace( '%s', this.escape( this.state.contact.phone ) );
+			return '<p class="handik-booking-app__intro">' + intro + '</p>' +
+				this.input( config.strings.otpCodeLabel || 'Verification code', 'otpCode', 'text',
+					error ? 'is-invalid' : '',
+					'', error ) +
+				'<div class="handik-booking-app__otp-aux">' +
+					( resendIn > 0
+						? '<span class="handik-booking-app__otp-resend is-pending">' +
+							this.escape( ( config.strings.otpResendIn || 'You can resend in %ds' ).replace( '%d', String( resendIn ) ) ) +
+						'</span>'
+						: '<button type="button" class="handik-text-link" data-action="otp-resend">' +
+							this.escape( config.strings.otpResendCta || 'Resend code' ) +
+						'</button>' ) +
+					'<span class="handik-app-disclaimer__sep" aria-hidden="true"> · </span>' +
+					'<button type="button" class="handik-text-link" data-action="otp-back">' +
+						this.escape( config.strings.otpDifferentNumberCta || 'Use a different number' ) +
+					'</button>' +
 				'</div>' +
-				this.footerActions( 'back-contact', 'contact-next', this.escape( config.strings.contactContinue || 'Continue' ), '', { continueMuted: ! this.stepCanContinue( 'contact_details' ) } );
+				this.footerActions( '', 'otp-verify',
+					this.escape( config.strings.verifyCta || 'Verify' ), '',
+					{ continueMuted: ! this.stepCanContinue( 'otp_verify' ), hideBack: true } );
 		}
 
 		bookingMarkup() {
