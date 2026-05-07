@@ -253,12 +253,20 @@ class Handik_Booking_App_Cal_Api_Service {
 			);
 		}
 
+		// Cal-Idempotency-Key turns a retried cancel into a single 2xx response
+		// instead of "already cancelled" 400 on the second call. Without this,
+		// the rollback path (project_schedule_service::rollback_after_failure)
+		// could mark a day as FAILED on a benign retry and tip the schedule
+		// into PARTIAL_FAILED — even though Cal had cleanly cancelled.
 		$response = $this->request(
 			'POST',
 			'/bookings/' . rawurlencode( $uid ) . '/cancel',
 			array(
 				'body' => array(
 					'cancellationReason' => '' !== $reason ? $reason : 'Handik plugin rollback',
+				),
+				'headers' => array(
+					'Cal-Idempotency-Key' => 'handik-cancel-' . $uid,
 				),
 				'version' => self::BOOKINGS_API_VERSION,
 			)

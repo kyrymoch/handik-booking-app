@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.1.10.0
+Stable tag: 2.1.10.1
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, silent returning-client recognition, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,19 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.1.10.1 =
+* **Sprint 2 — state-machine + Cal-integration bugs in Additional Forms.** Closes the P1 findings from the v2.1.9.10 audit.
+* **Project schedule state machine clarified.** `confirm_schedule` now accepts only `SELECTED → CREATING` and returns explicit, action-specific errors for the other states (CREATING / PARTIAL_FAILED / ROLLED_BACK), so the customer or admin always knows what to do. Earlier the allow-list listed CREATING / PARTIAL_FAILED / ROLLED_BACK but the CAS lock only matched SELECTED, so retries from those states 409'd forever.
+* **`save_selection` accepts ROLLED_BACK.** When the customer's first confirm hits a stale slot mid-flight and the rollback completes, they can now pick a fresh set of days inside the same form — no admin intervention needed. Previously they were stuck with a one-shot form.
+* **Cal cancel calls now carry a `Cal-Idempotency-Key`.** Header value `handik-cancel-{uid}` makes the second cancel a 2xx instead of "already cancelled" 4xx — which previously tipped a clean rollback into `PARTIAL_FAILED` despite Cal having no booking left.
+* **Cal embed query params trimmed before mounting.** The booking URL Cal.com hands back includes booking-page-only params (`overlayCalendar` / `month` / `date` / `slot` / `embed` / `embed_origin` / `layout`) that, when forwarded to the inline embed, made the calendar deep-link past the picker into a "no slots" view. Mirrors the main `[handik_booking_app]` form's identical blacklist.
+* **`validateFullName` accepts a period.** Names like "John A. Smith" or "Jr." now pass — previously they were rejected and the customer was bounced from the contact step. Matches the main form's `[\p{L}\s'.-]` regex.
+* **Address validation parity with main form.** Google Places suggestions now require `formatted_address` + line one + geometry **AND** `postal_code` + `administrative_area_level_1` (state). Otherwise downstream payloads reaching `/forms/direct/submit` and the project APIs were missing fields the CRM and Cal location string need.
+* **Phone formatter preserves caret position.** Editing the middle of a phone number no longer jumps the cursor to the end after every keystroke. Same digits-before-caret + walk-forward algorithm the main form uses.
+* **"Start a new booking" now confirms before wiping state.** A misclick on the Stuck disclaimer used to nuke a half-completed Project Work Days selection. Now opens a small modal with `Keep my booking` / `Start over` buttons. Mirrors the main form's restart modal.
+* **`seed_defaults` race-safe.** Two concurrent first-page-load requests no longer collide on the `preset_slug` UNIQUE index and leave the table partially seeded. Each row pre-flights with a SELECT; the UNIQUE index still backs us at the storage layer.
+* **Edit button hidden when preset is an in-memory default.** Before the first plugin activation seeds the `form_presets` table, the admin list rendered Edit links to `?preset_id=0` that resolved to "Preset not found." Now those rows show a `default` chip with a tooltip asking the admin to activate the plugin / run pending migrations.
 
 = 2.1.10.0 =
 * **Security sprint #1 — Additional Booking Forms.** Closes the P0 findings from the v2.1.9.10 audit. Public REST endpoints under `handik-booking-app/v1/forms/*` are now hardened against the abuse paths the audit flagged.

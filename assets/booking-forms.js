@@ -93,7 +93,8 @@
 			confirmedDays: [],
 			savedAddresses: [],   // populated by /contacts/lookup
 			isReturningClient: false,
-			profileContactId: 0
+			profileContactId: 0,
+			restartConfirmVisible: false
 		};
 
 		this.applyAppearance();
@@ -231,6 +232,7 @@
 		html += '</section>';
 		html += this.progressMarkup();
 		html += this.disclaimerMarkup();
+		html += this.restartModalMarkup();
 
 		this.shell.innerHTML = html;
 
@@ -580,6 +582,33 @@
 		return html;
 	};
 
+	/**
+	 * Confirm modal shown when the customer clicks "Start a new booking" in
+	 * the Stuck disclaimer. The link in earlier builds reset state in one
+	 * click, which threw away a half-completed Project Work Days selection
+	 * on a misclick. Modal mirrors the main form's restartModalMarkup
+	 * (booking-app.js:2684-2693) — same shape, same copy.
+	 */
+	HandikBookingForm.prototype.restartModalMarkup = function () {
+		if ( ! this.state.restartConfirmVisible ) {
+			return '';
+		}
+		return '<div class="handik-modal-backdrop" role="presentation">' +
+				'<section class="handik-modal" role="dialog" aria-modal="true" aria-label="' + escapeAttr( this.t( 'restartConfirmTitle' ) ) + '">' +
+					'<h3>' + escapeHtml( this.t( 'restartConfirmTitle' ) ) + '</h3>' +
+					'<p>' + escapeHtml( this.t( 'restartConfirmBody' ) ) + '</p>' +
+					'<div class="handik-modal__actions">' +
+						'<button type="button" class="handik-btn is-secondary" data-action="restart-cancel">' +
+							'<span class="handik-btn__label">' + escapeHtml( this.t( 'restartConfirmCancel' ) ) + '</span>' +
+						'</button>' +
+						'<button type="button" class="handik-btn is-primary" data-action="restart-confirm">' +
+							'<span class="handik-btn__label">' + escapeHtml( this.t( 'restartConfirmCta' ) ) + '</span>' +
+						'</button>' +
+					'</div>' +
+				'</section>' +
+			'</div>';
+	};
+
 	HandikBookingForm.prototype.disclaimerMarkup = function () {
 		// Mirror main app's "Stuck? Start a new booking · Open the booking
 		// page directly" footer link.
@@ -717,8 +746,35 @@
 		if ( ! model ) { return; }
 		var value = input.value;
 		if ( 'contact.phone' === model ) {
+			// Preserve caret position across the live reformat. We count
+			// digits before the caret in the OLD value, run the formatter,
+			// then walk forward in the NEW value until we've seen that
+			// many digits — the caret lands at the same logical position
+			// regardless of how many separators were inserted/removed.
+			// Without this the caret snaps to the end of the field after
+			// every keystroke, making mid-number editing impossible.
+			var oldValue = input.value;
+			var caretOld = ( typeof input.selectionStart === 'number' ) ? input.selectionStart : oldValue.length;
+			var digitsBeforeCaret = oldValue.slice( 0, caretOld ).replace( /\D/g, '' ).length;
 			value = formatPhoneAsYouType( value );
 			input.value = value;
+			var caretNew = value.length;
+			if ( digitsBeforeCaret > 0 ) {
+				var seen = 0;
+				for ( var i = 0; i < value.length; i++ ) {
+					if ( /\d/.test( value.charAt( i ) ) ) {
+						seen++;
+					}
+					if ( seen >= digitsBeforeCaret ) {
+						caretNew = i + 1;
+						break;
+					}
+				}
+			} else {
+				caretNew = Math.min( caretOld, value.length );
+			}
+			try { input.setSelectionRange( caretNew, caretNew ); }
+			catch ( e ) { /* number/email inputs reject setSelectionRange */ }
 		}
 		if ( 'address.address_full' === model ) {
 			// User edited the address text directly — invalidate the previous
@@ -804,6 +860,18 @@
 				this.toggleSlot( btn.getAttribute( 'data-slot-start' ), btn.getAttribute( 'data-slot-end' ) );
 				break;
 			case 'restart':
+				// Don't nuke state on first click — show a confirm modal so a
+				// misclick on the disclaimer doesn't wipe a partially-completed
+				// project selection.
+				this.state.restartConfirmVisible = true;
+				this.render();
+				break;
+			case 'restart-cancel':
+				this.state.restartConfirmVisible = false;
+				this.render();
+				break;
+			case 'restart-confirm':
+				this.state.restartConfirmVisible = false;
 				this.restart();
 				break;
 		}
@@ -1230,6 +1298,27 @@
 		return this.calEmbedPromise;
 	};
 
+	/**
+	 * Booking-page query parameters that must NOT be forwarded to the inline
+	 * Cal embed. They're meaningful only on the standalone Cal.com page (deep
+	 * linking to a specific date/slot via the iframe surface). When forwarded
+	 * to embed.js they cause the calendar to deep-link past the picker into
+	 * a "no slots available" state — masking the real availability the
+	 * customer needs to see.
+	 *
+	 * Mirrors the same blacklist the main `[handik_booking_app]` form uses
+	 * in its parseBookingEmbedConfig at booking-app.js:2149.
+	 */
+	var CAL_EMBED_DROP_PARAMS = {
+		overlayCalendar: true,
+		month: true,
+		date: true,
+		slot: true,
+		embed: true,
+		embed_origin: true,
+		layout: true
+	};
+
 	HandikBookingForm.prototype.parseCalEmbedConfig = function () {
 		if ( ! this.state.calBookingUrl ) { return null; }
 		var bookingUrl;
@@ -1240,6 +1329,9 @@
 		var calLink = pathParts.join( '/' );
 		var embedConfig = {};
 		bookingUrl.searchParams.forEach( function ( value, key ) {
+			if ( CAL_EMBED_DROP_PARAMS[ key ] ) {
+				return;
+			}
 			if ( 'phone' === key ) {
 				var v = String( value || '' ).replace( /[\s()-]+/g, '' );
 				embedConfig[ key ] = v && '+' !== v.charAt( 0 ) ? '+' + v : v;
@@ -1496,8 +1588,10 @@
 		catch ( err ) { throw new Error( 'Could not parse booking form config' ); }
 	}
 
+	// Mirrors the main app's validator (booking-app.js:834): allow letters
+	// (any script via \p{L}), spaces, apostrophe, period (for "Jr."), hyphen.
 	function validateFullName( v ) {
-		return /^[\p{L}][\p{L}\s'-]*$/u.test( String( v == null ? '' : v ).trim() );
+		return /^[\p{L}][\p{L}\s'.-]*$/u.test( String( v == null ? '' : v ).trim() );
 	}
 	function validateEmail( v ) {
 		return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test( String( v == null ? '' : v ).trim() );
@@ -1552,14 +1646,28 @@
 		var route = value( 'route', false );
 		var subpremise = value( 'subpremise', false );
 		var lineOne = [ streetNumber, route ].filter( Boolean ).join( ' ' ).trim();
+		var postalCode = value( 'postal_code', false );
+		var state = value( 'administrative_area_level_1', true );
+		// is_valid parity with the main app (booking-app.js:2922-2929):
+		// require formatted_address + line one + geometry AND a postal code
+		// + state. Earlier we accepted Place results missing ZIP/state, then
+		// the server payload would arrive at /forms/* without the fields the
+		// CRM and Cal location string expect.
 		return {
 			address_full:   place.formatted_address || '',
 			address_line_1: lineOne || place.formatted_address || '',
 			address_unit:   subpremise || '',
 			city:  value( 'locality', false ) || value( 'postal_town', false ) || value( 'sublocality_level_1', false ),
-			state: value( 'administrative_area_level_1', true ),
-			zip_code: value( 'postal_code', false ),
-			is_valid: !! ( place.formatted_address && lineOne && place.geometry && place.geometry.location )
+			state: state,
+			zip_code: postalCode,
+			is_valid: !! (
+				place.formatted_address
+				&& lineOne
+				&& postalCode
+				&& state
+				&& place.geometry
+				&& place.geometry.location
+			)
 		};
 	}
 

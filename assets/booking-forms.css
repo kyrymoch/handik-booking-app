@@ -222,6 +222,62 @@
 }
 
 /* ===================================================================== */
+/* Restart confirm modal — same visual language as a small dialog.       */
+/* Only rendered when the customer clicks "Start a new booking" in the   */
+/* Stuck disclaimer; first click no longer nukes their state.            */
+/* ===================================================================== */
+
+.handik-modal-backdrop {
+	position: fixed;
+	inset: 0;
+	background: rgba( 15, 23, 42, 0.45 );
+	backdrop-filter: blur( 4px );
+	-webkit-backdrop-filter: blur( 4px );
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	z-index: 2147482000;
+	padding: 16px;
+}
+
+.handik-modal {
+	background: var( --handik-surface, #fff );
+	border-radius: var( --handik-radius, 18px );
+	padding: 22px 24px;
+	max-width: 440px;
+	width: 100%;
+	box-shadow: 0 32px 60px rgba( 15, 23, 42, 0.32 );
+}
+
+.handik-modal h3 {
+	margin: 0 0 8px;
+	font-size: 1.15rem;
+	color: var( --handik-text, #0f172a );
+}
+
+.handik-modal p {
+	margin: 0 0 18px;
+	color: var( --handik-muted-text, #475569 );
+	font-size: 0.95rem;
+	line-height: 1.5;
+}
+
+.handik-modal__actions {
+	display: flex;
+	gap: 10px;
+	justify-content: flex-end;
+}
+
+@media ( max-width: 540px ) {
+	.handik-modal__actions {
+		flex-direction: column-reverse;
+	}
+	.handik-modal__actions .handik-btn {
+		width: 100%;
+	}
+}
+
+/* ===================================================================== */
 /* Reduced motion                                                         */
 /* ===================================================================== */
 
