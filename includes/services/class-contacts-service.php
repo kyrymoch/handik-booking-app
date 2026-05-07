@@ -79,6 +79,34 @@ class Handik_Booking_App_Contacts_Service {
 	}
 
 	/**
+	 * Batch fetch — admin list pages used to call get() per row, hitting the
+	 * DB N times. Returns a map of id → contact row so callers can resolve
+	 * by id without N+1.
+	 *
+	 * @param array<int, int> $ids Contact ids.
+	 * @return array<int, array<string, mixed>>
+	 */
+	public function get_many( array $ids ) {
+		$ids = array_values( array_unique( array_map( 'absint', $ids ) ) );
+		$ids = array_filter( $ids );
+		if ( empty( $ids ) ) {
+			return array();
+		}
+		global $wpdb;
+		$table       = Handik_Booking_App_DB::table( 'contacts' );
+		$placeholders = implode( ',', array_fill( 0, count( $ids ), '%d' ) );
+		$rows        = $wpdb->get_results(
+			$wpdb->prepare( "SELECT * FROM {$table} WHERE id IN ({$placeholders})", $ids ), // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+			ARRAY_A
+		);
+		$out = array();
+		foreach ( (array) $rows as $row ) {
+			$out[ (int) $row['id'] ] = $row;
+		}
+		return $out;
+	}
+
+	/**
 	 * @param string $email Email.
 	 * @param string $phone Phone.
 	 * @return array<string, mixed>|null

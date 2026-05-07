@@ -473,7 +473,18 @@ class Handik_Booking_App_REST_API {
 			return new WP_Error( 'handik_bad_nonce', __( 'Stale link — reopen the System info page and try again.', 'handik-booking-app' ), array( 'status' => 403 ) );
 		}
 		$table_short = sanitize_key( $request['table'] );
-		$allowed = array( 'job_requests', 'bookings', 'contacts', 'addresses', 'messages' );
+		$allowed = array(
+			'job_requests',
+			'bookings',
+			'contacts',
+			'addresses',
+			'messages',
+			// Additional Forms tables (added in 2.1.9.1 / 2.1.10.0).
+			'form_presets',
+			'direct_booking_requests',
+			'project_scheduling_requests',
+			'project_work_days',
+		);
 		if ( ! in_array( $table_short, $allowed, true ) ) {
 			return new WP_Error( 'handik_invalid_table', __( 'Table not allowed.', 'handik-booking-app' ), array( 'status' => 400 ) );
 		}

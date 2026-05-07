@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.1.11.0
+Stable tag: 2.1.11.1
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, silent returning-client recognition, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,22 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.1.11.1 =
+* **Sprint 4 — admin polish + operational hygiene for Additional Forms.** Closes the P3 audit findings.
+* **Project schedule admin actions.** The detail page now exposes a copy-friendly **Public link** field (the unguessable per-schedule token URL — useful for resending to a returning customer) and a per-day **Cancel** button that calls Cal.com's cancel API and marks the local row CANCELLED. Nonce-protected + `manage_options`-gated.
+* **Direct submissions list shows the customer's address.** Earlier admins saw client/phone/preset but had to click into the contact to find the address. Now batch-rendered alongside.
+* **N+1 contact lookups fixed.** Both the Direct and Project list pages used to call `Contacts_Service::get()` once per row (up to 100 round-trips). New `Contacts_Service::get_many()` and `Addresses_Service::get_many()` batch these into a single query each.
+* **Mobile admin bottom-nav now includes Additional Forms.** It was reachable only via the side menu before — now there's a "Forms" tab in the bottom strip on mobile.
+* **Daily cleanup cron for abandoned schedules.** A new `handik_booking_app_form_gc_abandoned` cron deletes `project_scheduling_requests` rows that have been in DRAFT / SELECTING for more than 7 days (plus their `project_work_days` children). CONFIRMED, PARTIAL_FAILED, and CREATING are never touched — the GC is conservative on purpose.
+* **Cloudflare-aware client IP everywhere.** Both the IP packed into `direct_booking_requests.client_ip` / `project_scheduling_requests.client_ip` and the per-IP rate-limit bucket now check `Cf-Connecting-Ip` → `X-Forwarded-For` → `REMOTE_ADDR`. Sites behind CloudFlare no longer rate-limit on a single proxy IP.
+* **Numeric validation on `cal_event_type_id`.** Pasting a slug or a typo into the preset edit form used to silently 400 every `/v2/slots` request later. Now the field is digit-stripped on save.
+* **Raw tables (debug) view + CSV export now include the four Additional Forms tables.** `form_presets`, `direct_booking_requests`, `project_scheduling_requests`, `project_work_days` are inspectable from System info → Raw tables, and have download buttons under "Export tables to CSV".
+* **Operator name no longer hardcoded in customer copy.** New setting `operator_first_name` (default `Alex`). All "Alex will follow up" / "Alex will be in touch" / "contact Alex directly" strings now substitute this. The localizable templates carry `%s` so translators can place the name anywhere in the sentence.
+* **Auto-flush rewrite rules on version bump.** Plugins updated via FTP / WP-CLI never fire the activation hook, so `/booking/{slug}` could 404 until the admin saved Permalinks. The router now records the last-flushed version and re-flushes once when it sees a new version on `init`.
+* **Code de-duplication.** `build_encoded_url` and `client_ip_packed` were copy-pasted across the three forms services with subtle drift. Pulled into `Handik_Booking_App_Forms_Helpers` so all three flows agree on the encoding rules and IP-detection chain.
+
+DB schema unchanged.
 
 = 2.1.11.0 =
 * **Sprint 3 — UX parity + accessibility for Additional Booking Forms.** Closes the customer-facing P2 findings from the v2.1.9.10 audit.
