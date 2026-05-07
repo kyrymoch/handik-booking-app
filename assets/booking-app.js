@@ -1533,6 +1533,15 @@
 		}
 
 		async verifyPhoneOtp() {
+			// Hotfix 2.1.13.1: re-entry guard. Auto-advance fires this on the
+			// keystroke that completes the 6th digit; iOS autofill / paste
+			// can also trigger a duplicate input event in the same tick.
+			// Without the guard we'd double-POST /phone-verify/check —
+			// Twilio invalidates the verification on the first hit, so the
+			// second hit returns 404 ("VerificationCheck not found"). That's
+			// the production error the owner reported.
+			if ( this._otpVerifyInFlight ) { return; }
+			this._otpVerifyInFlight = true;
 			const phoneRaw = String( this.state.contact.phone || '' );
 			const phoneApi = this.phoneApiValue ? this.phoneApiValue( phoneRaw ) : phoneRaw;
 			const code = String( this.state.otpCode || '' ).replace( /\D/g, '' );
@@ -1563,8 +1572,13 @@
 				this.goTo( 'address_details' );
 			} catch ( error ) {
 				this.state.otpError = error.message || ( config.strings.otpInvalid || 'That code is invalid or expired.' );
+				// Wipe the buffer so the customer can retype without manually
+				// clearing the field. Auto-advance re-fires on the next 6
+				// fresh digits.
+				this.state.otpCode = '';
 				this.render();
 			} finally {
+				this._otpVerifyInFlight = false;
 				this.state.loading = false;
 				this.render();
 			}
@@ -3077,9 +3091,16 @@
 						this.escape( config.strings.otpDifferentNumberCta || 'Use a different number' ) +
 					'</button>' +
 				'</div>' +
+				// Hotfix 2.1.13.1: the Verify button is hidden — the moment
+				// the customer types the 6th digit (or the SMS-autofill chip
+				// is tapped) the input handler calls verifyPhoneOtp directly.
+				// Owners reported the visible-but-disabled state was a
+				// dead-end UX (looked tappable, did nothing), and a stale
+				// state.otpCode (the bug we just fixed in setFieldValue) made
+				// it stay disabled in older builds.
 				this.footerActions( '', 'otp-verify',
 					this.escape( config.strings.verifyCta || 'Verify' ), '',
-					{ continueMuted: ! this.stepCanContinue( 'otp_verify' ), hideBack: true } );
+					{ continueMuted: ! this.stepCanContinue( 'otp_verify' ), hideBack: true, hideContinue: true } );
 		}
 
 		bookingMarkup() {
@@ -3294,8 +3315,24 @@
 					this.refreshFieldValidation( model, input );
 					this.refreshCurrentStepActions();
 					this._scheduleDraftSave();
-					if ( 'contact.phone' === model && this.validatePhone( value ) ) {
-						this.maybeLookupContact( false );
+					// Hotfix 2.1.13.1: the legacy /contacts/lookup call from the
+					// phone field used to fire BEFORE the OTP step, which leaked
+					// "Welcome back — we found your details." into the UI before
+					// the customer had even verified their phone (PII signal +
+					// confusing ordering). The OTP-check response now carries
+					// the same profile, and verifyPhoneOtp() owns the welcome
+					// notification, so we no longer trigger lookup from input.
+					// Hotfix 2.1.13.1: auto-advance the OTP step at 6 digits
+					// (Twilio default). The Verify button is removed in this
+					// build; typing the last digit (or accepting the SMS
+					// autofill chip) verifies immediately.
+					if ( 'otpCode' === model && 'otp_verify' === this.state.step ) {
+						const otpDigits = String( value || '' ).replace( /\D/g, '' );
+						if ( otpDigits.length >= 6 && ! this.state.loading && ! this._otpVerifyInFlight ) {
+							this.state.otpCode = otpDigits.slice( 0, 6 );
+							input.value = this.state.otpCode;
+							this.verifyPhoneOtp();
+						}
 					}
 				} );
 
@@ -3310,7 +3347,8 @@
 					input.addEventListener( 'blur', () => {
 						this.state.touched.phone = true;
 						this.render();
-						this.maybeLookupContact( true );
+						// Hotfix 2.1.13.1: see note in the input handler — lookup
+						// belongs to the post-OTP path now, not contact_details.
 					} );
 				}
 				if ( 'contact.email' === model ) {
