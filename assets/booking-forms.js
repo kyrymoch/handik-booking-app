@@ -89,9 +89,18 @@
 		this.lookupLastPhone     = '';
 
 		this.state = {
-			step: 'contact',          // contact | address | cal | pick-days | review-days | success
+			// Sprint 5: phone-first flow. The customer types a phone, gets a
+			// Twilio OTP, then continues to a slim "details" screen (name +
+			// email + address for new clients; saved-address picker + address
+			// for returning clients). The legacy 'contact' step is gone.
+			step: 'phone',          // phone | otp | details | cal | pick-days | review-days | success
 			busy: false,
 			contact: { full_name: '', phone: '', email: '' },
+			otpCode: '',
+			verifiedPhone: '',
+			verifiedToken: '',
+			otpResendDisabledUntil: 0, // ms epoch — gates the "Resend" button
+			otpError: '',
 			address: {
 				address_id: 0,
 				address_full: '',
@@ -128,7 +137,16 @@
 		// stale drafts (avoids replaying state across breaking changes).
 		this.restoreDraftFromStorage();
 		this.replaceHistoryState( this.state.step );
+		// First render shows whatever step the draft restored (or `phone`).
 		this.render();
+		// Sprint 5: if the customer has a verified-client token from a
+		// previous session, revalidate it and skip the OTP step. Async —
+		// the form already rendered to phone-step; on success we'll
+		// re-render straight to `details`.
+		var self = this;
+		this.tryRestoreVerifiedClient().then( function ( restored ) {
+			if ( restored ) { self.render(); }
+		} );
 	}
 
 	// ===================================================================
@@ -389,8 +407,11 @@
 
 	HandikBookingForm.prototype.stepTitle = function () {
 		switch ( this.state.step ) {
-			case 'contact':      return this.t( 'contactTitle' );
-			case 'address':      return this.t( 'addressTitle' );
+			case 'phone':        return this.t( 'phoneStepTitle' );
+			case 'otp':          return this.t( 'otpStepTitle' );
+			case 'details':      return this.state.isReturningClient
+				? this.t( 'detailsReturningTitle' )
+				: this.t( 'detailsNewTitle' );
 			case 'cal':          return this.t( 'calTitle' );
 			case 'pick-days':    return this.t( 'pickDaysTitle' );
 			case 'review-days':  return this.t( 'reviewTitle' );
@@ -401,8 +422,9 @@
 
 	HandikBookingForm.prototype.stepBody = function () {
 		switch ( this.state.step ) {
-			case 'contact':     return this.contactMarkup();
-			case 'address':     return this.addressMarkup();
+			case 'phone':       return this.phoneStepMarkup();
+			case 'otp':         return this.otpStepMarkup();
+			case 'details':     return this.detailsStepMarkup();
 			case 'cal':         return this.calMarkup();
 			case 'pick-days':   return this.pickDaysMarkup();
 			case 'review-days': return this.reviewDaysMarkup();
@@ -416,36 +438,128 @@
 	// ===================================================================
 
 	HandikBookingForm.prototype.contactMarkup = function () {
+		// Phone-only entry. Single field. Continue triggers Twilio Verify.
 		var c = this.state.contact;
 		var t = this.state.touched;
-		var nameError  = t.full_name && ! validateFullName( c.full_name ) ? this.t( 'errorRequired' ) : '';
 		var phoneError = t.phone && ! validatePhone( c.phone ) ? this.t( 'errorPhone' ) : '';
-		var emailError = t.email && '' !== c.email && ! validateEmail( c.email ) ? this.t( 'errorEmail' ) : '';
+		return [
+			'<p class="handik-booking-app__intro">', escapeHtml( this.t( 'phoneStepIntro' ) ), '</p>',
+			this.fieldMarkup( {
+				model: 'contact.phone',
+				label: this.t( 'phoneLabel' ),
+				type: 'tel',
+				value: c.phone,
+				autocomplete: 'tel',
+				inputmode: 'tel',
+				placeholder: this.t( 'phonePlaceholder' ),
+				error: phoneError,
+				required: true,
+				inputId: 'handik-form-phone'
+			} ),
+			this.footerActionsMarkup( {
+				continueAction: 'phone-next',
+				continueLabel: this.t( 'sendCodeCta' ),
+				hideBack: true,
+				continueMuted: ! validatePhone( c.phone ) || this.state.busy
+			} )
+		].join( '' );
+	};
+
+	/**
+	 * OTP step. 6-digit code entry, "Verify" CTA, "Resend" + "Use a different
+	 * number" links. Resend is rate-limited locally with a 30s lockout the
+	 * SPA enforces (the server also rate-limits but we want to keep the UI
+	 * honest before the round-trip).
+	 */
+	HandikBookingForm.prototype.otpStepMarkup = function () {
+		var error = this.state.otpError || '';
+		var now = Date.now();
+		var resendIn = Math.max( 0, Math.ceil( ( this.state.otpResendDisabledUntil - now ) / 1000 ) );
 
 		return [
-			'<p class="handik-booking-app__intro">', escapeHtml( this.t( 'contactIntro' ) ), '</p>',
+			'<p class="handik-booking-app__intro">',
+				escapeHtml( ( this.t( 'otpIntro' ) || '' ).replace( '%s', this.state.contact.phone ) ),
+			'</p>',
 			this.fieldMarkup( {
-				model: 'contact.full_name',
-				label: this.t( 'fullNameLabel' ),
+				model: 'otpCode',
+				label: this.t( 'otpCodeLabel' ),
 				type: 'text',
-				value: c.full_name,
-				autocomplete: 'name',
-				error: nameError,
+				value: this.state.otpCode,
+				autocomplete: 'one-time-code',
+				inputmode: 'numeric',
+				placeholder: this.t( 'otpPlaceholder' ),
+				error: error,
 				required: true,
-				inputId: 'handik-form-full-name'
+				inputId: 'handik-form-otp',
+				rawAttrs: 'maxlength="8" pattern="[0-9]*"'
 			} ),
-			'<div class="handik-grid-2">',
+			'<div class="handik-booking-app__otp-aux">',
+				resendIn > 0
+					? '<span class="handik-booking-app__otp-resend is-pending">' +
+						escapeHtml( ( this.t( 'otpResendIn' ) || '' ).replace( '%d', resendIn ) ) +
+					'</span>'
+					: '<button type="button" class="handik-text-link" data-action="otp-resend">' +
+						escapeHtml( this.t( 'otpResendCta' ) ) +
+					'</button>',
+				'<span class="handik-app-disclaimer__sep" aria-hidden="true"> · </span>',
+				'<button type="button" class="handik-text-link" data-action="otp-back">',
+					escapeHtml( this.t( 'otpDifferentNumberCta' ) ),
+				'</button>',
+			'</div>',
+			this.footerActionsMarkup( {
+				continueAction: 'otp-verify',
+				continueLabel: this.t( 'verifyCta' ),
+				hideBack: true,
+				continueMuted: this.state.otpCode.length < 4 || this.state.busy
+			} )
+		].join( '' );
+	};
+
+	/**
+	 * Combined details step. Renders different fields based on whether the
+	 * verified phone matched an existing contact (returning) or not (new).
+	 *
+	 *   New     → Full name, Email, Address, Unit
+	 *   Returning → Saved-address dropdown (when present), Address, Unit
+	 *
+	 * Address validation parity stays the same as the old `addressMarkup`.
+	 */
+	HandikBookingForm.prototype.detailsStepMarkup = function () {
+		var c = this.state.contact;
+		var a = this.state.address;
+		var t = this.state.touched;
+		var hasMaps = !! this.config.googleMapsApiKey;
+		var addressFilled = '' !== String( a.address_full || '' ).trim();
+		var continueMuted = hasMaps ? ! a.is_valid : ! addressFilled;
+		var addressError = ( hasMaps && addressFilled && ! a.is_valid )
+			? this.t( 'errorAddressInvalid' )
+			: '';
+		var nameError = t.full_name && ! validateFullName( c.full_name ) ? this.t( 'errorRequired' ) : '';
+		var emailError = t.email && '' !== c.email && ! validateEmail( c.email ) ? this.t( 'errorEmail' ) : '';
+
+		// New-client requires a name; returning has it from the verified profile.
+		if ( ! this.state.isReturningClient ) {
+			continueMuted = continueMuted || ! validateFullName( c.full_name );
+			if ( '' !== c.email && ! validateEmail( c.email ) ) {
+				continueMuted = true;
+			}
+		}
+
+		// New-client name + email block (skipped for returning).
+		var newClientFields = '';
+		if ( ! this.state.isReturningClient ) {
+			newClientFields =
 				this.fieldMarkup( {
-					model: 'contact.phone',
-					label: this.t( 'phoneLabel' ),
-					type: 'tel',
-					value: c.phone,
-					autocomplete: 'tel',
-					inputmode: 'tel',
-					error: phoneError,
+					model: 'contact.full_name',
+					label: this.t( 'fullNameLabel' ),
+					type: 'text',
+					value: c.full_name,
+					autocomplete: 'name',
+					placeholder: this.t( 'fullNamePlaceholder' ),
+					error: nameError,
 					required: true,
-					inputId: 'handik-form-phone'
-				} ),
+					inputId: 'handik-form-full-name'
+				} ) +
 				this.fieldMarkup( {
 					model: 'contact.email',
 					label: this.t( 'emailLabel' ),
@@ -453,47 +567,17 @@
 					value: c.email,
 					autocomplete: 'email',
 					inputmode: 'email',
+					placeholder: this.t( 'emailPlaceholder' ),
 					error: emailError,
 					required: false,
 					inputId: 'handik-form-email'
-				} ),
-			'</div>',
-			this.footerActionsMarkup( {
-				continueAction: 'contact-next',
-				continueLabel: this.t( 'continueLabel' ),
-				hideBack: true,
-				continueMuted: ! this.contactValid()
-			} )
-		].join( '' );
-	};
+				} );
+		}
 
-	HandikBookingForm.prototype.addressMarkup = function () {
-		var a = this.state.address;
-		var hasMaps = !! this.config.googleMapsApiKey;
-		// Continue gating: when Maps is configured, require a Places-verified
-		// address (is_valid). Without Maps, accept any non-empty value.
-		var addressFilled = '' !== String( a.address_full || '' ).trim();
-		var continueMuted = hasMaps ? ! a.is_valid : ! addressFilled;
-		// Inline error: only after the user typed something but we can't
-		// confirm it via Places — same wording as the main form.
-		var addressError = ( hasMaps && addressFilled && ! a.is_valid )
-			? this.t( 'errorAddressInvalid' )
-			: '';
-
-		// Saved addresses: returning customer has prior addresses. Render the
-		// same <select> dropdown the main app uses (NOT a button list).
-		// While the lookup is mid-flight (lookupInFlightPhone is set) we
-		// show a small shimmer placeholder so the customer doesn't see the
-		// list pop in abruptly after the address step renders.
+		// Returning-client saved-address dropdown (if any).
 		var savedMarkup = '';
 		var savedAddresses = Array.isArray( this.state.savedAddresses ) ? this.state.savedAddresses : [];
-		if ( '' !== this.lookupInFlightPhone && ! savedAddresses.length ) {
-			savedMarkup = '<div class="handik-saved-address-loading" role="status" aria-live="polite">' +
-				'<div class="handik-saved-address-loading__bar"></div>' +
-				'<div class="handik-saved-address-loading__bar is-short"></div>' +
-				'<span>' + escapeHtml( this.t( 'savedAddressChecking' ) ) + '</span>' +
-			'</div>';
-		} else if ( savedAddresses.length ) {
+		if ( this.state.isReturningClient && savedAddresses.length ) {
 			var options = '<option value="">' + escapeHtml( this.t( 'savedAddressPlaceholder' ) ) + '</option>';
 			savedAddresses.forEach( function ( addr ) {
 				var line = String( addr.address_full || addr.address_line_1 || '' ).trim();
@@ -509,15 +593,19 @@
 			savedMarkup = '<p class="handik-field__help" role="status">' + escapeHtml( this.t( 'savedAddressEmpty' ) ) + '</p>';
 		}
 
-		// Native autofill suppression — prevents Chrome's address heuristic
-		// from competing with Google Places for keystrokes (which made the
-		// dropdown un-clickable in earlier builds).
+		// Native autofill suppression for the address line — same as before.
 		var addressAttrs = hasMaps
 			? 'autocomplete="new-password" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" data-form-type="other" name="handik_form_location_query"'
 			: 'autocomplete="street-address" name="handik_form_location_query"';
 		var unitAttrs = 'autocomplete="new-password" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" data-form-type="other" name="handik_form_unit_detail"';
 
+		var intro = this.state.isReturningClient
+			? ( this.t( 'detailsReturningIntro' ) || '' ).replace( '%s', this.state.contact.full_name || this.state.verifiedPhone )
+			: this.t( 'detailsNewIntro' );
+
 		return [
+			intro ? '<p class="handik-booking-app__intro">' + escapeHtml( intro ) + '</p>' : '',
+			newClientFields,
 			savedMarkup,
 			this.fieldMarkup( {
 				model: 'address.address_full',
@@ -537,19 +625,28 @@
 				label: this.t( 'unitLabel' ),
 				type: 'text',
 				value: a.address_unit,
+				placeholder: this.t( 'unitPlaceholder' ),
 				inputId: 'handik-form-address-unit',
 				required: false,
 				rawAttrs: unitAttrs,
 				skipName: true
 			} ),
 			this.footerActionsMarkup( {
-				backAction: 'address-back',
-				continueAction: 'address-next',
+				backAction: 'details-back',
+				continueAction: 'details-next',
 				continueLabel: this.t( 'continueLabel' ),
 				continueMuted: continueMuted
 			} )
 		].join( '' );
 	};
+
+	// Legacy entry point kept so render() doesn't crash if any old code path
+	// still calls these names. They route to the new step renderers.
+	// Alias the legacy `contactMarkup` to the new phone step entrypoint.
+	// `phoneStepMarkup` is the canonical name; `contactMarkup` survives as
+	// an alias only for any external code that referenced it (none in-tree
+	// today — kept as a safety net during the cutover).
+	HandikBookingForm.prototype.phoneStepMarkup = HandikBookingForm.prototype.contactMarkup;
 
 	HandikBookingForm.prototype.calMarkup = function () {
 		// Skeleton matches main app's `.handik-skeleton--calendar`.
@@ -690,14 +787,22 @@
 	// ===================================================================
 
 	HandikBookingForm.prototype.applicableSteps = function () {
-		// Steps shown in the progress dots. The terminal `success` step is
-		// excluded so the dots reflect only the user-facing progression and
-		// the count matches the actual screens the customer touches before
-		// the confirmation card. Mirrors the main app, which keeps `booking`
-		// as the last dot and never adds a separate success entry.
+		// Sprint 5: phone+OTP collapse to a single dot in the progress bar
+		// so returning customers (who skip OTP via verified-client cache)
+		// still see a consistent count. The actual step at the time of
+		// render gets the `is-current` styling regardless.
+		// 'success' is the confirmation card and stays out of the dot count.
+		var phoneish = ( 'phone' === this.state.step || 'otp' === this.state.step ) ? 'phone' : 'phone';
+		// Direct: phone → details → cal (3 dots).
+		// Project: phone → details → pick-days → review-days (4 dots).
 		return this.isProject
-			? [ 'contact', 'address', 'pick-days', 'review-days' ]
-			: [ 'contact', 'address', 'cal' ];
+			? [ phoneish, 'details', 'pick-days', 'review-days' ]
+			: [ phoneish, 'details', 'cal' ];
+	};
+
+	// Override progress active-index lookup so 'otp' counts as 'phone'.
+	HandikBookingForm.prototype.progressActiveStepName = function () {
+		return 'otp' === this.state.step ? 'phone' : this.state.step;
 	};
 
 	HandikBookingForm.prototype.progressMarkup = function () {
@@ -705,7 +810,7 @@
 			return '';
 		}
 		var steps = this.applicableSteps();
-		var activeIndex = Math.max( 0, steps.indexOf( this.state.step ) );
+		var activeIndex = Math.max( 0, steps.indexOf( this.progressActiveStepName() ) );
 		// Main app uses `grid-template-columns: repeat(6, 1fr)` to fit 6 steps.
 		// Our flows are shorter (4 or 5 steps), so override the column count
 		// inline so the dots fill the centered .handik-global-progress band
@@ -917,42 +1022,25 @@
 		var model = input.getAttribute( 'data-model' );
 		if ( ! model ) { return; }
 		var value = input.value;
-		if ( 'contact.phone' === model ) {
-			// Preserve caret position across the live reformat. We count
-			// digits before the caret in the OLD value, run the formatter,
-			// then walk forward in the NEW value until we've seen that
-			// many digits — the caret lands at the same logical position
-			// regardless of how many separators were inserted/removed.
-			// Without this the caret snaps to the end of the field after
-			// every keystroke, making mid-number editing impossible.
-			var oldValue = input.value;
-			var caretOld = ( typeof input.selectionStart === 'number' ) ? input.selectionStart : oldValue.length;
-			var digitsBeforeCaret = oldValue.slice( 0, caretOld ).replace( /\D/g, '' ).length;
-			value = formatPhoneAsYouType( value );
-			input.value = value;
-			var caretNew = value.length;
-			if ( digitsBeforeCaret > 0 ) {
-				var seen = 0;
-				for ( var i = 0; i < value.length; i++ ) {
-					if ( /\d/.test( value.charAt( i ) ) ) {
-						seen++;
-					}
-					if ( seen >= digitsBeforeCaret ) {
-						caretNew = i + 1;
-						break;
-					}
-				}
-			} else {
-				caretNew = Math.min( caretOld, value.length );
-			}
-			try { input.setSelectionRange( caretNew, caretNew ); }
-			catch ( e ) { /* number/email inputs reject setSelectionRange */ }
-		}
+		// Sprint 5: phone input is now SOFT — we don't rewrite the value
+		// during typing. Earlier builds reformatted on every keystroke
+		// (with a digits-before-caret restore) which produced visible "1 1
+		// 1" artifacts when paste / autofill rewrote the field with E.164.
+		// The owner specifically asked for a hands-off input experience.
+		// We still validate on Continue and run formatPhoneAsYouType on
+		// blur for display normalization.
 		if ( 'address.address_full' === model ) {
-			// User edited the address text directly — invalidate the previous
-			// Places verification so they have to re-pick from suggestions.
-			this.state.address.is_valid  = false;
-			this.state.address.address_id = 0;
+			// Only invalidate Places verification if the customer ACTUALLY
+			// retyped (vs the browser autofilling/prefilling the field).
+			// `__handikUserTyped` is attached by mountAddressAutocomplete
+			// after the Places binding completes.
+			var typed = ( typeof input.__handikUserTyped === 'function' )
+				? !! input.__handikUserTyped()
+				: true;
+			if ( typed ) {
+				this.state.address.is_valid  = false;
+				this.state.address.address_id = 0;
+			}
 		}
 		this.setFieldValue( model, value );
 		this.scheduleDraftSave();
@@ -963,21 +1051,24 @@
 		if ( ! model ) { return; }
 		var key = model.split( '.' ).pop();
 		this.state.touched[ key ] = true;
-		// Real-time contact lookup on phone blur: as soon as the customer
-		// finishes typing a 10-digit number we hit /contacts/lookup so the
-		// "Welcome back" toast and saved-address prefill happen BEFORE they
-		// reach for Continue. The lookupContactSilent helper reuses the
-		// same per-phone cache, so doing this here doesn't duplicate the
-		// follow-up call on Continue.
+		// Soft phone format on blur — only when the value has 10 digits and
+		// looks legitimate. Never rewrites partial input (avoids the "11 1
+		// 234" artifact owners reported with the old per-keystroke
+		// formatter). This is purely display normalization; the API value
+		// goes through phoneApiValue() which strips formatting anyway.
 		if ( 'contact.phone' === model && validatePhone( this.state.contact.phone ) ) {
-			this.lookupContactSilent();
+			var formatted = formatPhoneAsYouType( this.state.contact.phone );
+			if ( formatted && formatted !== this.state.contact.phone ) {
+				this.state.contact.phone = formatted;
+				input.value = formatted;
+			}
 		}
 		// Re-render on any blur within the current step so an error span
 		// that's no longer applicable (the customer fixed the email and
-		// tabbed to phone) actually disappears. Earlier we only re-rendered
-		// for `contact` step or address.address_full — leaving stale
-		// .is-invalid styling on other fields.
-		if ( 'contact' === this.state.step || 'address' === this.state.step ) {
+		// tabbed to phone) actually disappears.
+		if ( 'phone' === this.state.step
+			|| 'otp' === this.state.step
+			|| 'details' === this.state.step ) {
 			this.render();
 		}
 	};
@@ -1038,21 +1129,38 @@
 			return;
 		}
 		switch ( action ) {
-			case 'contact-next':
-				this.state.touched.full_name = true;
-				this.state.touched.phone     = true;
-				this.state.touched.email     = true;
-				if ( ! this.contactValid() ) {
+			// Phone step: validate then send OTP via Twilio.
+			case 'phone-next':
+				this.state.touched.phone = true;
+				if ( ! validatePhone( this.state.contact.phone ) ) {
 					this.render();
-					this.toast( 'warning', this.t( 'errorRequired' ) );
+					this.toast( 'warning', this.t( 'errorPhone' ) );
 					return;
 				}
-				this.lookupContactAndAdvance();
+				this.startPhoneOtp();
 				break;
-			case 'address-back':
-				this.go( 'contact' );
+			// OTP step actions.
+			case 'otp-verify':
+				if ( this.state.otpCode.length < 4 ) { return; }
+				this.verifyPhoneOtp();
 				break;
-			case 'address-next':
+			case 'otp-resend':
+				if ( Date.now() < this.state.otpResendDisabledUntil ) { return; }
+				this.startPhoneOtp( /* isResend */ true );
+				break;
+			case 'otp-back':
+				this.state.otpCode = '';
+				this.state.otpError = '';
+				this.go( 'phone' );
+				break;
+			// Combined details step (branches on isReturningClient).
+			case 'details-back':
+				// New-client path: nowhere safe to "back" except the OTP step.
+				// Returning customers can also go back to phone if they typed
+				// the wrong number.
+				this.go( 'otp' );
+				break;
+			case 'details-next':
 				this.state.touched.address_full = true;
 				if ( '' === String( this.state.address.address_full || '' ).trim() ) {
 					this.render();
@@ -1063,11 +1171,35 @@
 					this.toast( 'warning', this.t( 'errorAddressInvalid' ) );
 					return;
 				}
+				// New-client path also requires name; email stays optional.
+				if ( ! this.state.isReturningClient ) {
+					this.state.touched.full_name = true;
+					if ( ! validateFullName( this.state.contact.full_name ) ) {
+						this.render();
+						this.toast( 'warning', this.t( 'errorRequired' ) );
+						return;
+					}
+					if ( '' !== this.state.contact.email && ! validateEmail( this.state.contact.email ) ) {
+						this.render();
+						this.toast( 'warning', this.t( 'errorEmail' ) );
+						return;
+					}
+				}
 				if ( this.isProject ) {
 					this.openProject();
 				} else {
 					this.submitDirect();
 				}
+				break;
+			// Legacy aliases (Sprint 5 rename safety).
+			case 'contact-next':
+				this.go( 'phone' );
+				break;
+			case 'address-back':
+				this.go( 'details' );
+				break;
+			case 'address-next':
+				this.onAction( 'details-next', btn );
 				break;
 			case 'pick-back':
 				this.go( 'address' );
@@ -1156,9 +1288,17 @@
 	 * booking" link in the Stuck disclaimer.
 	 */
 	HandikBookingForm.prototype.restart = function () {
-		// Wipe any persisted draft — restart means "throw it away".
+		// Wipe any persisted draft AND the verified-client token — restart
+		// means "throw it away," and that includes the device's identity
+		// trust so the next customer (or returning self) re-verifies.
 		this.clearDraftStorage();
-		this.state.step             = 'contact';
+		clearVerifiedClient();
+		this.state.step             = 'phone';
+		this.state.otpCode          = '';
+		this.state.otpError         = '';
+		this.state.otpResendDisabledUntil = 0;
+		this.state.verifiedToken    = '';
+		this.state.verifiedPhone    = '';
 		this.state.busy             = false;
 		this.state.contact          = { full_name: '', phone: '', email: '' };
 		this.state.address          = {
@@ -1277,13 +1417,125 @@
 		} );
 	};
 
+	// =====================================================================
+	// Phone-first OTP flow (Sprint 5)
+	// =====================================================================
+
 	/**
-	 * Look up the customer by phone number against the existing CRM. If we
-	 * find a match, prefill name + email and stash any saved addresses so
-	 * the address step can offer them. Always advances to the address step
-	 * — even when the lookup fails — so a network blip never strands the
-	 * customer on the contact screen.
+	 * Send a Twilio Verify OTP to the customer's phone. On success, transition
+	 * to the OTP screen. On a resend, keep the user on the OTP screen and
+	 * arm the local 30s lockout.
 	 */
+	HandikBookingForm.prototype.startPhoneOtp = function ( isResend ) {
+		var self = this;
+		var phoneApi = phoneApiValue( this.state.contact.phone );
+		if ( ! phoneApi ) {
+			this.toast( 'warning', this.t( 'errorPhone' ) );
+			return;
+		}
+		this.busy( true );
+		this.api( 'POST', 'phone-verify/start', { phone: phoneApi } )
+			.then( function ( res ) {
+				self.state.otpError = '';
+				self.state.otpResendDisabledUntil = Date.now() + 30 * 1000;
+				if ( ! isResend ) {
+					self.go( 'otp' );
+				}
+				self.toast( 'info', ( res && res.message ) || self.t( 'otpSentToast' ) );
+			} )
+			.catch( function ( err ) {
+				self.toast( 'error', ( err && err.message ) || self.t( 'genericError' ) );
+			} )
+			.then( function () { self.busy( false ); } );
+	};
+
+	/**
+	 * Submit the OTP. On approved, branch the SPA based on whether the phone
+	 * matched a CRM contact. New clients land on a name+email+address screen;
+	 * returning clients land on a saved-address+address screen with their
+	 * profile already prefilled.
+	 *
+	 * Stashes the verified-client token in localStorage so a refresh within
+	 * the TTL skips the OTP step entirely.
+	 */
+	HandikBookingForm.prototype.verifyPhoneOtp = function () {
+		var self = this;
+		var phoneApi = phoneApiValue( this.state.contact.phone );
+		this.busy( true );
+		this.api( 'POST', 'phone-verify/check', { phone: phoneApi, code: this.state.otpCode } )
+			.then( function ( res ) {
+				self.state.otpError = '';
+				self.state.verifiedToken = String( res.verified_token || '' );
+				self.state.verifiedPhone = String( res.verified_phone || phoneApi );
+				self.state.isReturningClient = ! res.is_new_client;
+				self.state.profileContactId = parseInt( res.contact_id, 10 ) || 0;
+
+				// Returning: prefill name/email/saved-addresses from profile.
+				if ( res.profile && res.profile.contact ) {
+					var p = res.profile;
+					if ( p.contact.full_name && '' === self.state.contact.full_name ) {
+						self.state.contact.full_name = String( p.contact.full_name );
+					}
+					if ( p.contact.email && '' === self.state.contact.email ) {
+						self.state.contact.email = String( p.contact.email );
+					}
+					self.state.savedAddresses = Array.isArray( p.addresses ) ? p.addresses : [];
+				} else {
+					self.state.savedAddresses = [];
+				}
+
+				saveVerifiedClient( {
+					token: self.state.verifiedToken,
+					phone: self.state.verifiedPhone,
+					savedAt: Date.now()
+				} );
+
+				self.go( 'details' );
+				if ( self.state.isReturningClient ) {
+					self.toast( 'info', self.t( 'welcomeBack' ) );
+				}
+			} )
+			.catch( function ( err ) {
+				self.state.otpError = ( err && err.message ) || self.t( 'otpInvalid' );
+				self.render();
+			} )
+			.then( function () { self.busy( false ); } );
+	};
+
+	/**
+	 * On boot, if a verified-client token is stashed in localStorage and not
+	 * expired, ask the server to revalidate (HMAC + TTL) and rehydrate the
+	 * profile. On success, skip the phone+otp steps and start at `details`.
+	 */
+	HandikBookingForm.prototype.tryRestoreVerifiedClient = function () {
+		var self = this;
+		var stored = readVerifiedClient();
+		if ( ! stored || ! stored.token ) { return Promise.resolve( false ); }
+		return this.api( 'POST', 'phone-verify/restore', { verified_token: stored.token } )
+			.then( function ( res ) {
+				self.state.verifiedToken = stored.token;
+				self.state.verifiedPhone = String( res.verified_phone || stored.phone || '' );
+				self.state.contact.phone = self.state.verifiedPhone
+					? formatPhoneAsYouType( self.state.verifiedPhone )
+					: self.state.contact.phone;
+				self.state.isReturningClient = ! res.is_new_client;
+				self.state.profileContactId = parseInt( res.contact_id, 10 ) || 0;
+				if ( res.profile && res.profile.contact ) {
+					var p = res.profile;
+					self.state.contact.full_name = String( p.contact.full_name || '' );
+					self.state.contact.email     = String( p.contact.email || '' );
+					self.state.savedAddresses    = Array.isArray( p.addresses ) ? p.addresses : [];
+				}
+				self.state.step = 'details';
+				return true;
+			} )
+			.catch( function () {
+				// Token expired or server invalidated — wipe local cache.
+				clearVerifiedClient();
+				return false;
+			} );
+	};
+
 	HandikBookingForm.prototype.lookupContactAndAdvance = function () {
 		var self = this;
 		var phoneApi = phoneApiValue( this.state.contact.phone );
@@ -1751,6 +2003,18 @@
 		this.disableNativeAddressAutofill( input );
 		if ( '1' === input.getAttribute( 'data-google-mounted' ) ) { return; }
 
+		// Sprint 5: prefill-vs-typed collision. The mobile/desktop browser
+		// can fire `change` events with auto-completed strings BEFORE
+		// Google Places binds, leaving `state.address.is_valid=false` even
+		// for a usable address. Capture the customer's first interaction
+		// (focus + first keypress) so we know whether the current input
+		// content came from THEM or from an autofill pre-population, and
+		// only invalidate the Places verification when they actually
+		// retyped after the bind.
+		var userTyped = false;
+		var markUserTyped = function () { userTyped = true; };
+		input.addEventListener( 'keydown', markUserTyped, { once: true } );
+
 		this.loadGoogleMapsPlaces().then( function ( gm ) {
 			if ( ! gm || ! gm.places ) { return; }
 			self.addressAutocomplete = new gm.places.Autocomplete( input, {
@@ -1763,8 +2027,15 @@
 				if ( ! place ) { return; }
 				var parsed = parseAddressComponents( place );
 				self.state.address = Object.assign( {}, self.state.address, parsed, { address_id: 0 } );
+				// A Places pick is the customer's authoritative answer —
+				// reset the userTyped flag so subsequent re-renders don't
+				// invalidate this address until they actually retype.
+				userTyped = false;
 				self.render();
 			} );
+			// Expose the typed flag to onInput so it can decide whether an
+			// address.address_full edit should clear is_valid.
+			input.__handikUserTyped = function () { return userTyped; };
 			input.setAttribute( 'data-google-mounted', '1' );
 			// Re-apply the autofill suppression — Google can rewrite the
 			// `autocomplete` attribute internally when it binds.
@@ -1843,6 +2114,46 @@
 	// ===================================================================
 	// Pure helpers
 	// ===================================================================
+
+	// =====================================================================
+	// Verified-client cache helpers (Sprint 5)
+	// =====================================================================
+
+	var VERIFIED_CLIENT_STORAGE_KEY = 'handik_verified_client_v1';
+	var VERIFIED_CLIENT_TTL_MS      = 30 * 24 * 60 * 60 * 1000; // 30 days.
+
+	function readVerifiedClient() {
+		if ( ! window.localStorage ) { return null; }
+		var raw;
+		try { raw = window.localStorage.getItem( VERIFIED_CLIENT_STORAGE_KEY ); }
+		catch ( e ) { return null; }
+		if ( ! raw ) { return null; }
+		try {
+			var v = JSON.parse( raw );
+			if ( ! v || ! v.token ) { return null; }
+			if ( v.savedAt && Date.now() - v.savedAt > VERIFIED_CLIENT_TTL_MS ) {
+				clearVerifiedClient();
+				return null;
+			}
+			return v;
+		} catch ( e ) {
+			clearVerifiedClient();
+			return null;
+		}
+	}
+
+	function saveVerifiedClient( v ) {
+		if ( ! window.localStorage ) { return; }
+		try {
+			window.localStorage.setItem( VERIFIED_CLIENT_STORAGE_KEY, JSON.stringify( v ) );
+		} catch ( e ) { /* quota; ignore */ }
+	}
+
+	function clearVerifiedClient() {
+		if ( ! window.localStorage ) { return; }
+		try { window.localStorage.removeItem( VERIFIED_CLIENT_STORAGE_KEY ); }
+		catch ( e ) { /* ignore */ }
+	}
 
 	function parseConfig( root ) {
 		var node = root.querySelector( '[data-handik-booking-form-config]' );

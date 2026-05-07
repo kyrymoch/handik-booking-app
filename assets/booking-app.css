@@ -1509,19 +1509,33 @@ openai-chatkit {
 }
 
 .handik-selected-sheet {
-	position: sticky;
-	left: auto;
+	/* Sprint 5: pinned to viewport bottom on desktop too (was sticky which
+	 * only worked when there was a scrollable parent — left it floating in
+	 * the page on long flows), and bumped above the docked footer's
+	 * z-index: 40 so the sheet always sits in front of the Continue button
+	 * when expanded. Mobile retained its existing `position: fixed` rule
+	 * below; this base rule now matches it for desktop. */
+	position: fixed;
+	left: 50%;
 	right: auto;
-	bottom: calc(12px + env(safe-area-inset-bottom, 0px));
-	z-index: 35;
-	width: min(100%, 980px);
-	margin: 16px auto 0;
+	bottom: calc(80px + env(safe-area-inset-bottom, 0px));
+	transform: translateX( -50% );
+	z-index: 50;
+	width: min(calc(100% - 24px), 980px);
+	margin: 0;
 	background: rgba(255, 255, 255, 0.98);
 	border: 1px solid var(--handik-border, #dbe3ea);
 	border-radius: 18px;
 	box-shadow: 0 20px 48px rgba(15, 23, 42, 0.16);
 	overflow: hidden;
 	backdrop-filter: blur(12px);
+}
+
+/* Reserve space at the bottom of the task-selection step so the fixed
+ * sheet doesn't visually cover the last items in the list. Mobile rule
+ * below already does this — this is the desktop equivalent. */
+.handik-booking-app__screen--task_selection .handik-task-groups {
+	padding-bottom: 168px;
 }
 
 .handik-selected-sheet.is-bouncing {
