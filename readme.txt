@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.1.9.8
+Stable tag: 2.1.9.9
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, silent returning-client recognition, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,10 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.1.9.9 =
+* **Fixed: Project Work Days slot loader returned 404 from Cal.com.** The Cal.com Platform API v2 versions each endpoint independently — `GET /v2/slots` only exists on `cal-api-version: 2024-09-04`, while `POST /v2/bookings` and `POST /v2/bookings/{uid}/cancel` still expect `cal-api-version: 2024-08-13`. The plugin was sending `2024-08-13` for everything, so the slots fetch hit `Cannot GET /v2/slots` from Cal.com's NestJS router. Each public method on `Handik_Booking_App_Cal_Api_Service` now passes its own pinned version (`SLOTS_API_VERSION` / `BOOKINGS_API_VERSION` constants), and the `request()` helper accepts a per-call `version` override. The `cal_api_version` admin setting is now a global fallback only — used when no per-endpoint pin applies.
+* **Default cal_api_version setting bumped to `2024-09-04`** for fresh installs.
 
 = 2.1.9.8 =
 * **Fixed: "Cal is not defined" white screen on direct visit forms.** The 2.1.9.5 → 2.1.9.7 builds installed a minimal Cal.com embed queue stub that worked for the main `[handik_booking_app]` form but not for the new Additional Forms because the new SPA called `Cal('init', namespace, …)` BEFORE the embed.js script finished loading. When the script then loaded, it sometimes hit the queue stub in an inconsistent state and threw `Cal is not defined. This shouldn't happen` from inside embed.js. Replaced the loader with the canonical Cal.com bootstrap pattern (the same one the main form has been shipping for months): a queue function that lazily appends the embed script on first invocation, sets up `cal.ns` namespaces, intercepts `init` to allocate per-namespace queues, and is polled with a 5-second timeout to confirm it's installed. Calls made before embed.js finishes loading are queued and drained automatically when the script runs.

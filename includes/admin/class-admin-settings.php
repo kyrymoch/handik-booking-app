@@ -424,7 +424,7 @@ class Handik_Booking_App_Admin_Settings {
 				<?php Handik_Booking_App_Admin_Helpers::field( 'cal_api_version', __( 'API version header', 'handik-booking-app' ), $s['cal_api_version'] ); ?>
 				<?php Handik_Booking_App_Admin_Helpers::field( 'cal_api_timezone', __( 'Default timezone', 'handik-booking-app' ), $s['cal_api_timezone'] ); ?>
 			</div>
-			<p class="handik-admin-muted"><?php esc_html_e( 'Defaults: api.cal.com/v2 · 2024-08-13 · America/New_York. Override the version header only if Cal.com bumps the contract.', 'handik-booking-app' ); ?></p>
+			<p class="handik-admin-muted"><?php esc_html_e( 'Defaults: api.cal.com/v2 · 2024-09-04 · America/New_York. Cal.com versions each endpoint independently — the plugin pins slots to 2024-09-04 and bookings to 2024-08-13 in code. The field above is a global fallback used when neither pin applies.', 'handik-booking-app' ); ?></p>
 		<?php $this->section_close(); ?>
 		<?php
 	}
