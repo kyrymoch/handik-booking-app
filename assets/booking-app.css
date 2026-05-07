@@ -268,8 +268,14 @@
 }
 
 .handik-progress-dots {
+	/* Sprint 9 fix: was `repeat(6, ...)` but `applicableSteps()` returns 7 ids
+	 * (task_selection / photos / contact_details / otp_verify / address_details
+	 * / assistant / booking) — so the 7th dot wrapped to a second row. Switched
+	 * to `auto-fit + 1fr` over the actual `<li>` count: every step gets an
+	 * equal slice of the row, the bar always fits one line, and adding /
+	 * removing a step in the future doesn't require touching this rule. */
 	display: grid;
-	grid-template-columns: repeat(6, minmax(0, 1fr));
+	grid-template-columns: repeat( var(--handik-progress-step-count, 7), minmax(0, 1fr) );
 	gap: 6px;
 	margin: 0;
 	padding: 0;
