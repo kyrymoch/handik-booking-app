@@ -69,7 +69,7 @@ class Handik_Booking_App_Settings {
 			'cal_webhook_secret'     => '',
 			'cal_api_key'            => '',
 			'cal_api_base'           => 'https://api.cal.com/v2',
-			'cal_api_version'        => '2024-08-13',
+			'cal_api_version'        => '2024-09-04',
 			'cal_api_timezone'       => 'America/New_York',
 			'serviceable_zips'       => '',
 			'email_from_name'        => get_bloginfo( 'name' ),

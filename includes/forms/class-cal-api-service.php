@@ -13,15 +13,33 @@ if ( ! defined( 'ABSPATH' ) ) {
  * Project_Schedule_Service.
  *
  * Auth: Bearer token from settings (cal_api_key) or HANDIK_BOOKING_APP_CAL_API_KEY.
- * Header: cal-api-version pinned in code (2024-08-13). Override via the
- * cal_api_version setting if Cal.com bumps the version contract.
+ *
+ * Cal.com versions Platform API v2 endpoints independently, so each public
+ * method here passes its own `cal-api-version` header:
+ *   - GET  /slots                 → 2024-09-04 (the path doesn't exist on 2024-08-13)
+ *   - POST /bookings              → 2024-08-13 (current stable for booking creation)
+ *   - POST /bookings/{uid}/cancel → 2024-08-13 (matches booking creation)
+ * The `cal_api_version` admin setting is a fallback for any future endpoint
+ * that doesn't carry an explicit pin.
  *
  * All POSTs that create bookings carry an idempotency key so a network retry
  * never produces a duplicate booking on Cal's side. Reads do not need it.
  */
 class Handik_Booking_App_Cal_Api_Service {
 	const DEFAULT_BASE         = 'https://api.cal.com/v2';
-	const DEFAULT_API_VERSION  = '2024-08-13';
+	/**
+	 * Default `cal-api-version` header sent on every request unless an
+	 * endpoint-specific override is passed. We default to 2024-09-04 because
+	 * that's the version that exposes the modern `GET /v2/slots` route used
+	 * by the Project Work Days picker. Bookings (create/cancel) override to
+	 * `2024-08-13` per Cal.com's per-endpoint versioning.
+	 *
+	 * Cal.com's Platform API v2 is versioned per-endpoint, not globally.
+	 * See https://cal.com/docs/api-reference/v2/introduction#versioning
+	 */
+	const DEFAULT_API_VERSION  = '2024-09-04';
+	const SLOTS_API_VERSION    = '2024-09-04';
+	const BOOKINGS_API_VERSION = '2024-08-13';
 	const DEFAULT_TIMEZONE     = 'America/New_York';
 	const HTTP_TIMEOUT_SECONDS = 12;
 
@@ -82,7 +100,9 @@ class Handik_Booking_App_Cal_Api_Service {
 			'GET',
 			'/slots',
 			array(
-				'query' => $query,
+				'query'   => $query,
+				// Slots endpoint is versioned independently from bookings.
+				'version' => self::SLOTS_API_VERSION,
 			)
 		);
 		if ( ! empty( $response['error'] ) ) {
@@ -189,6 +209,7 @@ class Handik_Booking_App_Cal_Api_Service {
 			array(
 				'headers' => $headers,
 				'body'    => $body,
+				'version' => self::BOOKINGS_API_VERSION,
 			)
 		);
 		if ( ! empty( $response['error'] ) ) {
@@ -239,6 +260,7 @@ class Handik_Booking_App_Cal_Api_Service {
 				'body' => array(
 					'cancellationReason' => '' !== $reason ? $reason : 'Handik plugin rollback',
 				),
+				'version' => self::BOOKINGS_API_VERSION,
 			)
 		);
 		if ( ! empty( $response['error'] ) ) {
@@ -335,9 +357,17 @@ class Handik_Booking_App_Cal_Api_Service {
 			$url = add_query_arg( $opts['query'], $url );
 		}
 
+		// Cal.com Platform API v2 versions each endpoint independently. Slots
+		// uses 2024-09-04, bookings uses 2024-08-13. Each public method passes
+		// its own `version` so we don't have to maintain that mapping in two
+		// places.
+		$version = isset( $opts['version'] ) && '' !== $opts['version']
+			? (string) $opts['version']
+			: $this->api_version();
+
 		$headers = array(
 			'Authorization'   => 'Bearer ' . $this->api_key(),
-			'cal-api-version' => $this->api_version(),
+			'cal-api-version' => $version,
 			'Accept'          => 'application/json',
 		);
 		if ( ! empty( $opts['headers'] ) && is_array( $opts['headers'] ) ) {
