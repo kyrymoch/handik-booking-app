@@ -359,8 +359,12 @@ class Handik_Booking_App_Admin_People {
 	protected function person_edit_form_markup( array $contact ) {
 		ob_start();
 		?>
+		<?php /* Sprint 10 fix: persist `<details>` open state across
+		   reloads via sessionStorage (handler in booking-app-admin.js).
+		   Was P1 — the form snapped shut every time the page refreshed,
+		   forcing the owner to expand it again to keep editing. */ ?>
 		<section class="handik-admin-block">
-			<details class="handik-admin-details" data-handik-person-edit>
+			<details class="handik-admin-details" data-handik-person-edit data-handik-details-key="person-edit">
 				<summary><?php esc_html_e( 'Edit person', 'handik-booking-app' ); ?></summary>
 				<div class="handik-admin-details__body">
 					<div class="handik-admin-grid">
@@ -597,9 +601,14 @@ class Handik_Booking_App_Admin_People {
 				data-handik-add-person
 				data-rest-base="<?php echo esc_attr( esc_url_raw( $rest ) ); ?>"
 				data-rest-nonce="<?php echo esc_attr( wp_create_nonce( 'wp_rest' ) ); ?>">
+				<?php /* Sprint 10 fix: inline patterns for client-side
+				   validation. minLength=10 catches a typo'd phone before
+				   the round-trip; pattern hint stays visible via the
+				   placeholder + title. Required is already on full_name
+				   and phone, so the browser blocks empty submits. */ ?>
 				<div class="handik-admin-grid">
-					<label class="handik-admin-field"><span><?php esc_html_e( 'Full name', 'handik-booking-app' ); ?>*</span><input type="text" name="full_name" required autocomplete="name" /></label>
-					<label class="handik-admin-field"><span><?php esc_html_e( 'Phone', 'handik-booking-app' ); ?>*</span><input type="tel" name="phone" required autocomplete="tel" inputmode="tel" placeholder="+1 617 555 0123" /></label>
+					<label class="handik-admin-field"><span><?php esc_html_e( 'Full name', 'handik-booking-app' ); ?>*</span><input type="text" name="full_name" required minlength="2" autocomplete="name" /></label>
+					<label class="handik-admin-field"><span><?php esc_html_e( 'Phone', 'handik-booking-app' ); ?>*</span><input type="tel" name="phone" required minlength="10" autocomplete="tel" inputmode="tel" placeholder="+1 617 555 0123" title="<?php esc_attr_e( '10-digit phone, e.g. +1 617 555 0123', 'handik-booking-app' ); ?>" /></label>
 					<label class="handik-admin-field"><span><?php esc_html_e( 'Email (optional)', 'handik-booking-app' ); ?></span><input type="email" name="email" autocomplete="email" inputmode="email" /></label>
 				</div>
 				<label class="handik-admin-field handik-admin-field--textarea"><span><?php esc_html_e( 'Admin notes', 'handik-booking-app' ); ?></span><textarea name="notes" rows="3"></textarea></label>

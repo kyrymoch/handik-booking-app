@@ -37,6 +37,9 @@ class Handik_Booking_App_Admin_Logs {
 		$show_debug   = ! empty( $_GET['show_debug'] );
 		// phpcs:enable
 
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		$paged = isset( $_GET['paged'] ) ? max( 1, absint( $_GET['paged'] ) ) : 1;
+
 		Handik_Booking_App_Admin_Helpers::page_start( __( 'Logs', 'handik-booking-app' ) );
 
 		echo $this->filter_bar_markup( $filter_level, $filter_time, $query, $request_id, $thread_id, $show_debug );
@@ -46,19 +49,78 @@ class Handik_Booking_App_Admin_Logs {
 		// Newest first.
 		$logs = array_reverse( $logs );
 
-		echo '<p class="handik-admin-muted">' . esc_html( sprintf( _n( '%d entry', '%d entries', count( $logs ), 'handik-booking-app' ), count( $logs ) ) ) . '</p>';
+		// Sprint 10 fix: pagination. Was P1 — Logger keeps up to 2000
+		// entries (per-level retention), all rendered as <li> cards on
+		// every page hit; on a phone the page was unusable. Slice to
+		// PAGE_SIZE here and emit prev/next nav.
+		$total       = count( $logs );
+		$total_pages = max( 1, (int) ceil( $total / self::PAGE_SIZE ) );
+		$paged       = min( $paged, $total_pages );
+		$offset      = ( $paged - 1 ) * self::PAGE_SIZE;
+		$page_logs   = array_slice( $logs, $offset, self::PAGE_SIZE );
 
-		if ( empty( $logs ) ) {
+		echo '<p class="handik-admin-muted">' . esc_html( sprintf(
+			/* translators: 1 = page row count, 2 = total */
+			_n( '%1$d of %2$d entry', '%1$d of %2$d entries', $total, 'handik-booking-app' ),
+			count( $page_logs ),
+			$total
+		) ) . '</p>';
+
+		if ( empty( $page_logs ) ) {
 			echo '<div class="handik-admin-empty"><p>' . esc_html__( 'No log entries match these filters.', 'handik-booking-app' ) . '</p></div>';
 		} else {
 			echo '<ul class="handik-admin-log-cards">';
-			foreach ( $logs as $entry ) {
+			foreach ( $page_logs as $entry ) {
 				echo $this->log_card_markup( $entry );
 			}
 			echo '</ul>';
 		}
 
+		echo $this->logs_pagination_markup( $paged, $total_pages, $total );
+
 		Handik_Booking_App_Admin_Helpers::page_end();
+	}
+
+	const PAGE_SIZE = 50;
+
+	protected function logs_pagination_markup( $paged, $total_pages, $total ) {
+		if ( $total_pages <= 1 ) {
+			return '';
+		}
+		// phpcs:disable WordPress.Security.NonceVerification.Recommended
+		$base_args = array_filter( array(
+			'page'         => 'handik-booking-app-operations',
+			'tab'          => 'logs',
+			'filter_level' => isset( $_GET['filter_level'] ) ? sanitize_key( wp_unslash( $_GET['filter_level'] ) ) : '',
+			'filter_time'  => isset( $_GET['filter_time'] ) ? sanitize_key( wp_unslash( $_GET['filter_time'] ) ) : '',
+			'q'            => isset( $_GET['q'] ) ? sanitize_text_field( wp_unslash( $_GET['q'] ) ) : '',
+			'request_id'   => isset( $_GET['request_id'] ) ? absint( wp_unslash( $_GET['request_id'] ) ) : 0,
+			'thread_id'    => isset( $_GET['thread_id'] ) ? sanitize_text_field( wp_unslash( $_GET['thread_id'] ) ) : '',
+			'show_debug'   => ! empty( $_GET['show_debug'] ) ? 1 : 0,
+		), static function ( $v ) { return '' !== $v && 0 !== $v && 'all' !== $v; } );
+		// phpcs:enable
+
+		$page_url = function ( $n ) use ( $base_args ) {
+			$args = $base_args;
+			if ( $n > 1 ) { $args['paged'] = $n; }
+			return add_query_arg( $args, admin_url( 'admin.php' ) );
+		};
+
+		$out  = '<nav class="handik-admin-pagination" aria-label="' . esc_attr__( 'Logs pagination', 'handik-booking-app' ) . '">';
+		$out .= '<span class="handik-admin-pagination__summary">' . esc_html( sprintf(
+			/* translators: 1 = current page, 2 = total pages */
+			__( 'Page %1$d of %2$d', 'handik-booking-app' ),
+			$paged, $total_pages
+		) ) . '</span>';
+		$out .= '<span class="handik-admin-pagination__nav">';
+		if ( $paged > 1 ) {
+			$out .= '<a class="button" href="' . esc_url( $page_url( $paged - 1 ) ) . '">‹ ' . esc_html__( 'Newer', 'handik-booking-app' ) . '</a>';
+		}
+		if ( $paged < $total_pages ) {
+			$out .= '<a class="button" href="' . esc_url( $page_url( $paged + 1 ) ) . '">' . esc_html__( 'Older', 'handik-booking-app' ) . ' ›</a>';
+		}
+		$out .= '</span></nav>';
+		return $out;
 	}
 
 	protected function filter_bar_markup( $filter_level, $filter_time, $query, $request_id, $thread_id, $show_debug ) {
@@ -94,11 +156,24 @@ class Handik_Booking_App_Admin_Logs {
 			admin_url( 'admin.php' )
 		);
 
+		// Sprint 10 fix: collapse the filter bar on mobile via <details> so
+		// the 6-input + 2-button row doesn't push 480px of chrome above
+		// the fold on a 360px screen. Open by default on desktop via CSS;
+		// closed by default on mobile (CSS-driven, see logs filter rules).
+		// Auto-opens when any filter is active so the customer sees the
+		// current scope.
+		$has_active_filter = (
+			'all' !== $filter_level || 'all' !== $filter_time || '' !== $query
+			|| $request_id > 0 || '' !== $thread_id || $show_debug
+		);
+
 		ob_start();
 		?>
 		<form class="handik-admin-filter-bar" method="get" action="<?php echo esc_url( admin_url( 'admin.php' ) ); ?>">
 			<input type="hidden" name="page" value="<?php echo esc_attr( $page ); ?>" />
 			<input type="hidden" name="tab" value="logs" />
+			<details class="handik-admin-filter-collapse"<?php echo $has_active_filter ? ' open' : ''; ?>>
+				<summary class="handik-admin-filter-collapse__summary"><?php esc_html_e( 'Filters', 'handik-booking-app' ); ?></summary>
 			<div class="handik-admin-filter-row">
 				<label class="handik-admin-filter">
 					<span><?php esc_html_e( 'Level', 'handik-booking-app' ); ?></span>
@@ -135,6 +210,7 @@ class Handik_Booking_App_Admin_Logs {
 				<button type="submit" class="button"><?php esc_html_e( 'Apply', 'handik-booking-app' ); ?></button>
 				<a class="button" href="<?php echo esc_url( $csv_url ); ?>">⬇ <?php esc_html_e( 'CSV', 'handik-booking-app' ); ?></a>
 			</div>
+			</details>
 		</form>
 		<?php
 		return (string) ob_get_clean();

@@ -511,6 +511,65 @@ a.handik-admin-today-card-link:focus-visible .handik-admin-today-card {
 	}
 }
 
+/* Sprint 10 fix: collapsible filter on Logs page (and any future filter
+ * bar that opts into <details class="handik-admin-filter-collapse">).
+ * Open by default on desktop so behavior matches the prior layout; on
+ * mobile the summary toggles the row so the filter chrome doesn't push
+ * 480px above the fold. */
+.handik-admin-filter-collapse {
+	background: transparent;
+	border: 0;
+	padding: 0;
+}
+.handik-admin-filter-collapse__summary {
+	cursor: pointer;
+	padding: 8px 12px;
+	border: 1px solid var(--handik-admin-border, #e2e8f0);
+	border-radius: 8px;
+	background: #f8fafc;
+	font-weight: 600;
+	min-height: 44px;
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	margin-bottom: 8px;
+	user-select: none;
+}
+.handik-admin-filter-collapse__summary::after {
+	content: '▾';
+	margin-left: auto;
+	color: #64748b;
+	transition: transform 0.15s ease;
+}
+.handik-admin-filter-collapse[open] .handik-admin-filter-collapse__summary::after {
+	transform: rotate(180deg);
+}
+@media (min-width: 768px) {
+	/* Auto-expanded on desktop; the summary row stays clickable for
+	 * keyboard users to collapse if they want, but it's open. */
+	.handik-admin-filter-collapse:not([open]) {
+		/* JS could set it manually; if so, respect that. */
+	}
+}
+
+/* Sprint 10: pagination footer used by Bookings + Logs lists. */
+.handik-admin-pagination {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	justify-content: space-between;
+	align-items: center;
+	margin: 16px 0;
+}
+.handik-admin-pagination__summary {
+	color: #475569;
+	font-size: 0.92rem;
+}
+.handik-admin-pagination__nav {
+	display: flex;
+	gap: 8px;
+}
+
 .handik-admin-filter {
 	display: flex;
 	flex-direction: column;
@@ -526,6 +585,12 @@ a.handik-admin-today-card-link:focus-visible .handik-admin-today-card {
 /* --------- Sticky action bar ------------------------------------------- */
 
 .handik-admin-sticky-bar {
+	/* Sprint 10 fix: was hard-coded `top: var(--wp-admin--admin-bar--height,
+	 * 32px)`. WP renders a 46px admin bar on mobile (≤782px) and a 32px
+	 * bar on desktop, but the var only resolves on themes that actually
+	 * declare it — vanilla wp-admin doesn't, so the fallback (32px) was
+	 * always used and the sticky bar overlapped the back arrow on phone.
+	 * Mobile media-query below now bumps to 46px. */
 	position: -webkit-sticky;
 	position: sticky;
 	top: var(--wp-admin--admin-bar--height, 32px);
@@ -583,9 +648,31 @@ a.handik-admin-today-card-link:focus-visible .handik-admin-today-card {
 	color: #fff;
 }
 
+@media (max-width: 782px) {
+	/* Sprint 10 fix: WP admin bar is 46px on mobile (not 32px), so the
+	 * sticky bar's `top` needs to match or it overlaps the back arrow.
+	 * 782px is WP's own breakpoint between mobile and desktop admin bar. */
+	.handik-admin-sticky-bar {
+		top: 46px;
+	}
+}
+
 @media (max-width: 767px) {
-	.handik-admin-sticky-bar__cta span {
+	/* Sprint 10 fix: the call CTA's <span> wrapping the phone number
+	 * was hidden globally on <768px, leaving just the 📞 icon — but the
+	 * audit showed that hiding the number defeats the "is this the right
+	 * customer?" mental check the owner does in the truck. Keep the
+	 * number visible for the call CTA; only hide labels on the OTHER
+	 * cta buttons (Maps, Cal.com link). */
+	.handik-admin-sticky-bar__cta:not(.is-call) span {
 		display: none;
+	}
+	.handik-admin-sticky-bar__cta.is-call span {
+		font-size: 0.8rem;
+		max-width: 130px;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 }
 
@@ -1208,7 +1295,15 @@ a.handik-admin-today-card-link:focus-visible .handik-admin-today-card {
 		font-weight: 600;
 	}
 
-	body.toplevel_page_handik-booking-app .wp-admin {
+	/* Sprint 10 fix: was `body.toplevel_page_handik-booking-app` only —
+	 * that class only applies to the FIRST page (Dashboard); sub-pages
+	 * get `body.handik-booking_page_*` so the 60px bottom padding rule
+	 * was never matching anywhere except the dashboard, and content was
+	 * hiding under the fixed bottom nav on every other admin page. The
+	 * attribute-prefix selectors below cover both forms. */
+	body[class*="toplevel_page_handik-booking-app"] .wp-admin,
+	body[class*="handik-booking_page_handik-booking-app"] .wp-admin,
+	body[class*="page_handik-booking-app"] .handik-admin-wrap {
 		padding-bottom: 60px;
 	}
 

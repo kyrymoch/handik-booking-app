@@ -347,14 +347,17 @@
 						if ( ! ok ) { return; }
 						await adminFetch( ctx, 'admin/booking/' + bookingId + '/status', { body: { status: 'cancelled' } } );
 						toast( i18n.saved || 'Saved', 'success' );
-						window.location.reload();
+						// Sprint 10 fix: patch DOM instead of full reload.
+						// Was P1 — owner on the truck waited 2-5s for a
+						// reload over cellular for a near-empty action.
+						patchBookingStatus( target, 'cancelled' );
 					}
 					if ( 'mark-completed' === action ) {
 						const ok = await openModal( { title: i18n.completeTitle || 'Mark completed', body: i18n.confirmComplete || 'Are you sure?' } );
 						if ( ! ok ) { return; }
 						await adminFetch( ctx, 'admin/booking/' + bookingId + '/status', { body: { status: 'completed' } } );
 						toast( i18n.saved || 'Saved', 'success' );
-						window.location.reload();
+						patchBookingStatus( target, 'completed' );
 					}
 					if ( 'clear-override' === action ) {
 						await adminFetch( ctx, 'admin/booking/' + bookingId + '/status', { body: { status: '' } } );
@@ -415,7 +418,16 @@
 						window.location.reload();
 					}
 					if ( 'addr-delete' === action ) {
-						const ok = await openModal( { title: i18n.confirmDelete || 'Delete?', body: '' } );
+						// Sprint 10 fix: clearer copy. Server does
+						// soft-delete (sets deleted_at) so historical
+						// bookings keep referencing the row — modal now
+						// says so explicitly. Was P1: owner thought
+						// hitting Delete would corrupt past records.
+						const ok = await openModal( {
+							title: i18n.confirmAddressDeleteTitle || 'Remove this address?',
+							body:  i18n.confirmAddressDeleteBody  || 'It will no longer appear in the saved-address dropdown for this customer. Past bookings keep their reference (the row is hidden, not erased).',
+							confirmLabel: i18n.remove || 'Remove',
+						} );
 						if ( ! ok ) { return; }
 						await adminFetch( ctx, 'admin/address/' + addressId, { method: 'DELETE' } );
 						toast( i18n.saved || 'Saved', 'success' );
@@ -515,9 +527,24 @@
 								service_family: ( t.querySelector( '[data-handik-task-service-family]' ) || {} ).value || '',
 								rate_family:    ( t.querySelector( '[data-handik-task-rate-family]' ) || {} ).value || ''
 							};
-						} ).filter( function( t ) { return t.id && t.label; } )
+						} )
+						// Sprint 10 fix: keep partial rows where the user
+						// has started typing (id OR label) — was filtering
+						// requiring BOTH which silently dropped a row on
+						// auto-save when the owner tabbed out mid-edit.
+						// Backend filters fully-empty rows; partials stay
+						// in source so the next render doesn't lose them.
+						.filter( function( t ) {
+							return ( t.id && t.label )
+								|| ( ( t.id || t.label ) && ( t.description || t.rate_label || t.service_family || t.rate_family ) );
+						} )
 					};
-				} ).filter( function( g ) { return g.group && g.tasks.length; } );
+				} ).filter( function( g ) {
+					// Allow group with at least a name (even if all tasks
+					// are empty in-progress) — user might rename a category
+					// before adding tasks.
+					return g.group;
+				} );
 			}
 
 			let saveTimer = null;
@@ -571,18 +598,45 @@
 				const delTask = event.target.closest( '[data-handik-remove-task]' );
 				if ( delTask ) {
 					event.preventDefault();
-					if ( window.confirm( i18n.confirmDelete || 'Delete?' ) ) {
-						const task = delTask.closest( '[data-handik-task]' );
-						if ( task ) { task.remove(); scheduleSave(); }
-					}
+					// Sprint 10 fix: ref-aware delete confirm. Was P1 —
+					// `window.confirm("Delete?")` gave no signal that 12
+					// active requests reference this task. Modal now
+					// names the count and uses different copy when the
+					// task is in use vs orphan, so click-confirm-gone
+					// is no longer accidental.
+					const refCount = parseInt( delTask.getAttribute( 'data-handik-ref-count' ) || '0', 10 );
+					( async function () {
+						let title = i18n.confirmDelete || 'Remove this task?';
+						let body  = '';
+						if ( refCount > 0 ) {
+							title = ( i18n.confirmDeleteInUseTitle || 'Remove this task?' );
+							body  = ( i18n.confirmDeleteInUseBody || 'This task is referenced by %d existing request(s). Removing it from the catalog will NOT delete those bookings, but customers will no longer be able to pick it on the public app.' ).replace( '%d', String( refCount ) );
+						}
+						const ok = await openModal( {
+							title: title,
+							body: body,
+							confirmLabel: refCount > 0 ? ( i18n.removeAnyway || 'Remove anyway' ) : ( i18n.remove || 'Remove' ),
+						} );
+						if ( ok ) {
+							const task = delTask.closest( '[data-handik-task]' );
+							if ( task ) { task.remove(); scheduleSave(); }
+						}
+					} )();
 				}
 				const delGroup = event.target.closest( '[data-handik-remove-group]' );
 				if ( delGroup ) {
 					event.preventDefault();
-					if ( window.confirm( i18n.confirmDelete || 'Delete?' ) ) {
-						const g = delGroup.closest( '[data-handik-group]' );
-						if ( g ) { g.remove(); scheduleSave(); }
-					}
+					( async function () {
+						const ok = await openModal( {
+							title: i18n.confirmDeleteGroupTitle || 'Remove this category?',
+							body: i18n.confirmDeleteGroupBody || 'All tasks inside will be removed from the public catalog. Existing bookings keep their data.',
+							confirmLabel: i18n.remove || 'Remove',
+						} );
+						if ( ok ) {
+							const g = delGroup.closest( '[data-handik-group]' );
+							if ( g ) { g.remove(); scheduleSave(); }
+						}
+					} )();
 				}
 			} );
 
@@ -733,14 +787,29 @@
 					try {
 						if ( 'run-migrations' === action ) {
 							const r = await adminFetch( ctx, 'admin/migrations/run', {} );
-							toast( 'DB version: ' + r.db_version, 'success' );
+							// Sprint 10 fix: REST endpoint returns
+							// {success, ran[], skipped, error, no_changes}
+							// after the Sprint 7 hardening — surface
+							// the actual outcome instead of always
+							// claiming green. Was P1: a failed step
+							// was leaving the toast green and the error
+							// invisible until next reload.
+							if ( r && r.error ) {
+								toast( 'Migration failed: ' + String( r.error ), 'error' );
+							} else if ( r && r.ran && r.ran.length ) {
+								toast( 'Migrations applied: ' + r.ran.join( ', ' ), 'success' );
+							} else if ( r && r.skipped ) {
+								toast( 'Skipped — another migration in progress.', 'info' );
+							} else {
+								toast( 'No pending migrations. DB version: ' + ( r ? r.db_version : '?' ), 'info' );
+							}
 						}
 						if ( 'clear-transients' === action ) {
 							await adminFetch( ctx, 'admin/transients/clear', {} );
 							toast( 'Transients cleared', 'success' );
 						}
 					} catch ( err ) {
-						toast( i18n.saveFailed || 'Failed', 'error' );
+						toast( ( err && err.message ) || i18n.saveFailed || 'Failed', 'error' );
 					}
 				} );
 			} );
@@ -816,15 +885,48 @@
 		} );
 	}
 
+	// Sprint 10 fix: surgically update the booking-detail status pill +
+	// hide/disable the action button so the page reflects the new state
+	// without a full reload (was P1: ~2-5s of cellular flicker for a
+	// no-op-feeling action). The pill class set mirrors the PHP mapping
+	// in `Handik_Booking_App_Admin_Helpers::status_pill_markup()` —
+	// keep these strings in sync when adding new statuses.
+	const STATUS_PILL_TONE = {
+		booked:    { tone: 'info',    label: 'Booked' },
+		confirmed: { tone: 'success', label: 'Confirmed' },
+		completed: { tone: 'done',    label: 'Completed' },
+		cancelled: { tone: 'danger',  label: 'Cancelled' },
+	};
+	function patchBookingStatus( triggerEl, newStatus ) {
+		const cfg = STATUS_PILL_TONE[ newStatus ];
+		if ( ! cfg ) { return; }
+		// Sticky bar pill on the detail page.
+		document.querySelectorAll( '.handik-admin-pill' ).forEach( function ( pill ) {
+			pill.className = 'handik-admin-pill handik-admin-pill--' + cfg.tone;
+			pill.textContent = cfg.label;
+		} );
+		// Disable the action that just fired so a double-tap on a
+		// laggy connection doesn't re-POST.
+		if ( triggerEl ) {
+			triggerEl.disabled = true;
+			triggerEl.classList.add( 'is-acted' );
+		}
+	}
+
 	function initDebouncedSearch() {
 		document.querySelectorAll( '[data-handik-debounced-submit]' ).forEach( function( input ) {
 			let timer = null;
+			// Sprint 10 fix: bumped 350 → 600ms. Was P1 — every keystroke
+			// triggered a full page reload on a 4G connection. 600ms is
+			// "I stopped typing" without feeling sluggish; full AJAX
+			// search is deferred (would need a server-rendered fragment
+			// endpoint we don't have yet).
 			input.addEventListener( 'input', function() {
 				if ( timer ) { window.clearTimeout( timer ); }
 				timer = window.setTimeout( function() {
 					const form = input.closest( 'form' );
 					if ( form ) { form.submit(); }
-				}, 350 );
+				}, 600 );
 			} );
 		} );
 	}
@@ -832,6 +934,27 @@
 	// ============================================================
 	// Boot
 	// ============================================================
+
+	// Sprint 10 fix: remember whether collapsible <details> sections are
+	// open across page reloads. Each section opts in via
+	// `data-handik-details-key="<unique key>"`. State is per-tab via
+	// sessionStorage so opening a panel in one tab doesn't haunt another.
+	function initDetailsMemory() {
+		const STORAGE_PREFIX = 'handik_details_open_';
+		document.querySelectorAll( 'details[data-handik-details-key]' ).forEach( function ( el ) {
+			const key = STORAGE_PREFIX + el.dataset.handikDetailsKey;
+			try {
+				if ( '1' === window.sessionStorage.getItem( key ) ) {
+					el.open = true;
+				}
+			} catch ( e ) { /* private mode, ignore */ }
+			el.addEventListener( 'toggle', function () {
+				try {
+					window.sessionStorage.setItem( key, el.open ? '1' : '0' );
+				} catch ( e ) { /* ignore */ }
+			} );
+		} );
+	}
 
 	document.addEventListener( 'DOMContentLoaded', function() {
 		initRowLinks();
@@ -843,6 +966,7 @@
 		initLightbox();
 		initCopyButtons();
 		initDebouncedSearch();
+		initDetailsMemory();
 	} );
 
 }( window, document ) );
