@@ -29,8 +29,10 @@ class Handik_Booking_App_REST_API {
 	protected $job_requests;
 	/** @var Handik_Booking_App_Service_Catalog_Service|null */
 	protected $service_catalog;
+	/** @var Handik_Booking_App_Cascade_Delete_Service|null */
+	protected $cascade_delete;
 
-	public function __construct( $app, $auth, $chatkit, $webhook, $messages = null, $bookings = null, $contacts = null, $addresses = null, $settings = null, $logger = null, $job_requests = null, $service_catalog = null ) {
+	public function __construct( $app, $auth, $chatkit, $webhook, $messages = null, $bookings = null, $contacts = null, $addresses = null, $settings = null, $logger = null, $job_requests = null, $service_catalog = null, $cascade_delete = null ) {
 		$this->app             = $app;
 		$this->auth            = $auth;
 		$this->chatkit         = $chatkit;
@@ -43,6 +45,7 @@ class Handik_Booking_App_REST_API {
 		$this->logger          = $logger;
 		$this->job_requests    = $job_requests;
 		$this->service_catalog = $service_catalog;
+		$this->cascade_delete  = $cascade_delete;
 
 		add_action( 'rest_api_init', array( $this, 'register_routes' ) );
 	}
@@ -101,6 +104,23 @@ class Handik_Booking_App_REST_API {
 			'methods'             => WP_REST_Server::EDITABLE,
 			'callback'            => array( $this, 'admin_contact_update' ),
 			'permission_callback' => array( $this, 'admin_permission' ),
+		) );
+		// Sprint 12 — destructive cascades, all gated on the new
+		// MANAGE_DELETE cap (see admin_delete_permission()).
+		register_rest_route( $namespace, '/admin/contact/(?P<id>\d+)', array(
+			'methods'             => WP_REST_Server::DELETABLE,
+			'callback'            => array( $this, 'admin_contact_delete' ),
+			'permission_callback' => array( $this, 'admin_delete_permission' ),
+		) );
+		register_rest_route( $namespace, '/admin/job-request/(?P<id>\d+)', array(
+			'methods'             => WP_REST_Server::DELETABLE,
+			'callback'            => array( $this, 'admin_job_request_delete' ),
+			'permission_callback' => array( $this, 'admin_delete_permission' ),
+		) );
+		register_rest_route( $namespace, '/admin/booking/(?P<id>\d+)', array(
+			'methods'             => WP_REST_Server::DELETABLE,
+			'callback'            => array( $this, 'admin_booking_delete' ),
+			'permission_callback' => array( $this, 'admin_delete_permission' ),
 		) );
 		register_rest_route( $namespace, '/admin/address/(?P<id>\d+)', array(
 			'methods'             => WP_REST_Server::EDITABLE,
@@ -459,6 +479,71 @@ class Handik_Booking_App_REST_API {
 		$id = absint( $request['id'] );
 		$ok = $this->addresses->soft_delete( $id );
 		return rest_ensure_response( array( 'success' => $ok ) );
+	}
+
+	/**
+	 * Sprint 12 — permission gate for destructive cascades. Requires
+	 * the new MANAGE_DELETE cap, which is held by `manage_options`
+	 * users automatically (via the user_has_cap filter in
+	 * Handik_Booking_App_Capabilities) and otherwise must be granted
+	 * explicitly to a role.
+	 *
+	 * @return bool|WP_Error
+	 */
+	public function admin_delete_permission() {
+		if ( ! current_user_can( Handik_Booking_App_Capabilities::MANAGE_DELETE ) ) {
+			return new WP_Error(
+				'handik_admin_forbidden',
+				__( 'Hard-delete requires the handik_delete_data capability.', 'handik-booking-app' ),
+				array( 'status' => 403 )
+			);
+		}
+		return true;
+	}
+
+	public function admin_contact_delete( WP_REST_Request $request ) {
+		if ( ! $this->cascade_delete ) {
+			return $this->admin_unavailable();
+		}
+		$id  = absint( $request['id'] );
+		$res = $this->cascade_delete->delete_contact( $id );
+		if ( empty( $res['deleted'] ) ) {
+			return new WP_Error( 'handik_delete_failed', __( 'Could not delete that contact.', 'handik-booking-app' ), array( 'status' => 404 ) );
+		}
+		return rest_ensure_response( array(
+			'success' => true,
+			'summary' => $res['summary'] ?? array(),
+		) );
+	}
+
+	public function admin_job_request_delete( WP_REST_Request $request ) {
+		if ( ! $this->cascade_delete ) {
+			return $this->admin_unavailable();
+		}
+		$id  = absint( $request['id'] );
+		$res = $this->cascade_delete->delete_request( $id );
+		if ( empty( $res['deleted'] ) ) {
+			return new WP_Error( 'handik_delete_failed', __( 'Could not delete that request.', 'handik-booking-app' ), array( 'status' => 404 ) );
+		}
+		return rest_ensure_response( array(
+			'success' => true,
+			'summary' => $res['summary'] ?? array(),
+		) );
+	}
+
+	public function admin_booking_delete( WP_REST_Request $request ) {
+		if ( ! $this->cascade_delete ) {
+			return $this->admin_unavailable();
+		}
+		$id  = absint( $request['id'] );
+		$res = $this->cascade_delete->delete_booking( $id );
+		if ( empty( $res['deleted'] ) ) {
+			return new WP_Error( 'handik_delete_failed', __( 'Could not delete that booking.', 'handik-booking-app' ), array( 'status' => 404 ) );
+		}
+		return rest_ensure_response( array(
+			'success' => true,
+			'summary' => $res['summary'] ?? array(),
+		) );
 	}
 
 	public function admin_address_primary( WP_REST_Request $request ) {

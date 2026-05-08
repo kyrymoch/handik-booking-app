@@ -582,7 +582,38 @@ class Handik_Booking_App_Admin_Bookings {
 		echo $this->address_block_markup( $full_address );
 		echo $this->technical_block_markup( $request, $booking );
 		echo $this->chat_logs_block_markup( $request, $booking );
+		echo $this->danger_zone_markup( $booking );
 		echo '</div>';
+	}
+
+	/**
+	 * Sprint 12 — danger zone with hard-delete button. Visible only to
+	 * users holding the new MANAGE_DELETE cap, so a manage_bookings-only
+	 * editor doesn't see it. The button carries `data-handik-delete=...`
+	 * with the entity + id; the JS handler (initDangerZone in
+	 * booking-app-admin.js) opens a typed-confirm modal that requires
+	 * the operator to type "DELETE" verbatim before the REST DELETE
+	 * fires. On success it redirects back to the bookings list.
+	 */
+	protected function danger_zone_markup( array $booking ) {
+		if ( ! current_user_can( Handik_Booking_App_Capabilities::MANAGE_DELETE ) ) {
+			return '';
+		}
+		$id = (int) ( $booking['id'] ?? 0 );
+		ob_start();
+		?>
+		<section class="handik-admin-block handik-admin-danger-zone" aria-label="<?php esc_attr_e( 'Danger zone', 'handik-booking-app' ); ?>">
+			<h2 class="handik-admin-section-title"><?php esc_html_e( 'Danger zone', 'handik-booking-app' ); ?></h2>
+			<p class="handik-admin-muted"><?php esc_html_e( 'Permanently remove this booking row from the local database. The Cal.com booking on the contractor calendar is NOT cancelled — only the local mirror is wiped.', 'handik-booking-app' ); ?></p>
+			<button type="button"
+				class="button button-link-delete"
+				data-handik-delete="booking"
+				data-handik-id="<?php echo esc_attr( (string) $id ); ?>"
+				data-handik-redirect="<?php echo esc_attr( Handik_Booking_App_Admin_Helpers::admin_url_for( 'handik-booking-app-bookings' ) ); ?>"
+			>🗑 <?php esc_html_e( 'Delete this booking…', 'handik-booking-app' ); ?></button>
+		</section>
+		<?php
+		return (string) ob_get_clean();
 	}
 
 	protected function sticky_action_bar_markup( array $booking, $contact, $full_address ) {

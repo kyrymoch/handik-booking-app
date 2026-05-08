@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.1.18.0
+Stable tag: 2.1.19.0
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, silent returning-client recognition, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,23 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.1.19.0 =
+* **Hard-delete for People / Requests / Bookings (admin).** New "Danger zone" block at the bottom of each detail page lets the operator permanently wipe a record and every dependent row. Owner-requested for spam cleanup and right-to-be-forgotten requests — there is **no soft-delete**, **no audit-trail copy of the customer's data**, **no restore**.
+* **New capability `handik_delete_data`.** Granted to the administrator role on activation, and granted at runtime to anyone who already holds `manage_options` (via the Sprint 8 `user_has_cap` filter) so existing sites work without role surgery. Editors / helpers with only `handik_manage_bookings` do **not** see the Delete buttons or the REST routes; they have to be granted the new cap explicitly. The Integrations cap-missing notice already shows the cap key in `<code>` so admins know what to type into a role-management plugin.
+* **Cascade order (kept in `Handik_Booking_App_Cascade_Delete_Service`).** No table in this plugin uses `FOREIGN KEY` constraints, so every cascade walks its dependents in PHP:
+  - **Booking** → clears the parent request's denormalized `cal_booking_id` / `cal_booking_url` back-pointer, then drops the row.
+  - **Request** → drops `handik_messages` (transcript) → drops `handik_bookings` rows → calls `wp_delete_attachment( $att_id, true )` per photo (frees the actual files in `wp-content/uploads/handik-booking-app/contact-N/request-M/`) → drops the `handik_job_requests` row → `rmdir` the now-empty per-request upload subdir.
+  - **Person** → recurses through every owned `job_requests` row (so the request-level photo cleanup still runs), drops `handik_login_tokens`, drops `handik_direct_booking_requests`, drops `handik_project_work_days` + `handik_project_scheduling_requests`, drops every `handik_addresses` row (active and soft-deleted), drops the `handik_contacts` row, `rmdir`s the per-contact upload subdir.
+  - **Cal.com calendar** is intentionally NOT touched — owner-decided scope ("the visit happened; we're cleaning local DB"). To toggle later, call `Handik_Booking_App_Cal_API_Service::cancel_booking($cal_uid)` in `Cascade_Delete_Service::delete_booking()` after the audit-log entry.
+* **Audit log entry written BEFORE the wipe.** Every cascade emits a `Logger::warning( 'admin hard-delete: <entity>', ['actor' => …, 'id' => …, 'counts' => …] )` so a partial failure mid-cascade still leaves a record of who did what (the wp_options-backed Logger flushes synchronously for warning-level entries).
+* **Typed-confirmation modal.** Click-confirm modals are too easy to mash through on mobile, so the destructive button stays disabled until the operator types `DELETE` verbatim into the input. Mirrors industry-standard "type the repo name to confirm" patterns. Modal also uses a red title bar so it can't be confused with routine Edit / Add Note dialogs.
+* **Pre-delete summary.** The Person danger zone shows the cascade count up front: "Cascade will also wipe: 3 addresses, 7 requests, 12 messages, 2 bookings, 5 photos, 1 project schedule, 4 login tokens." The Request danger zone shows messages / bookings / photos. The Booking danger zone is leaf-level. Counts come from new `Contacts_Service::count_dependents( $id )` and `Job_Requests_Service::count_dependents( $id )` helpers.
+* **REST surface.** Three new DELETE routes, all gated on the new cap:
+  - `DELETE /handik-booking-app/v1/admin/contact/{id}`
+  - `DELETE /handik-booking-app/v1/admin/job-request/{id}`
+  - `DELETE /handik-booking-app/v1/admin/booking/{id}`
+  Each returns `{ success: true, summary: { contacts: 1, addresses: 3, … } }` so the JS toast can name what was actually swept.
 
 = 2.1.18.0 =
 * **Sprint 11 — P2/P3 cleanup from the v2.1.16.0 audits.** 11 focused clusters; no new features, no schema changes, no public-flow regressions. Branch: `claude/sprint-11-p2-p3-cleanup`.

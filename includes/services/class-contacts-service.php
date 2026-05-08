@@ -353,4 +353,88 @@ class Handik_Booking_App_Contacts_Service {
 
 		return '+' . $digits;
 	}
+
+	/**
+	 * Sprint 12 — drop a single contact row. Solo low-level step the
+	 * Cascade_Delete_Service calls last after wiping all child rows.
+	 *
+	 * @param int $contact_id ID.
+	 * @return bool
+	 */
+	public function delete_hard_solo( $contact_id ) {
+		global $wpdb;
+		$contact_id = (int) $contact_id;
+		if ( $contact_id <= 0 ) {
+			return false;
+		}
+		$table = Handik_Booking_App_DB::table( 'contacts' );
+		$ok = $wpdb->delete( $table, array( 'id' => $contact_id ), array( '%d' ) );
+		return false !== $ok && $ok > 0;
+	}
+
+	/**
+	 * Sprint 12 — pre-flight counts for the admin confirm modal so it
+	 * can list every dependent table at a glance:
+	 *   "Deletes 3 addresses, 7 requests (and their 12 messages /
+	 *   2 bookings / 5 photos), 1 project schedule, 4 login tokens."
+	 *
+	 * @param int $contact_id ID.
+	 * @return array<string, int>
+	 */
+	public function count_dependents( $contact_id ) {
+		global $wpdb;
+		$contact_id = (int) $contact_id;
+		$out = array(
+			'addresses'                    => 0,
+			'job_requests'                 => 0,
+			'bookings'                     => 0,
+			'messages'                     => 0,
+			'photos'                       => 0,
+			'login_tokens'                 => 0,
+			'direct_booking_requests'      => 0,
+			'project_scheduling_requests'  => 0,
+			'project_work_days'            => 0,
+		);
+		if ( $contact_id <= 0 ) {
+			return $out;
+		}
+		$addresses        = Handik_Booking_App_DB::table( 'addresses' );
+		$requests         = Handik_Booking_App_DB::table( 'job_requests' );
+		$bookings         = Handik_Booking_App_DB::table( 'bookings' );
+		$messages         = Handik_Booking_App_DB::table( 'messages' );
+		$login_tokens     = Handik_Booking_App_DB::table( 'login_tokens' );
+		$direct_requests  = Handik_Booking_App_DB::table( 'direct_booking_requests' );
+		$project_requests = Handik_Booking_App_DB::table( 'project_scheduling_requests' );
+		$work_days        = Handik_Booking_App_DB::table( 'project_work_days' );
+
+		$out['addresses']                    = (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM {$addresses} WHERE contact_id = %d", $contact_id ) );
+		$out['job_requests']                 = (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM {$requests} WHERE contact_id = %d", $contact_id ) );
+		$out['login_tokens']                 = (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM {$login_tokens} WHERE contact_id = %d", $contact_id ) );
+		$out['direct_booking_requests']      = (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM {$direct_requests} WHERE contact_id = %d", $contact_id ) );
+		$out['project_scheduling_requests']  = (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM {$project_requests} WHERE contact_id = %d", $contact_id ) );
+
+		// Aggregate child counts via JOIN through the request id.
+		$out['bookings'] = (int) $wpdb->get_var( $wpdb->prepare(
+			"SELECT COUNT(*) FROM {$bookings} b INNER JOIN {$requests} r ON b.job_request_id = r.id WHERE r.contact_id = %d",
+			$contact_id
+		) );
+		$out['messages'] = (int) $wpdb->get_var( $wpdb->prepare(
+			"SELECT COUNT(*) FROM {$messages} m INNER JOIN {$requests} r ON m.request_id = r.id WHERE r.contact_id = %d",
+			$contact_id
+		) );
+
+		// project_work_days through scheduling_request join.
+		if ( $out['project_scheduling_requests'] > 0 ) {
+			$out['project_work_days'] = (int) $wpdb->get_var( $wpdb->prepare(
+				"SELECT COUNT(*) FROM {$work_days} d INNER JOIN {$project_requests} pr ON d.scheduling_request_id = pr.id WHERE pr.contact_id = %d",
+				$contact_id
+			) );
+		}
+
+		// Photos: walk requests to sum photos arrays. For now the
+		// admin confirm modal can render a coarse "N requests" line
+		// and skip a granular photo count (would require N round
+		// trips to hydrate each request's photos_json).
+		return $out;
+	}
 }

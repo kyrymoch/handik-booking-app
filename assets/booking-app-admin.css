@@ -1420,6 +1420,43 @@ a.handik-admin-today-card-link:focus-visible .handik-admin-today-card {
 	to   { opacity: 1; }
 }
 
+/* Sprint 12 — danger-zone delete UI. Soft red wash on the section so
+ * it visually separates from "regular" admin blocks and the operator
+ * notices it on the way down the page; the typed-confirm modal gets a
+ * red title bar so it can't be confused with the routine "Edit
+ * address" / "Add note" dialogs that share the same shell. */
+.handik-admin-danger-zone {
+	border: 1px solid #fecaca;
+	background: #fef2f2;
+	border-radius: 8px;
+	padding: 16px;
+	margin-top: 24px;
+}
+.handik-admin-danger-zone .handik-admin-section-title {
+	color: #991b1b;
+	margin-top: 0;
+}
+.handik-admin-danger-zone .button-link-delete {
+	font-weight: 600;
+}
+.handik-admin-modal--danger h3 {
+	color: #991b1b;
+}
+.handik-admin-modal__typed-confirm {
+	width: 100%;
+	padding: 10px 12px;
+	font-family: monospace;
+	font-size: 1rem;
+	border: 2px solid #fca5a5;
+	border-radius: 6px;
+	margin-top: 6px;
+}
+.handik-admin-modal__typed-confirm:focus-visible {
+	outline: 2px solid #2563eb;
+	outline-offset: 2px;
+	border-color: #2563eb;
+}
+
 /* --------- Lightbox --------------------------------------------------- */
 
 .handik-admin-lightbox-backdrop {

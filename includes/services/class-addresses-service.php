@@ -144,6 +144,28 @@ class Handik_Booking_App_Addresses_Service {
 	}
 
 	/**
+	 * Sprint 12 — bulk hard-delete every row for a contact (cascade
+	 * step). Drops both soft-deleted and active rows. Returns the row
+	 * count for the audit-log entry.
+	 *
+	 * @param int $contact_id Contact id.
+	 * @return int
+	 */
+	public function delete_hard_for_contact( $contact_id ) {
+		global $wpdb;
+		$contact_id = (int) $contact_id;
+		if ( $contact_id <= 0 ) {
+			return 0;
+		}
+		$out = $wpdb->delete(
+			Handik_Booking_App_DB::table( 'addresses' ),
+			array( 'contact_id' => $contact_id ),
+			array( '%d' )
+		);
+		return false === $out ? 0 : (int) $out;
+	}
+
+	/**
 	 * @param int $limit Limit.
 	 * @return array<int, array<string, mixed>>
 	 */

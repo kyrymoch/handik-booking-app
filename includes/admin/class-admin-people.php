@@ -323,6 +323,7 @@ class Handik_Booking_App_Admin_People {
 		echo $this->person_edit_form_markup( $contact );
 		echo $this->person_addresses_markup( $contact_id, $addresses );
 		echo $this->person_requests_markup( $requests, $bookings );
+		echo $this->person_danger_zone_markup( $contact_id, $contact );
 
 		Handik_Booking_App_Admin_Helpers::page_end();
 	}
@@ -444,6 +445,58 @@ class Handik_Booking_App_Admin_People {
 					<?php endforeach; ?>
 				</ul>
 			<?php endif; ?>
+		</section>
+		<?php
+		return (string) ob_get_clean();
+	}
+
+	/**
+	 * Sprint 12 — danger-zone for hard-delete of an entire contact.
+	 * Visible only to MANAGE_DELETE holders. Pre-computes the cascade
+	 * counts (addresses, requests, bookings, etc.) so the typed-confirm
+	 * modal can name what's about to be wiped.
+	 */
+	protected function person_danger_zone_markup( $contact_id, array $contact ) {
+		if ( ! current_user_can( Handik_Booking_App_Capabilities::MANAGE_DELETE ) ) {
+			return '';
+		}
+		$contact_id = (int) $contact_id;
+		$counts = $this->contacts && method_exists( $this->contacts, 'count_dependents' )
+			? $this->contacts->count_dependents( $contact_id )
+			: array();
+		$summary_lines = array();
+		$labels = array(
+			'addresses'                   => __( '%d addresses', 'handik-booking-app' ),
+			'job_requests'                => __( '%d requests', 'handik-booking-app' ),
+			'bookings'                    => __( '%d bookings', 'handik-booking-app' ),
+			'messages'                    => __( '%d messages', 'handik-booking-app' ),
+			'login_tokens'                => __( '%d login tokens', 'handik-booking-app' ),
+			'direct_booking_requests'     => __( '%d direct-form submissions', 'handik-booking-app' ),
+			'project_scheduling_requests' => __( '%d project schedules', 'handik-booking-app' ),
+			'project_work_days'           => __( '%d work days', 'handik-booking-app' ),
+		);
+		foreach ( $labels as $key => $tpl ) {
+			$n = (int) ( $counts[ $key ] ?? 0 );
+			if ( $n > 0 ) {
+				$summary_lines[] = sprintf( $tpl, $n );
+			}
+		}
+		$preview = empty( $summary_lines )
+			? __( 'No dependent data — only the contact row will be removed.', 'handik-booking-app' )
+			: __( 'Cascade will also wipe: ', 'handik-booking-app' ) . implode( ', ', $summary_lines ) . '.';
+		ob_start();
+		?>
+		<section class="handik-admin-block handik-admin-danger-zone" aria-label="<?php esc_attr_e( 'Danger zone', 'handik-booking-app' ); ?>">
+			<h2 class="handik-admin-section-title"><?php esc_html_e( 'Danger zone', 'handik-booking-app' ); ?></h2>
+			<p class="handik-admin-muted"><?php esc_html_e( 'Permanently remove this person and every record that references them. Irreversible — no soft-delete, no audit-trail copy of the customer\'s data, no restore. Used for spam cleanup and right-to-be-forgotten requests.', 'handik-booking-app' ); ?></p>
+			<p class="handik-admin-muted"><strong><?php echo esc_html( $preview ); ?></strong></p>
+			<button type="button"
+				class="button button-link-delete"
+				data-handik-delete="contact"
+				data-handik-id="<?php echo esc_attr( (string) $contact_id ); ?>"
+				data-handik-label="<?php echo esc_attr( (string) ( $contact['full_name'] ?? '' ) ); ?>"
+				data-handik-redirect="<?php echo esc_attr( Handik_Booking_App_Admin_Helpers::admin_url_for( 'handik-booking-app-crm' ) ); ?>"
+			>🗑 <?php esc_html_e( 'Delete this person…', 'handik-booking-app' ); ?></button>
 		</section>
 		<?php
 		return (string) ob_get_clean();
@@ -614,7 +667,52 @@ class Handik_Booking_App_Admin_People {
 		echo Handik_Booking_App_Admin_Helpers::task_summary_with_rates_html( is_array( $request['selected_tasks'] ?? null ) ? $request['selected_tasks'] : array(), $this->catalog );
 		echo '</section>';
 
+		echo $this->request_danger_zone_markup( $request );
+
 		Handik_Booking_App_Admin_Helpers::page_end();
+	}
+
+	/**
+	 * Sprint 12 — request-level danger zone. Same pattern as the
+	 * person + booking variants; preview lists messages / bookings /
+	 * photos that the cascade will sweep.
+	 */
+	protected function request_danger_zone_markup( array $request ) {
+		if ( ! current_user_can( Handik_Booking_App_Capabilities::MANAGE_DELETE ) ) {
+			return '';
+		}
+		$id = (int) ( $request['id'] ?? 0 );
+		$counts = $this->job_requests && method_exists( $this->job_requests, 'count_dependents' )
+			? $this->job_requests->count_dependents( $id )
+			: array();
+		$lines = array();
+		if ( ! empty( $counts['messages'] ) ) {
+			$lines[] = sprintf( __( '%d messages', 'handik-booking-app' ), (int) $counts['messages'] );
+		}
+		if ( ! empty( $counts['bookings'] ) ) {
+			$lines[] = sprintf( __( '%d bookings', 'handik-booking-app' ), (int) $counts['bookings'] );
+		}
+		if ( ! empty( $counts['photos'] ) ) {
+			$lines[] = sprintf( __( '%d photos', 'handik-booking-app' ), (int) $counts['photos'] );
+		}
+		$preview = empty( $lines )
+			? __( 'No dependent data — only the request row will be removed.', 'handik-booking-app' )
+			: __( 'Cascade will also wipe: ', 'handik-booking-app' ) . implode( ', ', $lines ) . '.';
+		ob_start();
+		?>
+		<section class="handik-admin-block handik-admin-danger-zone" aria-label="<?php esc_attr_e( 'Danger zone', 'handik-booking-app' ); ?>">
+			<h2 class="handik-admin-section-title"><?php esc_html_e( 'Danger zone', 'handik-booking-app' ); ?></h2>
+			<p class="handik-admin-muted"><?php esc_html_e( 'Permanently remove this request and its transcript / bookings / photos. The contact row stays — they keep any other requests they have.', 'handik-booking-app' ); ?></p>
+			<p class="handik-admin-muted"><strong><?php echo esc_html( $preview ); ?></strong></p>
+			<button type="button"
+				class="button button-link-delete"
+				data-handik-delete="job-request"
+				data-handik-id="<?php echo esc_attr( (string) $id ); ?>"
+				data-handik-redirect="<?php echo esc_attr( Handik_Booking_App_Admin_Helpers::admin_url_for( 'handik-booking-app-crm' ) ); ?>"
+			>🗑 <?php esc_html_e( 'Delete this request…', 'handik-booking-app' ); ?></button>
+		</section>
+		<?php
+		return (string) ob_get_clean();
 	}
 
 	// =====================================================================
