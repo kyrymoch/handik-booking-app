@@ -998,6 +998,7 @@
 		}
 		if ( this.state && this.state.restartConfirmVisible ) {
 			var dialog = this.shell.querySelector( '.handik-modal' );
+			var backdrop = this.shell.querySelector( '.handik-modal-backdrop' );
 			if ( dialog ) {
 				this._releaseModalFocusTrap = trapModalFocus( dialog );
 				var cancelBtn = dialog.querySelector( '[data-action="restart-cancel"]' );
@@ -1005,6 +1006,61 @@
 					window.requestAnimationFrame( function () { cancelBtn.focus(); } );
 				}
 			}
+			// Sprint 10 fix: ESC + backdrop click dismiss the dialog —
+			// was missing on the Forms SPA too.
+			if ( this._restartEscHandler ) {
+				document.removeEventListener( 'keydown', this._restartEscHandler, true );
+			}
+			this._restartEscHandler = function ( event ) {
+				if ( 'Escape' === event.key && self.state && self.state.restartConfirmVisible ) {
+					event.preventDefault();
+					self.state.restartConfirmVisible = false;
+					self.render();
+				}
+			};
+			document.addEventListener( 'keydown', this._restartEscHandler, true );
+			if ( backdrop ) {
+				backdrop.addEventListener( 'click', function ( event ) {
+					if ( event.target === backdrop ) {
+						self.state.restartConfirmVisible = false;
+						self.render();
+					}
+				} );
+			}
+		} else if ( this._restartEscHandler ) {
+			document.removeEventListener( 'keydown', this._restartEscHandler, true );
+			this._restartEscHandler = null;
+		}
+
+		// Sprint 10 fix: 1-second ticker so the OTP "Resend in Xs" copy
+		// counts down without the user having to interact. Mirrors the
+		// helper in booking-app.js — clear on every bindEvents and only
+		// re-arm if the OTP step is active and the lockout is in the
+		// future. Surgical text update so we don't fight the user's caret.
+		if ( this._otpResendTicker ) {
+			window.clearInterval( this._otpResendTicker );
+			this._otpResendTicker = null;
+		}
+		if ( this.state && 'otp' === this.state.step && this.state.otpResendDisabledUntil > Date.now() ) {
+			this._otpResendTicker = window.setInterval( function () {
+				if ( ! self.state || 'otp' !== self.state.step ) {
+					window.clearInterval( self._otpResendTicker );
+					self._otpResendTicker = null;
+					return;
+				}
+				if ( self.state.otpResendDisabledUntil <= Date.now() ) {
+					window.clearInterval( self._otpResendTicker );
+					self._otpResendTicker = null;
+					self.render();
+					return;
+				}
+				var remaining = Math.max( 0, Math.ceil( ( self.state.otpResendDisabledUntil - Date.now() ) / 1000 ) );
+				var pending = self.shell.querySelector( '.handik-booking-app__otp-resend.is-pending' );
+				if ( pending ) {
+					var tpl = self.t( 'otpResendIn' ) || 'You can resend in %ds';
+					pending.textContent = tpl.replace( '%d', String( remaining ) );
+				}
+			}, 1000 );
 		}
 
 		this.shell.querySelectorAll( '[data-model]' ).forEach( function ( input ) {
@@ -1198,10 +1254,15 @@
 				break;
 			// Combined details step (branches on isReturningClient).
 			case 'details-back':
-				// New-client path: nowhere safe to "back" except the OTP step.
-				// Returning customers can also go back to phone if they typed
-				// the wrong number.
-				this.go( 'otp' );
+				// Sprint 10 fix: for cache-restored verified customers we
+				// never went through OTP this session, so back-to-OTP
+				// landed on a blank screen and "Resend code" fired a
+				// fresh /phone-verify/start that duplicated the SMS and
+				// hit Twilio rate limit. Verified customers now land on
+				// `phone` (where they could re-verify a different number
+				// if they really wanted to); unverified customers keep
+				// the OTP path.
+				this.go( this.state.phoneVerified ? 'phone' : 'otp' );
 				break;
 			case 'details-next':
 				this.state.touched.address_full = true;
@@ -1245,7 +1306,12 @@
 				this.onAction( 'details-next', btn );
 				break;
 			case 'pick-back':
-				this.go( 'address' );
+				// Sprint 10 fix: Sprint 5 renamed `address` to `details`
+				// (combined contact + address into one step) but this
+				// transition was missed — the project-day picker's Back
+				// button landed on a non-existent step and rendered a
+				// blank `genericError`. Owner-reported P0 dead-end.
+				this.go( 'details' );
 				break;
 			case 'pick-next':
 				if ( this.state.selectedSlots.length !== this.requiredDays ) {
@@ -1330,20 +1396,27 @@
 	 * Reset to a fresh contact step. Mirrors the main app's "Start a new
 	 * booking" link in the Stuck disclaimer.
 	 */
-	HandikBookingForm.prototype.restart = function () {
-		// Wipe any persisted draft AND the verified-client token — restart
-		// means "throw it away," and that includes the device's identity
-		// trust so the next customer (or returning self) re-verifies.
+	HandikBookingForm.prototype.restart = function ( opts ) {
+		// Sprint 10 fix: Restart now preserves the 30-day verified-client
+		// cache by default. Owner-reported P0 — old code unconditionally
+		// called clearVerifiedClient(), so a customer who restarted
+		// mid-OTP lost their identity and had to OTP again. Pass
+		// `{ signOut: true }` for the explicit "sign out / different
+		// person" path that DOES wipe identity.
+		var preserveIdentity = ! ( opts && opts.signOut );
 		this.clearDraftStorage();
-		clearVerifiedClient();
-		this.state.step             = 'phone';
+		if ( ! preserveIdentity ) {
+			clearVerifiedClient();
+		}
+
+		// Restart of a verified user: skip past phone + OTP so they
+		// don't have to re-enter the phone they just verified.
+		var startStep = preserveIdentity && this.state.phoneVerified ? 'details' : 'phone';
+		this.state.step             = startStep;
 		this.state.otpCode          = '';
 		this.state.otpError         = '';
 		this.state.otpResendDisabledUntil = 0;
-		this.state.verifiedToken    = '';
-		this.state.verifiedPhone    = '';
 		this.state.busy             = false;
-		this.state.contact          = { full_name: '', phone: '', email: '' };
 		this.state.address          = {
 			address_id: 0, address_full: '', address_unit: '', address_line_1: '',
 			city: '', state: '', zip_code: '', is_valid: false
@@ -1360,10 +1433,16 @@
 		this.state.selectedSlots    = [];
 		this.state.confirmedDays    = [];
 		this.state.savedAddresses   = [];
-		this.state.isReturningClient = false;
-		this.state.profileContactId  = 0;
 		this.lookupLastPhone        = '';
 		this.lookupInFlightPhone    = '';
+		if ( ! preserveIdentity ) {
+			this.state.verifiedToken    = '';
+			this.state.verifiedPhone    = '';
+			this.state.phoneVerified    = false;
+			this.state.isReturningClient = false;
+			this.state.profileContactId  = 0;
+			this.state.contact          = { full_name: '', phone: '', email: '' };
+		}
 		this.render();
 	};
 
@@ -1936,14 +2015,27 @@
 			return;
 		}
 
-		// 15s timeout falls back to a single "Open in new tab" CTA when the
-		// embed script never loads (ad-block, network failure, CSP, etc).
+		// Sprint 10 fix: was clobbering the entire `container` with one
+		// bare button after 15s — wiping the skeleton, the intro copy,
+		// AND any iframe that was about to load — so a script that
+		// arrived at second 17 fought with the freshly-written button
+		// for the same DOM node. Now we INSERT a notice ABOVE the
+		// existing skeleton/iframe (so the iframe still loads if it
+		// eventually does), name the situation explicitly, and only
+		// fire if the embed hasn't reported booker-ready by 15s.
 		var fallbackTimer = window.setTimeout( function () {
-			if ( self.state.calBookingUrl ) {
-				container.innerHTML = '<div class="handik-booking-app__booking-direct">' +
-					'<a class="handik-btn is-primary" href="' + escapeAttr( self.state.calBookingUrl ) + '" target="_blank" rel="noopener noreferrer">' +
-					'<span class="handik-btn__label">' + escapeHtml( self.t( 'openInNewTab' ) ) + '</span></a></div>';
-			}
+			if ( self._calEmbedReady ) { return; }
+			if ( ! self.state.calBookingUrl ) { return; }
+			if ( container.querySelector( '.handik-booking-app__booking-fallback' ) ) { return; }
+			var fallback = document.createElement( 'div' );
+			fallback.className = 'handik-booking-app__booking-fallback';
+			fallback.setAttribute( 'role', 'status' );
+			fallback.innerHTML =
+				'<p>' + escapeHtml( self.t( 'calSlowTitle' ) || 'The booking calendar is taking longer than usual.' ) + '</p>' +
+				'<p>' + escapeHtml( self.t( 'calSlowBody' ) || 'If it does not appear, please open it in a new tab — your details are saved.' ) + '</p>' +
+				'<a class="handik-btn is-secondary" target="_blank" rel="noopener noreferrer" href="' + escapeAttr( self.state.calBookingUrl ) + '">' +
+				'<span class="handik-btn__label">' + escapeHtml( self.t( 'openInNewTab' ) || 'Open calendar in a new tab' ) + '</span></a>';
+			container.insertBefore( fallback, container.firstChild );
 		}, CAL_EMBED_TIMEOUT_MS );
 
 		this.loadCalScript( parsed.origin )
@@ -1977,7 +2069,17 @@
 						self.captureDirectBooking( e && e.detail && e.detail.data ? e.detail.data : ( e && e.detail ? e.detail : {} ) );
 					}
 				} );
-				window.clearTimeout( fallbackTimer );
+				// Sprint 10 fix: track real "iframe rendered" signal so
+				// the slow-load fallback doesn't fire for an embed that
+				// just took 16s to come up. linkReady fires too early
+				// (before the booker UI), bookerReady is the right one.
+				ns( 'on', {
+					action: 'bookerReady',
+					callback: function () {
+						self._calEmbedReady = true;
+						window.clearTimeout( fallbackTimer );
+					}
+				} );
 			} )
 			.catch( function ( err ) {
 				window.clearTimeout( fallbackTimer );

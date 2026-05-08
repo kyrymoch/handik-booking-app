@@ -1514,6 +1514,17 @@ openai-chatkit {
 	box-shadow: 0 0 0 1px rgba(220, 38, 38, 0.14);
 }
 
+/* Sprint 10 fix: rate-limited OTP gets amber (warning), not red (error)
+ * — the input wasn't wrong, the backend just temporarily refused another
+ * attempt. Different signal so the customer knows to wait, not retype. */
+.handik-field.is-invalid.is-rate-limited input {
+	border-color: #fcd34d;
+	box-shadow: 0 0 0 1px rgba(202, 138, 4, 0.18);
+}
+.handik-field.is-invalid.is-rate-limited .handik-field__error {
+	color: #92400e;
+}
+
 .handik-selected-sheet {
 	/* Sprint 7: pinned to viewport bottom on desktop too (was 80px above the
 	 * bottom edge to clear a docked footer that's actually static on desktop —
@@ -1680,13 +1691,16 @@ openai-chatkit {
 	flex: 1 1 auto;
 }
 .handik-photo-list__remove {
+	/* Sprint 10 fix: bumped from 28×28 to 44×44 to clear the WCAG 2.5.5 /
+	 * Apple-HIG minimum tap target. The visible glyph is the same size —
+	 * we just expanded the hit-box around it so a thumb can land it. */
 	flex: 0 0 auto;
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	width: 28px;
-	height: 28px;
-	min-width: 28px;
+	width: 44px;
+	height: 44px;
+	min-width: 44px;
 	border: none;
 	background: transparent;
 	color: var(--handik-muted-text, #64748b);
