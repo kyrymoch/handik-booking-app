@@ -548,7 +548,27 @@
 			}
 
 			let saveTimer = null;
+			// Sprint 11 fix: diff-based save. Was P1 — every blur on every
+			// field fired a full POST, even with no actual change. The
+			// editor has dozens of fields; tab-through-without-typing
+			// could fire 30+ identical save requests. Cache the last
+			// successfully-saved JSON and only POST when serialize()
+			// produces a different shape.
+			let lastSavedJson = JSON.stringify( serialize() );
+
 			function scheduleSave() {
+				const nextJson = JSON.stringify( serialize() );
+				if ( nextJson === lastSavedJson ) {
+					// No change — clear any in-flight pending save and
+					// quietly drop the status indicator so we don't
+					// flash "Saving…" for a no-op.
+					if ( saveTimer ) {
+						window.clearTimeout( saveTimer );
+						saveTimer = null;
+					}
+					setStatus( '', '' );
+					return;
+				}
 				setStatus( 'saving', i18n.placeholder ? '…' : 'Saving…' );
 				if ( saveTimer ) { window.clearTimeout( saveTimer ); }
 				saveTimer = window.setTimeout( save, 600 );
@@ -556,8 +576,10 @@
 
 			function save() {
 				const groups = serialize();
+				const snapshotJson = JSON.stringify( groups );
 				adminFetch( editor, 'admin/catalog', { body: { groups: groups } } )
 					.then( function() {
+						lastSavedJson = snapshotJson;
 						setStatus( 'saved', i18n.saved || 'Saved' );
 						window.setTimeout( function() { setStatus( '', '' ); }, 1800 );
 					} )
@@ -828,14 +850,47 @@
 				if ( ! url ) { return; }
 				const backdrop = document.createElement( 'div' );
 				backdrop.className = 'handik-admin-lightbox-backdrop';
+				backdrop.setAttribute( 'role', 'dialog' );
+				backdrop.setAttribute( 'aria-modal', 'true' );
+				backdrop.tabIndex = -1;
 				const img = document.createElement( 'img' );
 				img.src = url;
 				img.alt = '';
-				backdrop.appendChild( img );
-				backdrop.addEventListener( 'click', function() {
-					if ( backdrop.parentNode ) { backdrop.parentNode.removeChild( backdrop ); }
+				// Sprint 11 fix: explicit close button + ESC handler.
+				// Was P2 — desktop iPad users with a Bluetooth keyboard
+				// got stuck (only mouse-click on backdrop dismissed).
+				const closeBtn = document.createElement( 'button' );
+				closeBtn.type = 'button';
+				closeBtn.className = 'handik-admin-lightbox-close';
+				closeBtn.setAttribute( 'aria-label', i18n.close || 'Close' );
+				closeBtn.textContent = '×';
+				const previouslyFocused = document.activeElement;
+				function close() {
+					document.removeEventListener( 'keydown', onKey, true );
+					if ( backdrop.parentNode ) {
+						backdrop.parentNode.removeChild( backdrop );
+					}
+					if ( previouslyFocused && document.contains( previouslyFocused ) && 'function' === typeof previouslyFocused.focus ) {
+						try { previouslyFocused.focus(); } catch ( e ) { /* ignore */ }
+					}
+				}
+				function onKey( event ) {
+					if ( 'Escape' === event.key ) {
+						event.preventDefault();
+						close();
+					}
+				}
+				closeBtn.addEventListener( 'click', function ( e ) { e.stopPropagation(); close(); } );
+				backdrop.addEventListener( 'click', function ( e ) {
+					// Click on the image shouldn't dismiss; only on the
+					// backdrop itself (preserves the legacy behaviour).
+					if ( e.target === backdrop ) { close(); }
 				} );
+				backdrop.appendChild( img );
+				backdrop.appendChild( closeBtn );
 				document.body.appendChild( backdrop );
+				document.addEventListener( 'keydown', onKey, true );
+				window.requestAnimationFrame( function () { closeBtn.focus(); } );
 			} );
 		} );
 	}
@@ -925,7 +980,19 @@
 				if ( timer ) { window.clearTimeout( timer ); }
 				timer = window.setTimeout( function() {
 					const form = input.closest( 'form' );
-					if ( form ) { form.submit(); }
+					if ( ! form ) { return; }
+					// Sprint 11 fix: stash the current scroll position so
+					// the post-reload page lands where the owner was
+					// reading instead of jumping to the top after every
+					// debounced search. Read-back happens on
+					// DOMContentLoaded via initRestoreScroll().
+					try {
+						window.sessionStorage.setItem(
+							'handik_admin_scroll_' + window.location.pathname,
+							String( window.pageYOffset || document.documentElement.scrollTop || 0 )
+						);
+					} catch ( e ) { /* ignore */ }
+					form.submit();
 				}, 600 );
 			} );
 		} );
@@ -944,9 +1011,14 @@
 		document.querySelectorAll( 'details[data-handik-details-key]' ).forEach( function ( el ) {
 			const key = STORAGE_PREFIX + el.dataset.handikDetailsKey;
 			try {
-				if ( '1' === window.sessionStorage.getItem( key ) ) {
-					el.open = true;
-				}
+				// Sprint 11 fix: respect both '1' (open) AND '0' (closed)
+				// from storage. The Sprint 10 version only honored '1'
+				// — once an owner closed a section, the next page load
+				// reverted to the markup default (almost always `open`).
+				// Now closed state persists across reloads too.
+				const stored = window.sessionStorage.getItem( key );
+				if ( '1' === stored ) { el.open = true; }
+				else if ( '0' === stored ) { el.open = false; }
 			} catch ( e ) { /* private mode, ignore */ }
 			el.addEventListener( 'toggle', function () {
 				try {
@@ -954,6 +1026,26 @@
 				} catch ( e ) { /* ignore */ }
 			} );
 		} );
+	}
+
+	// Sprint 11 fix: paired with the debounced-search scroll save.
+	// Restores the saved scroll position once on load if the previous
+	// page on the same path stashed one. Cleared after restore so a
+	// later browse-back doesn't haunt unrelated navigation.
+	function initRestoreScroll() {
+		try {
+			const key = 'handik_admin_scroll_' + window.location.pathname;
+			const saved = window.sessionStorage.getItem( key );
+			if ( saved ) {
+				window.sessionStorage.removeItem( key );
+				const y = parseInt( saved, 10 );
+				if ( y > 0 ) {
+					window.requestAnimationFrame( function () {
+						window.scrollTo( { top: y, behavior: 'auto' } );
+					} );
+				}
+			}
+		} catch ( e ) { /* private mode, ignore */ }
 	}
 
 	document.addEventListener( 'DOMContentLoaded', function() {
@@ -967,6 +1059,7 @@
 		initCopyButtons();
 		initDebouncedSearch();
 		initDetailsMemory();
+		initRestoreScroll();
 	} );
 
 }( window, document ) );

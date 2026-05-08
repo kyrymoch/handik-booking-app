@@ -3116,7 +3116,16 @@
 				case 'booking':
 					return this.screen( config.strings.bookingTitle || 'Book your time slot', this.bookingMarkup() );
 				case 'unsafe':
-					return this.screen( config.strings.unsafeTitle || 'We need a closer look', '<p class="handik-booking-app__intro">' + this.escape( this.state.unsafeReason || config.strings.unsafeBody || 'This request needs manual review before booking.' ) + '</p><div class="handik-unsafe-actions"><button data-action="back-from-unsafe" class="handik-btn is-secondary">' + this.escape( 'Go back and adjust' ) + '</button><button data-action="restart" class="handik-btn is-secondary">' + this.escape( config.strings.restart || 'Start another booking' ) + '</button></div><p class="handik-booking-app__intro">If this seems wrong, please email <a href="mailto:alex@handik.pro">alex@handik.pro</a> and we\'ll sort it out.</p>' );
+					// Sprint 11 fix: route the support email through config so an
+				// install with a different owner address (or non-Handik
+				// branding) doesn't leak alex@handik.pro into the public
+				// SPA. Falls back to the historical hard-coded address so
+				// nothing breaks on existing installs.
+				const supportEmail = ( config.strings && config.strings.supportEmail ) || 'alex@handik.pro';
+				const unsafeContact = ( config.strings && config.strings.unsafeContactBody )
+					? this.escape( config.strings.unsafeContactBody ).replace( '%s', '<a href="mailto:' + this.escape( supportEmail ) + '">' + this.escape( supportEmail ) + '</a>' )
+					: ( 'If this seems wrong, please email <a href="mailto:' + this.escape( supportEmail ) + '">' + this.escape( supportEmail ) + '</a> and we\'ll sort it out.' );
+				return this.screen( config.strings.unsafeTitle || 'We need a closer look', '<p class="handik-booking-app__intro">' + this.escape( this.state.unsafeReason || config.strings.unsafeBody || 'This request needs manual review before booking.' ) + '</p><div class="handik-unsafe-actions"><button data-action="back-from-unsafe" class="handik-btn is-secondary">' + this.escape( 'Go back and adjust' ) + '</button><button data-action="restart" class="handik-btn is-secondary">' + this.escape( config.strings.restart || 'Start another booking' ) + '</button></div><p class="handik-booking-app__intro">' + unsafeContact + '</p>' );
 				default:
 					return this.screen( 'Booking App', '<p>Unknown step.</p>' );
 			}
@@ -3210,9 +3219,9 @@
 					attrs.inputmode = 'tel';
 					attrs.placeholder = config.strings.phonePlaceholder || '+1 555 123 4567';
 					break;
-				case 'contact.full_name':
-					// (already set above) — this branch is unreachable but kept for grep safety.
-					break;
+				/* Sprint 11 fix: removed an unreachable duplicate
+				 * `case 'contact.full_name'` that PHPStan / ESLint
+				 * would flag and that was confusing to readers. */
 				case 'otpCode':
 					// SMS-autofill hint, numeric keypad on mobile, no autocaps.
 					attrs.autocomplete = 'one-time-code';
@@ -3313,7 +3322,9 @@
 					( zipBlocked
 						? '<span class="handik-field__error" role="alert">' + this.escape(
 							( config.strings.errors && config.strings.errors.zipNotServiced )
-								|| ( 'We don\'t currently provide service to ZIP ' + zipBlocked + '. Try a different address, or email alex@handik.pro to discuss your project.' )
+								|| ( 'We don\'t currently provide service to ZIP ' + zipBlocked + '. Try a different address, or email '
+									+ ( ( config.strings && config.strings.supportEmail ) || 'alex@handik.pro' )
+									+ ' to discuss your project.' )
 						) + '</span>'
 						: ( this.state.address.address_full && ! this.state.address.is_valid
 							? '<span class="handik-field__error" role="alert">' + this.escape( ( config.strings.errors && config.strings.errors.addressRequired ) || 'Choose a valid address from the suggestions to continue.' ) + '</span>'
@@ -3339,7 +3350,10 @@
 				} ).join( '' ) + '</ul>'
 				: '<div class="handik-photo-list is-empty"><span>' + this.escape( config.strings.photosEmpty || 'No photos or videos added yet' ) + '</span></div>';
 			return '<p class="handik-booking-app__intro">' + this.escape( config.strings.photosIntro || 'Upload photos or short videos of the problem area, item, fixture, wall, appliance, or installation spot.' ) + '</p>' +
-				'<label class="handik-field handik-field--media"><input type="file" id="handik-photo-input" class="handik-photo-input" multiple accept="image/jpeg,image/jpg,image/png,image/webp,image/heic,.jpg,.jpeg,.png,.webp,.heic,video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm" /><button type="button" class="handik-photo-dropzone" data-action="choose-photos"><span class="handik-photo-dropzone__icon" aria-hidden="true"></span><span>' + this.escape( ctaLabel ) + '</span><span class="handik-field__help">' + this.escape( 'Up to 8 files · Photos to 10 MB · Videos to 50 MB' ) + '</span>' + ( this.state.photoUploading ? '<span>' + this.escape( config.strings.uploading || 'Loading...' ) + '</span><span class="handik-inline-spinner" aria-hidden="true"></span>' : '' ) + '</button>' + photosMarkup + '</label>' +
+				// Sprint 11 fix: unify "Loading…" glyph (was mixing "Loading…",
+			// "Loading...", and "Loading"). One ellipsis character (…), no
+			// spaces, used everywhere a busy state is rendered.
+			'<label class="handik-field handik-field--media"><input type="file" id="handik-photo-input" class="handik-photo-input" multiple accept="image/jpeg,image/jpg,image/png,image/webp,image/heic,.jpg,.jpeg,.png,.webp,.heic,video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm" /><button type="button" class="handik-photo-dropzone" data-action="choose-photos"><span class="handik-photo-dropzone__icon" aria-hidden="true"></span><span>' + this.escape( ctaLabel ) + '</span><span class="handik-field__help">' + this.escape( 'Up to 8 photos or videos · Photos to 10 MB · Videos to 50 MB' ) + '</span>' + ( this.state.photoUploading ? '<span>' + this.escape( config.strings.uploading || 'Loading…' ) + '</span><span class="handik-inline-spinner" aria-hidden="true"></span>' : '' ) + '</button>' + photosMarkup + '</label>' +
 				this.footerActions( 'back-photos', 'photos-next', this.escape( config.strings.continue ), this.escape( config.strings.back ), { continueMuted: ! this.stepCanContinue( 'photos' ) } );
 		}
 

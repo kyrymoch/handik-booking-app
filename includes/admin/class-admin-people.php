@@ -116,8 +116,16 @@ class Handik_Booking_App_Admin_People {
 			echo $this->people_list_markup( $rows );
 		}
 
-		if ( $spam_count > 0 ) {
-			$spam_url = add_query_arg( 'show_spam', 1, Handik_Booking_App_Admin_Helpers::admin_url_for( 'handik-booking-app-crm' ) );
+		// Sprint 11 fix: bidirectional spam toggle. Was P3 — once viewing
+		// spam (show_spam=1) there was no link to hide them again except
+		// editing the URL by hand. Now the link flips based on current
+		// state: shows "Show N hidden" when hidden, "Hide spam" when
+		// visible.
+		if ( $show_spam ) {
+			$hide_url = remove_query_arg( 'show_spam', Handik_Booking_App_Admin_Helpers::admin_url_for( 'handik-booking-app-crm', array( 'filter' => $filter, 'q' => $query ) ) );
+			echo '<p class="handik-admin-muted handik-admin-spam-toggle"><a href="' . esc_url( $hide_url ) . '">' . esc_html__( 'Hide spam contacts', 'handik-booking-app' ) . '</a></p>';
+		} elseif ( $spam_count > 0 ) {
+			$spam_url = add_query_arg( 'show_spam', 1, Handik_Booking_App_Admin_Helpers::admin_url_for( 'handik-booking-app-crm', array( 'filter' => $filter, 'q' => $query ) ) );
 			echo '<p class="handik-admin-muted handik-admin-spam-toggle"><a href="' . esc_url( $spam_url ) . '">' . esc_html( sprintf( _n( 'Show %d hidden spam contact', 'Show %d hidden spam contacts', $spam_count, 'handik-booking-app' ), $spam_count ) ) . '</a></p>';
 		}
 
@@ -132,9 +140,21 @@ class Handik_Booking_App_Admin_People {
 			'drafts_only'   => __( 'Drafts only', 'handik-booking-app' ),
 			'no_address'    => __( 'No address', 'handik-booking-app' ),
 		);
+		// Sprint 11 fix: preserve the search query + show_spam toggle on
+		// chip clicks. Was P2 — typing "Smith", clicking "With bookings"
+		// dropped the search and the user had to retype it.
+		// phpcs:disable WordPress.Security.NonceVerification.Recommended
+		$preserve = array_filter( array(
+			'q'         => isset( $_GET['q'] ) ? sanitize_text_field( wp_unslash( $_GET['q'] ) ) : '',
+			'show_spam' => ! empty( $_GET['show_spam'] ) ? 1 : 0,
+		), static function ( $v ) { return '' !== $v && 0 !== $v; } );
+		// phpcs:enable
 		$html = '<nav class="handik-admin-segmented" aria-label="' . esc_attr__( 'People filter', 'handik-booking-app' ) . '">';
 		foreach ( $chips as $key => $label ) {
-			$url = Handik_Booking_App_Admin_Helpers::admin_url_for( $page, array( 'filter' => $key ) );
+			$url = Handik_Booking_App_Admin_Helpers::admin_url_for(
+				$page,
+				array_merge( array( 'filter' => $key ), $preserve )
+			);
 			$cls = 'handik-admin-segment' . ( $active === $key ? ' is-active' : '' );
 			$html .= '<a class="' . $cls . '" href="' . esc_url( $url ) . '">' . esc_html( $label ) . '</a>';
 		}
@@ -249,7 +269,11 @@ class Handik_Booking_App_Admin_People {
 		<section class="handik-admin-block">
 			<h2 class="handik-admin-section-title"><?php echo esc_html( $title ); ?></h2>
 			<?php if ( empty( $rows ) ) : ?>
-				<div class="handik-admin-empty"><p><?php esc_html_e( 'Nothing here. Nice.', 'handik-booking-app' ); ?></p></div>
+				<?php /* Sprint 11 fix: was "Nothing here. Nice." — friendly
+				   snark that didn't match the tone of the rest of the
+				   admin empty states. Aligned to a neutral, descriptive
+				   copy so the page voice is consistent. */ ?>
+				<div class="handik-admin-empty"><p><?php esc_html_e( 'No requests in this bucket right now.', 'handik-booking-app' ); ?></p></div>
 			<?php else : ?>
 				<ul class="handik-admin-request-list">
 					<?php foreach ( $rows as $r ) :
@@ -511,10 +535,16 @@ class Handik_Booking_App_Admin_People {
 		// Send-link button for ready-not-booked
 		if ( 'ready_for_booking' === $status && ! $booking && ! empty( $request['cal_booking_url'] ) && ! empty( $contact['email'] ) ) {
 			$subject = rawurlencode( __( 'Your Handik booking link', 'handik-booking-app' ) );
+			// Sprint 11 fix: a customer name containing literal `%` chars
+			// would crash sprintf and bubble a PHP warning into the
+			// mailto body. Use str_replace + a simple "Hi %s" template
+			// so any printf format spec in the name is treated as text.
+			$customer_name = (string) ( $contact['full_name'] ?? '' );
+			$greeting      = str_replace( '%s', $customer_name, __( 'Hi %s,', 'handik-booking-app' ) );
 			$body    = rawurlencode(
 				sprintf(
 					"%s\n\n%s\n\n%s",
-					sprintf( __( 'Hi %s,', 'handik-booking-app' ), (string) ( $contact['full_name'] ?? '' ) ),
+					$greeting,
 					__( 'Pick a time here:', 'handik-booking-app' ),
 					(string) $request['cal_booking_url']
 				)
