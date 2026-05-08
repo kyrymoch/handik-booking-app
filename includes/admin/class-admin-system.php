@@ -92,19 +92,36 @@ class Handik_Booking_App_Admin_System {
 				? __( 'WP cron disabled — wp_loaded heartbeat fires overdue handik_* events.', 'handik-booking-app' )
 				: __( 'WP cron enabled — fallback heartbeat is dormant.', 'handik-booking-app' );
 
-			echo Handik_Booking_App_Admin_Helpers::detail_list_markup( array(
-				__( 'Plugin version', 'handik-booking-app' )    => HANDIK_BOOKING_APP_VERSION,
-				__( 'DB schema version', 'handik-booking-app' ) => (string) get_option( Handik_Booking_App_Migrations::OPTION_NAME, '0.0.0' ),
-				__( 'Last migration ran', 'handik-booking-app' ) => (string) get_option( Handik_Booking_App_Migrations::LAST_RUN_OPTION, __( 'Never (or before 2.1.8.2)', 'handik-booking-app' ) ),
-				__( 'Required WP', 'handik-booking-app' )       => '6.4',
-				__( 'Required PHP', 'handik-booking-app' )      => '7.4',
-				__( 'Current PHP', 'handik-booking-app' )       => PHP_VERSION,
-				__( 'Current MySQL', 'handik-booking-app' )     => (string) $wpdb->db_version(),
-				__( 'WP version', 'handik-booking-app' )        => get_bloginfo( 'version' ),
-				__( 'Cron status', 'handik-booking-app' )       => $cron,
-				__( 'Cron fallback', 'handik-booking-app' )     => $fallback_msg,
-				__( 'Site URL', 'handik-booking-app' )          => home_url(),
-			) );
+			// Sprint 10 fix: surface migration-attempt + last-error so a
+			// failed Run-pending-migrations leaves a visible audit trail.
+			// Was P0 — the runner wrote LAST_ERROR_OPTION on failure but
+			// the page only showed LAST_RUN_OPTION, so a failed run
+			// looked identical to a successful one.
+			$db_last_attempt = (string) get_option( Handik_Booking_App_Migrations::LAST_ATTEMPT_OPTION, '' );
+			$db_last_error   = (string) get_option( Handik_Booking_App_Migrations::LAST_ERROR_OPTION, '' );
+
+			$details = array(
+				__( 'Plugin version', 'handik-booking-app' )      => HANDIK_BOOKING_APP_VERSION,
+				__( 'DB schema version', 'handik-booking-app' )   => (string) get_option( Handik_Booking_App_Migrations::OPTION_NAME, '0.0.0' ),
+				__( 'Last migration ran', 'handik-booking-app' )  => (string) get_option( Handik_Booking_App_Migrations::LAST_RUN_OPTION, __( 'Never (or before 2.1.8.2)', 'handik-booking-app' ) ),
+				__( 'Last attempt', 'handik-booking-app' )        => '' !== $db_last_attempt ? $db_last_attempt : __( '(never invoked since 2.1.14.0)', 'handik-booking-app' ),
+				__( 'Required WP', 'handik-booking-app' )         => '6.4',
+				__( 'Required PHP', 'handik-booking-app' )        => '7.4',
+				__( 'Current PHP', 'handik-booking-app' )         => PHP_VERSION,
+				__( 'Current MySQL', 'handik-booking-app' )       => (string) $wpdb->db_version(),
+				__( 'WP version', 'handik-booking-app' )          => get_bloginfo( 'version' ),
+				__( 'Cron status', 'handik-booking-app' )         => $cron,
+				__( 'Cron fallback', 'handik-booking-app' )       => $fallback_msg,
+				__( 'Site URL', 'handik-booking-app' )            => home_url(),
+			);
+			echo Handik_Booking_App_Admin_Helpers::detail_list_markup( $details );
+
+			if ( '' !== $db_last_error ) {
+				echo '<div class="handik-admin-callout handik-admin-callout--error" role="alert">';
+				echo '<strong>' . esc_html__( 'Last migration error', 'handik-booking-app' ) . ':</strong> ';
+				echo esc_html( $db_last_error );
+				echo '</div>';
+			}
 			?>
 		</section>
 

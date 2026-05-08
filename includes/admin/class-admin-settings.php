@@ -357,7 +357,10 @@ class Handik_Booking_App_Admin_Settings {
 					</span>
 				<?php endif; ?>
 				<button type="button" class="button-link" data-handik-duplicate-task><?php esc_html_e( 'Duplicate', 'handik-booking-app' ); ?></button>
-				<button type="button" class="button-link-delete" data-handik-remove-task><?php esc_html_e( 'Remove', 'handik-booking-app' ); ?></button>
+				<?php /* Sprint 10 fix: expose ref count to JS so the delete
+				   confirm can name the actual count instead of a generic
+				   "Delete?". */ ?>
+				<button type="button" class="button-link-delete" data-handik-remove-task data-handik-ref-count="<?php echo esc_attr( (string) $ref_count ); ?>"><?php esc_html_e( 'Remove', 'handik-booking-app' ); ?></button>
 			</div>
 		</div>
 		<?php

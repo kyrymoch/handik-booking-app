@@ -125,6 +125,11 @@
 			this.calEmbedPromise = null;
 			this.calEmbedNamespace = '';
 			this.calEmbedMountKey = '';
+			// Sprint 10 fix: separate "iframe is actually usable" key set
+			// by the bookerReady listener; the 15s slow-load fallback uses
+			// this instead of mountKey (which only proves the script ran).
+			this.calEmbedReadyKey = '';
+			this._lastCapturedBookingId = '';
 			this.calEmbedListenerKey = '';
 			this.assistantPreparationPromise = null;
 			this.assistantMountPromise = null;
@@ -228,19 +233,61 @@
 				this.render();
 				this.replaceHistoryState( this.state.step );
 				this.focusStepHeading();
+				// Sprint 10 fix: deferred Welcome-back toast for the
+				// 30-day cache-restore path. tryRestoreVerifiedClient
+				// queues the flag, init shows it after first render so
+				// the toast doesn't get clobbered by the loading overlay
+				// and isn't surfaced to brand-new customers.
+				if ( this._pendingWelcomeBackToast ) {
+					this._pendingWelcomeBackToast = false;
+					this.notify(
+						'info',
+						'',
+						( config.strings && config.strings.welcomeBack ) || 'Welcome back — we found your saved details.',
+						3600
+					);
+				}
 			} catch ( error ) {
 				this.root.innerHTML = '<div class="handik-booking-app__shell"><div class="handik-booking-app__alert is-error" role="alert">' + this.escape( error.message ) + '</div></div>';
 			}
 		}
 
 		focusStepHeading() {
+			// Sprint 10 fix: was a no-op (only removed tabindex from a
+			// heading that never had one). Now we briefly set
+			// `tabindex="-1"`, focus the heading, and announce the step
+			// change to a polite live region so screen-reader users hear
+			// where they landed. The tabindex is removed after blur so
+			// the heading doesn't take Tab focus on subsequent keypresses.
 			window.requestAnimationFrame( () => {
 				const heading = this.root.querySelector( '.handik-booking-app__screen-header h2' );
 				if ( ! heading ) {
 					return;
 				}
-				heading.removeAttribute( 'tabindex' );
+				heading.setAttribute( 'tabindex', '-1' );
+				try { heading.focus( { preventScroll: true } ); } catch ( e ) { /* ignore */ }
+				heading.addEventListener( 'blur', () => heading.removeAttribute( 'tabindex' ), { once: true } );
+				this.announceStep( heading.textContent || '' );
 			} );
+		}
+
+		announceStep( text ) {
+			// Polite live region for step changes — created lazily, sits
+			// outside the SPA root so a re-render doesn't blow it away.
+			if ( ! this._stepAnnouncer ) {
+				const node = document.createElement( 'div' );
+				node.setAttribute( 'aria-live', 'polite' );
+				node.setAttribute( 'aria-atomic', 'true' );
+				node.className = 'screen-reader-text handik-booking-app__step-announcer';
+				node.style.cssText = 'position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);';
+				document.body.appendChild( node );
+				this._stepAnnouncer = node;
+			}
+			// Brief blank ensures repeated identical text still re-announces.
+			this._stepAnnouncer.textContent = '';
+			window.setTimeout( () => {
+				this._stepAnnouncer.textContent = String( text || '' ).trim();
+			}, 30 );
 		}
 
 		// --- Browser history ---
@@ -1078,10 +1125,19 @@
 				const rect = target.getBoundingClientRect();
 				const absoluteTop = rect.top + window.pageYOffset;
 				const top = Math.max( 0, absoluteTop - 80 );
-				window.scrollTo( {
-					top: top,
-					behavior: 'smooth'
-				} );
+				// Sprint 10 fix: respect prefers-reduced-motion. The CSS
+				// honored it elsewhere (animations, transitions) but JS
+				// scroll didn't, so reduced-motion users still got a
+				// smooth scroll on every step change.
+				const reduceMotion = window.matchMedia && window.matchMedia( '(prefers-reduced-motion: reduce)' ).matches;
+				try {
+					window.scrollTo( {
+						top: top,
+						behavior: reduceMotion ? 'auto' : 'smooth'
+					} );
+				} catch ( e ) {
+					window.scrollTo( 0, top );
+				}
 			} );
 		}
 
@@ -1144,6 +1200,37 @@
 			const existingCount = Array.isArray( this.state.photos ) ? this.state.photos.length : 0;
 			if ( existingCount + selectedFiles.length > 8 ) {
 				this.setFooterHint( 'You can upload up to 8 photos or videos for one request.', true );
+				return;
+			}
+
+			// Sprint 10 fix: enforce per-file size BEFORE the XHR. Was P0 —
+			// a 25 MB iPhone video on 3G uploaded fully then got rejected by
+			// the server, the bytes were burned, and the file vanished from
+			// the picker with only a generic toast. We mirror server limits
+			// here (10 MB images, 50 MB videos) so the customer learns about
+			// the size cap immediately, by name, and can pick a different file.
+			const MAX_IMG = 10 * 1024 * 1024;
+			const MAX_VID = 50 * 1024 * 1024;
+			const tooBig = [];
+			for ( const file of selectedFiles ) {
+				const isVideo = ( file.type || '' ).indexOf( 'video/' ) === 0;
+				const cap = isVideo ? MAX_VID : MAX_IMG;
+				if ( file.size > cap ) {
+					tooBig.push( {
+						name: file.name || ( isVideo ? 'video' : 'image' ),
+						mb: Math.round( file.size / ( 1024 * 1024 ) ),
+						capMb: Math.round( cap / ( 1024 * 1024 ) ),
+					} );
+				}
+			}
+			if ( tooBig.length ) {
+				const list = tooBig.map( ( f ) => f.name + ' (' + f.mb + ' MB)' ).join( ', ' );
+				const cap = tooBig[ 0 ].capMb;
+				this.setFooterHint(
+					'Some files are too large to upload (cap is ' + cap + ' MB): ' + list +
+					'. Please pick smaller files.',
+					true
+				);
 				return;
 			}
 
@@ -1270,7 +1357,16 @@
 						return;
 					}
 					if ( ! this.isServiceableZip( this.state.address.zip_code ) ) {
-						this.setFooterHint( 'We don\'t currently provide service to this ZIP code. Email alex@handik.pro to discuss your project.', true );
+						// Sprint 10 fix: was a transient footer-hint toast that
+						// auto-dismissed in 4.2s — owner-reported P0. Now we
+						// flip a persistent flag on the address state so the
+						// inline error stays visible until the customer picks
+						// a different address. The flag clears in
+						// applyAddressFromPlaces() and in onInput for
+						// address.address_full so editing the address is
+						// frictionless.
+						this.state.address.zipBlocked = String( this.state.address.zip_code || '' );
+						this.render();
 						return;
 					}
 					await this.saveContactAndPrepareBooking();
@@ -1308,6 +1404,7 @@
 				case 'otp-back':
 					this.state.otpCode = '';
 					this.state.otpError = '';
+					this.state.otpErrorKind = '';
 					this.goTo( 'contact_details' );
 					break;
 				case 'open-booking':
@@ -1378,12 +1475,16 @@
 					}
 					break;
 				case 'back-address':
-					// Sprint 6: address_details is now post-OTP. "Back" goes
-					// to the OTP screen if the customer might want to
-					// re-enter the code, or further back to phone if their
-					// session is verified (they can re-verify a different
-					// number from there).
-					this.goTo( this.state.phoneVerified ? 'contact_details' : 'otp_verify' );
+					// Sprint 10 fix: for verified customers, contact_details
+					// + otp_verify are no longer in `applicableSteps()` —
+					// jumping to them would land on a step the progress
+					// bar doesn't show, and the contact step would re-ask
+					// for the phone they already verified, silently
+					// invalidating their cached profile. Back from address
+					// now goes to `photos` for verified customers (the
+					// previous step in their abridged timeline) and stays
+					// at `otp_verify` for unverified customers.
+					this.goTo( this.state.phoneVerified ? 'photos' : 'otp_verify' );
 					break;
 				case 'back-photos':
 					this.goTo( 'task_selection' );
@@ -1426,9 +1527,13 @@
 			this.render();
 		}
 
-		executeRestart() {
+		executeRestart( opts ) {
 			this.stopBookingStatusPolling();
 			this.hideAssistantTypingIndicator();
+			// Sprint 10 fix: also clear the assistant "we got stuck" banner
+			// — if the customer recovered via Restart, the banner used to
+			// stay glued to the host element across the new session.
+			this.clearAssistantStuckBanner();
 			this.stopSavedAddressLoading( false );
 			this.savedAddressLoadingProfileKey = '';
 			this.assistantSessionPrewarmPromise = null;
@@ -1436,10 +1541,21 @@
 			this.assistantPrewarmedSession = null;
 			this.assistantPrewarmedRequestId = 0;
 					this.clearDraftStorage();
-					// Sprint 6: also drop the verified-client token so a
-					// fresh customer can use the same browser without
-					// inheriting the previous session's identity.
-					clearVerifiedClient();
+					// Sprint 10 fix: Restart no longer wipes the 30-day
+					// verified-client cache. Owner-reported P0 — a customer
+					// who tapped Restart mid-OTP lost the cached identity
+					// and had to OTP again on the next booking, defeating
+					// the "no second OTP for 30 days" promise. The cache is
+					// now only cleared by an explicit "Sign out" action
+					// (handled in `handleAction` 'sign-out'). Note: the
+					// state-reset block below preserves verifiedToken /
+					// verifiedPhone / verifiedProfile / phoneVerified so
+					// the next session's init() doesn't even need to
+					// re-fetch /phone-verify/restore.
+					const preserveIdentity = ! ( opts && opts.signOut );
+					if ( ! preserveIdentity ) {
+						clearVerifiedClient();
+					}
 					if ( window.HandikChatKitBridge && typeof window.HandikChatKitBridge.reset === 'function' && this.state.requestId ) {
 						window.HandikChatKitBridge.reset( 'request_' + String( this.state.requestId ) );
 					}
@@ -1453,10 +1569,14 @@
 					}
 					this.assistantMountPromise = null;
 					this.pendingAssistantContextAnalysis = null;
-					this.state = Object.assign( this.state, {
+					// Sprint 10 fix: identity / verification fields are
+					// preserved across Restart (unless this is an explicit
+					// Sign-Out invocation, see `preserveIdentity` above).
+					// The customer keeps the 30-day "no second OTP" path
+					// and the contact prefill on the next booking; only
+					// the in-flight draft is wiped.
+					const restartReset = {
 						step: 'task_selection',
-						isReturningClient: false,
-						verifiedProfile: null,
 						lastLookupPhone: '',
 						requestId: 0,
 						draftToken: '',
@@ -1467,7 +1587,7 @@
 						selectedTasksSheetAttentionDismissed: false,
 						isProject: false,
 						jobShape: '',
-						address: { address_id: 0, address_full: '', address_line_1: '', address_unit: '', city: '', state: '', zip_code: '', is_valid: false },
+						address: { address_id: 0, address_full: '', address_line_1: '', address_unit: '', city: '', state: '', zip_code: '', is_valid: false, zipBlocked: '' },
 						photos: [],
 						shortDescription: '',
 						assistantResult: null,
@@ -1480,7 +1600,6 @@
 						assistantFallbackMessage: '',
 						assistantUserMessageSent: false,
 						assistantThreadId: '',
-						contact: { first_name: '', last_name: '', full_name: '', email: '', phone: '' },
 						touched: { full_name: false, email: false, phone: false },
 						bookingUrl: '',
 						bookingUrlLocked: false,
@@ -1497,7 +1616,24 @@
 						savedAddressLoading: false,
 						photoUploading: false,
 						bookingOpened: false
-					} );
+					};
+					// Only wipe identity on explicit Sign-Out.
+					if ( ! preserveIdentity ) {
+						restartReset.isReturningClient = false;
+						restartReset.verifiedProfile = null;
+						restartReset.verifiedToken = '';
+						restartReset.verifiedPhone = '';
+						restartReset.phoneVerified = false;
+						restartReset.contact = { first_name: '', last_name: '', full_name: '', email: '', phone: '' };
+					} else {
+						// Keep the contact prefill so the customer doesn't
+						// have to re-type their name on the new request.
+						restartReset.contact = Object.assign(
+							{ first_name: '', last_name: '', full_name: '', email: '', phone: '' },
+							this.state.contact || {}
+						);
+					}
+					this.state = Object.assign( this.state, restartReset );
 			this.goTo( 'task_selection' );
 		}
 
@@ -1638,7 +1774,25 @@
 				}
 				this.goTo( 'address_details' );
 			} catch ( error ) {
-				this.state.otpError = error.message || ( config.strings.otpInvalid || 'That code is invalid or expired.' );
+				// Sprint 10 fix: distinguish "wrong code" from "rate-limited
+				// — try again in a few minutes". Auth_Service returns the
+				// `rate_limited` error code for both /start and /check
+				// after too many attempts; this code surfaces in
+				// `error.code` via the api() helper. UI flag triggers a
+				// different copy + amber styling so the customer doesn't
+				// keep mashing the keypad against a locked-out backend.
+				const code = String( ( error && error.code ) || '' );
+				const msg  = String( ( error && error.message ) || '' );
+				const isRateLimit =
+					'rate_limited' === code
+					|| /too many|rate.?limit/i.test( msg );
+				if ( isRateLimit ) {
+					this.state.otpError = msg || 'Too many verification attempts. Try again in a few minutes.';
+					this.state.otpErrorKind = 'rate_limit';
+				} else {
+					this.state.otpError = msg || ( config.strings.otpInvalid || 'That code is invalid or expired.' );
+					this.state.otpErrorKind = 'invalid';
+				}
 				// Wipe the buffer so the customer can retype without manually
 				// clearing the field. Auto-advance re-fires on the next 6
 				// fresh digits.
@@ -1666,6 +1820,17 @@
 				if ( res.profile && res.profile.contact ) {
 					this.state.verifiedProfile = res.profile;
 					this.prefillFromProfile();
+				}
+				// Sprint 10 fix: surface the recognition. Was P1 — the
+				// restore flow worked end-to-end (profile prefilled, OTP
+				// skipped) but the customer had no idea why their saved
+				// addresses were already populated. Toast deferred until
+				// init() finishes so it doesn't fight the "Loading…"
+				// overlay; gated on `isReturningClient` so brand-new
+				// users (cache present from a prior new-client session
+				// that didn't book) don't get a misleading "welcome back".
+				if ( this.state.isReturningClient ) {
+					this._pendingWelcomeBackToast = true;
 				}
 				return true;
 			} catch ( e ) {
@@ -2498,7 +2663,16 @@
 				window.clearTimeout( this.calEmbedTimeoutTimer );
 			}
 			this.calEmbedTimeoutTimer = window.setTimeout( () => {
-				if ( this.calEmbedMountKey === mountKey ) {
+				// Sprint 10 fix: was checking `calEmbedMountKey === mountKey`,
+				// but that flag flips as soon as the inline call returns
+				// synchronously — well before the iframe inside actually
+				// renders. So the check returned "already mounted, skip
+				// fallback" even when the iframe was a black hole. Now we
+				// track `calEmbedReadyKey`, set only on the `bookerReady`
+				// listener, so the fallback fires when the embed isn't
+				// truly usable. (`linkReady` happens earlier and isn't
+				// proof the booker rendered.)
+				if ( this.calEmbedReadyKey === mountKey ) {
 					return;
 				}
 				if ( container.querySelector( '.handik-booking-app__booking-fallback' ) ) {
@@ -2528,25 +2702,43 @@
 				}
 
 				if ( this.calEmbedListenerKey !== mountKey ) {
+					// Sprint 10 fix: register listeners on `calApi` ONLY
+					// (the namespaced API). Old code did `registerListener
+					// (window.Cal); registerListener(calApi);` — both
+					// inherit each other, so each event ended up firing
+					// twice; with `bookingSuccessful` + `bookingSuccessfulV2`
+					// emitted near-simultaneously that meant 4 captureBooking
+					// calls per real success. The server side is idempotent
+					// per booking-id, but the client-side toast surfaced
+					// twice. Single registration is enough.
 					const registerListener = ( api ) => {
 						if ( ! api || 'function' !== typeof api ) {
 							return;
 						}
-
-						api( 'on', {
-							action: 'bookingSuccessfulV2',
-							callback: ( event ) => {
-								const detail = event && event.detail && event.detail.data ? event.detail.data : {};
-								this.captureBookingSuccess( detail );
+						const handleSuccess = ( event ) => {
+							const detail = event && event.detail && event.detail.data ? event.detail.data : {};
+							const bookingId = String(
+								detail.bookingId
+									|| detail.bookingUid
+									|| detail.uid
+									|| detail.id
+									|| ''
+							);
+							// Sprint 10 fix: idempotency on the client too.
+							// The server is idempotent per booking id, but
+							// `bookingSuccessful` + `bookingSuccessfulV2`
+							// fire near-simultaneously so the same toast
+							// could surface twice in the same render tick.
+							if ( bookingId && this._lastCapturedBookingId === bookingId ) {
+								return;
 							}
-						} );
-						api( 'on', {
-							action: 'bookingSuccessful',
-							callback: ( event ) => {
-								const detail = event && event.detail && event.detail.data ? event.detail.data : {};
-								this.captureBookingSuccess( detail );
+							if ( bookingId ) {
+								this._lastCapturedBookingId = bookingId;
 							}
-						} );
+							this.captureBookingSuccess( detail );
+						};
+						api( 'on', { action: 'bookingSuccessfulV2', callback: handleSuccess } );
+						api( 'on', { action: 'bookingSuccessful',   callback: handleSuccess } );
 						api( 'on', {
 							action: 'linkReady',
 							callback: () => {
@@ -2560,6 +2752,17 @@
 							action: 'bookerReady',
 							callback: ( event ) => {
 								const detail = event && event.detail && event.detail.data ? event.detail.data : {};
+								// Sprint 10 fix: this is the real "iframe
+								// has rendered the slot picker" signal; the
+								// 15s slow-load fallback uses this as
+								// proof-of-life (was using mountKey, which
+								// flips synchronously and missed black-iframe
+								// failures).
+								this.calEmbedReadyKey = mountKey;
+								if ( this.calEmbedTimeoutTimer ) {
+									window.clearTimeout( this.calEmbedTimeoutTimer );
+									this.calEmbedTimeoutTimer = null;
+								}
 								this.logClient( 'info', 'Cal embed booker ready.', {
 									request_id: this.state.requestId,
 									event_slug: detail && detail.eventSlug ? String( detail.eventSlug ) : '',
@@ -2582,7 +2785,6 @@
 						} );
 					};
 
-					registerListener( window.Cal );
 					registerListener( calApi );
 					this.calEmbedListenerKey = mountKey;
 				}
@@ -3094,11 +3296,29 @@
 				savedAddressMarkup = '<p class="handik-field__help handik-field__help--empty" role="status">' + this.escape( 'No saved addresses yet — enter the address below.' ) + '</p>';
 			}
 
+			// Sprint 10 fix: persistent inline ZIP-not-serviced error. Was a
+			// 4.2s auto-dismissing toast that left the customer staring at
+			// a Continue button that did nothing. Now the address field
+			// flips to invalid state with a stable, descriptive message
+			// naming the offending ZIP, and stays visible until they pick
+			// a different address (handler in onInput + place_changed).
+			const zipBlocked = this.state.address.zipBlocked && this.state.address.zipBlocked === this.state.address.zip_code
+				? this.state.address.zipBlocked
+				: '';
+
 			return (
 				newClientFields +
 				savedAddressMarkup +
-				'<label class="handik-field handik-field--address' + ( this.state.address.is_valid || ! this.state.address.address_full ? '' : ' is-invalid' ) + '"><span>' + this.escape( config.strings.addressLabel || 'Address of the job' ) + '</span><input id="handik-job-address" type="text" data-model="address.address_full"' + addressAntiAutofillAttrs + ' placeholder="' + this.escape( config.strings.addressPlaceholder || 'Start typing the address of the job' ) + '" value="' + this.escape( this.state.address.address_full || '' ) + '" />' +
-					( this.state.address.address_full && ! this.state.address.is_valid ? '<span class="handik-field__error" role="alert">' + this.escape( ( config.strings.errors && config.strings.errors.addressRequired ) || 'Choose a valid address from the suggestions to continue.' ) + '</span>' : '' ) +
+				'<label class="handik-field handik-field--address' + ( zipBlocked || ( this.state.address.address_full && ! this.state.address.is_valid ) ? ' is-invalid' : '' ) + '"><span>' + this.escape( config.strings.addressLabel || 'Address of the job' ) + '</span><input id="handik-job-address" type="text" data-model="address.address_full"' + addressAntiAutofillAttrs + ' placeholder="' + this.escape( config.strings.addressPlaceholder || 'Start typing the address of the job' ) + '" value="' + this.escape( this.state.address.address_full || '' ) + '" />' +
+					( zipBlocked
+						? '<span class="handik-field__error" role="alert">' + this.escape(
+							( config.strings.errors && config.strings.errors.zipNotServiced )
+								|| ( 'We don\'t currently provide service to ZIP ' + zipBlocked + '. Try a different address, or email alex@handik.pro to discuss your project.' )
+						) + '</span>'
+						: ( this.state.address.address_full && ! this.state.address.is_valid
+							? '<span class="handik-field__error" role="alert">' + this.escape( ( config.strings.errors && config.strings.errors.addressRequired ) || 'Choose a valid address from the suggestions to continue.' ) + '</span>'
+							: '' )
+					) +
 				'</label>' +
 				'<label class="handik-field"><span>' + this.escape( config.strings.unitLabel || 'Unit or apartment (optional)' ) + '</span><input type="text" data-model="address.address_unit"' + unitAntiAutofillAttrs + ' value="' + this.escape( this.state.address.address_unit || '' ) + '" /></label>' +
 				this.footerActions( 'back-address', 'address-next', this.escape( config.strings.continue ), '', { continueMuted: ! this.stepCanContinue( 'address_details' ) } )
@@ -3153,13 +3373,21 @@
 		 */
 		otpVerifyMarkup() {
 			const error = this.state.otpError ? this.state.otpError : '';
+			// Sprint 10 fix: rate-limit errors get a distinct visual
+			// (amber, not red) so the customer doesn't keep mashing the
+			// keypad against a backend that's already locked them out
+			// for a few minutes.
+			const errorKind = this.state.otpErrorKind || 'invalid';
+			const errorClass = error
+				? ( 'rate_limit' === errorKind ? 'is-invalid is-rate-limited' : 'is-invalid' )
+				: '';
 			const now = Date.now();
 			const resendIn = Math.max( 0, Math.ceil( ( this.state.otpResendDisabledUntil - now ) / 1000 ) );
 			const introTpl = config.strings.otpIntro || 'Enter the 6-digit code we just sent to %s.';
 			const intro = introTpl.replace( '%s', this.escape( this.state.contact.phone ) );
 			return '<p class="handik-booking-app__intro">' + intro + '</p>' +
 				this.input( config.strings.otpCodeLabel || 'Verification code', 'otpCode', 'text',
-					error ? 'is-invalid' : '',
+					errorClass,
 					'', error ) +
 				'<div class="handik-booking-app__otp-aux">' +
 					( resendIn > 0
@@ -3312,6 +3540,10 @@
 					}
 
 					this.state.address = Object.assign( {}, this.state.address, this.parseAddressComponents( place ) );
+					// Sprint 10 fix: clear the persistent ZIP-not-serviced
+					// badge when the customer picks a new Places result;
+					// the next Continue evaluates the new ZIP fresh.
+					this.state.address.zipBlocked = '';
 					input.value = this.state.address.address_full || input.value;
 					this.render();
 				} );
@@ -3348,8 +3580,40 @@
 				this._releaseModalFocusTrap();
 				this._releaseModalFocusTrap = null;
 			}
+			// Sprint 10 fix: the OTP "Resend in Xs" copy is computed once at
+			// render time, so the customer stared at a frozen number until
+			// they tapped a field. A 1-second ticker re-renders the OTP step
+			// while the lockout is active and stops itself when it expires
+			// (or when the step changes). One interval at a time.
+			if ( this._otpResendTicker ) {
+				window.clearInterval( this._otpResendTicker );
+				this._otpResendTicker = null;
+			}
+			if ( 'otp_verify' === this.state.step && this.state.otpResendDisabledUntil > Date.now() ) {
+				this._otpResendTicker = window.setInterval( () => {
+					if ( 'otp_verify' !== this.state.step ) {
+						window.clearInterval( this._otpResendTicker );
+						this._otpResendTicker = null;
+						return;
+					}
+					if ( this.state.otpResendDisabledUntil <= Date.now() ) {
+						window.clearInterval( this._otpResendTicker );
+						this._otpResendTicker = null;
+						this.render();
+						return;
+					}
+					// Surgical update: only the resend-pending span changes.
+					const remaining = Math.max( 0, Math.ceil( ( this.state.otpResendDisabledUntil - Date.now() ) / 1000 ) );
+					const pending = this.root.querySelector( '.handik-booking-app__otp-resend.is-pending' );
+					if ( pending ) {
+						const tpl = ( config.strings.otpResendIn || 'You can resend in %ds' );
+						pending.textContent = tpl.replace( '%d', String( remaining ) );
+					}
+				}, 1000 );
+			}
 			if ( this.state.restartConfirmVisible ) {
 				const dialog = this.root.querySelector( '.handik-modal' );
+				const backdrop = this.root.querySelector( '.handik-modal-backdrop' );
 				if ( dialog ) {
 					this._releaseModalFocusTrap = trapModalFocus( dialog );
 					// Move focus to Cancel so a screen-reader announces the
@@ -3359,6 +3623,32 @@
 						window.requestAnimationFrame( () => cancelBtn.focus() );
 					}
 				}
+				// Sprint 10 fix: ESC + backdrop click both dismiss the
+				// modal. Was missing entirely on the main SPA — mobile
+				// users on 320px had no X button and had to find the
+				// Cancel CTA at the bottom of the dialog.
+				if ( this._restartEscHandler ) {
+					document.removeEventListener( 'keydown', this._restartEscHandler, true );
+				}
+				this._restartEscHandler = ( event ) => {
+					if ( 'Escape' === event.key && this.state.restartConfirmVisible ) {
+						event.preventDefault();
+						this.state.restartConfirmVisible = false;
+						this.render();
+					}
+				};
+				document.addEventListener( 'keydown', this._restartEscHandler, true );
+				if ( backdrop ) {
+					backdrop.addEventListener( 'click', ( event ) => {
+						if ( event.target === backdrop ) {
+							this.state.restartConfirmVisible = false;
+							this.render();
+						}
+					} );
+				}
+			} else if ( this._restartEscHandler ) {
+				document.removeEventListener( 'keydown', this._restartEscHandler, true );
+				this._restartEscHandler = null;
 			}
 			this.root.querySelectorAll( '[data-action]' ).forEach( ( button ) => {
 				button.addEventListener( 'click', ( event ) => {
@@ -3414,6 +3704,11 @@
 					if ( 'address.address_full' === model ) {
 						this.state.address.is_valid = false;
 						this.state.address.address_id = 0;
+						// Sprint 10 fix: clear the persistent "ZIP not in
+						// service area" badge as soon as the customer
+						// re-types — the new address will get a fresh ZIP
+						// and a fresh evaluation when they hit Continue.
+						this.state.address.zipBlocked = '';
 					}
 					this.setByPath( model, value );
 					this.refreshFieldValidation( model, input );

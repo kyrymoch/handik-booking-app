@@ -106,6 +106,50 @@ class Handik_Booking_App_Booking_Presets_Service {
 	 * @param array<string, mixed> $payload Patch.
 	 * @return bool
 	 */
+	/**
+	 * Sprint 10 fix: insert a blank disabled preset and return its id.
+	 * Used by the "Add new preset" CTA on the admin index — the new
+	 * row is immediately editable (form_title/slug/event url) but won't
+	 * surface to customers until the owner ticks Enabled.
+	 *
+	 * @param string $slug      Preset slug — must be unique. Returns 0 on collision.
+	 * @param string $form_type 'direct_cal_booking' or 'project_work_days'.
+	 * @return int New row id (0 on failure).
+	 */
+	public function insert_blank( $slug, $form_type ) {
+		global $wpdb;
+		$slug      = sanitize_title( (string) $slug );
+		$form_type = in_array( $form_type, array( 'direct_cal_booking', 'project_work_days' ), true ) ? $form_type : 'direct_cal_booking';
+		if ( '' === $slug ) {
+			return 0;
+		}
+		// Bail if slug already exists.
+		if ( $this->find_by_slug( $slug ) ) {
+			return 0;
+		}
+		$table = Handik_Booking_App_DB::table( 'form_presets' );
+		$row   = array(
+			'preset_slug'              => $slug,
+			'form_type'                => $form_type,
+			'form_title'               => __( 'Untitled preset', 'handik-booking-app' ),
+			'enabled'                  => 0,
+			'duration_minutes'         => 'project_work_days' === $form_type ? 0 : 60,
+			'work_day_duration_minutes'=> 'project_work_days' === $form_type ? 480 : 0,
+			'required_days'            => 'project_work_days' === $form_type ? 2 : 0,
+			'cal_event_url'            => '',
+			'cal_event_type_id'        => '',
+			'cal_event_slug'           => '',
+			'created_at'               => current_time( 'mysql' ),
+			'updated_at'               => current_time( 'mysql' ),
+		);
+		$ok = $wpdb->insert( $table, $row );
+		if ( false === $ok ) {
+			return 0;
+		}
+		$this->flush_cache();
+		return (int) $wpdb->insert_id;
+	}
+
 	public function update( $id, array $payload ) {
 		global $wpdb;
 		$table = Handik_Booking_App_DB::table( 'form_presets' );

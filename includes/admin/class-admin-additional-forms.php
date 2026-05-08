@@ -49,16 +49,24 @@ class Handik_Booking_App_Admin_Additional_Forms {
 	}
 
 	public function render() {
-		$tab         = isset( $_GET['tab'] ) ? sanitize_key( wp_unslash( (string) $_GET['tab'] ) ) : 'presets'; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
-		$schedule_id = isset( $_GET['schedule_id'] ) ? absint( wp_unslash( $_GET['schedule_id'] ) ) : 0;          // phpcs:ignore WordPress.Security.NonceVerification.Recommended
-		$preset_id   = isset( $_GET['preset_id'] ) ? absint( wp_unslash( $_GET['preset_id'] ) ) : 0;              // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		$tab          = isset( $_GET['tab'] ) ? sanitize_key( wp_unslash( (string) $_GET['tab'] ) ) : 'presets'; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		$schedule_id  = isset( $_GET['schedule_id'] ) ? absint( wp_unslash( $_GET['schedule_id'] ) ) : 0;          // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		$preset_param = isset( $_GET['preset_id'] ) ? sanitize_text_field( wp_unslash( $_GET['preset_id'] ) ) : '';  // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		$preset_id    = absint( $preset_param );
+		$preset_new   = 'new' === $preset_param;
 
 		echo '<div class="wrap handik-admin">';
 		echo '<h1>' . esc_html__( 'Additional Forms', 'handik-booking-app' ) . '</h1>';
 		settings_errors( 'handik_additional_forms' );
 		$this->render_tabs( $tab );
 
-		if ( 'presets' === $tab && $preset_id > 0 ) {
+		if ( 'presets' === $tab && $preset_new ) {
+			// Sprint 10 fix: stub create form — minimal slug + form_type
+			// picker. Submit calls $this->presets->insert_blank() and
+			// redirects into the full edit page for the rest of the
+			// fields (title / Cal.com URL / duration / enabled).
+			$this->render_preset_create();
+		} elseif ( 'presets' === $tab && $preset_id > 0 ) {
 			$this->render_preset_edit( $preset_id );
 		} elseif ( 'project' === $tab && $schedule_id > 0 ) {
 			$this->render_project_detail( $schedule_id );
@@ -103,6 +111,16 @@ class Handik_Booking_App_Admin_Additional_Forms {
 		$base    = admin_url( 'admin.php?page=' . self::PAGE_SLUG );
 
 		echo '<p class="description">' . esc_html__( 'Public booking-form presets. Direct visit presets use the Cal.com iframe; project work days presets use the Cal.com API. Edit a row to point it at a Cal.com event type or slug, change the duration, or disable it.', 'handik-booking-app' ) . '</p>';
+		// Sprint 10 fix: explicit "Add new preset" CTA. Was P1 — the
+		// only path to create a new preset was via WP-CLI / SQL because
+		// the admin only listed existing rows. The new preset_id=new
+		// query param routes the edit form into create-mode (handler in
+		// render_preset_edit / save_preset).
+		$new_url = add_query_arg(
+			array( 'tab' => 'presets', 'preset_id' => 'new' ),
+			$base
+		);
+		echo '<p><a class="button button-primary" href="' . esc_url( $new_url ) . '">+ ' . esc_html__( 'Add new preset', 'handik-booking-app' ) . '</a></p>';
 		echo '<table class="wp-list-table widefat striped">';
 		echo '<thead><tr>';
 		echo '<th>' . esc_html__( 'Title', 'handik-booking-app' ) . '</th>';
@@ -167,6 +185,29 @@ class Handik_Booking_App_Admin_Additional_Forms {
 			echo '</tr>';
 		}
 		echo '</tbody></table>';
+	}
+
+	protected function render_preset_create() {
+		$back_url = admin_url( 'admin.php?page=' . self::PAGE_SLUG . '&tab=presets' );
+		echo '<p><a href="' . esc_url( $back_url ) . '">&larr; ' . esc_html__( 'Back to presets', 'handik-booking-app' ) . '</a></p>';
+		echo '<h2>' . esc_html__( 'Create new preset', 'handik-booking-app' ) . '</h2>';
+		echo '<p class="description">' . esc_html__( 'Pick a unique slug and a form type. The preset starts disabled — you can fill in the Cal.com URL, duration and title on the next page, then tick Enabled when ready.', 'handik-booking-app' ) . '</p>';
+		echo '<form method="post" action="">';
+		wp_nonce_field( self::NONCE_ACTION_SAVE, self::NONCE_FIELD_SAVE );
+		echo '<input type="hidden" name="action" value="create_preset">';
+		echo '<table class="form-table" role="presentation"><tbody>';
+		echo '<tr><th><label for="hbp-new-slug">' . esc_html__( 'Slug', 'handik-booking-app' ) . '</label></th><td>';
+		echo '<input id="hbp-new-slug" type="text" name="preset_slug" required pattern="[a-z0-9-]+" minlength="2" placeholder="my-form-slug" />';
+		echo '<p class="description">' . esc_html__( 'Lowercase letters, numbers, and hyphens. Used in shortcode and URL: /booking/<slug>/.', 'handik-booking-app' ) . '</p>';
+		echo '</td></tr>';
+		echo '<tr><th><label for="hbp-new-form-type">' . esc_html__( 'Form type', 'handik-booking-app' ) . '</label></th><td>';
+		echo '<select id="hbp-new-form-type" name="form_type">';
+		echo '<option value="direct_cal_booking">' . esc_html__( 'Direct visit (single Cal.com slot)', 'handik-booking-app' ) . '</option>';
+		echo '<option value="project_work_days">' . esc_html__( 'Project work days (multi-day picker)', 'handik-booking-app' ) . '</option>';
+		echo '</select>';
+		echo '</td></tr></tbody></table>';
+		submit_button( __( 'Create preset', 'handik-booking-app' ) );
+		echo '</form>';
 	}
 
 	protected function render_preset_edit( $preset_id ) {
@@ -274,6 +315,36 @@ class Handik_Booking_App_Admin_Additional_Forms {
 			return;
 		}
 		check_admin_referer( self::NONCE_ACTION_SAVE, self::NONCE_FIELD_SAVE );
+
+		// Sprint 10 fix: handle the create-preset path (action=create_preset)
+		// before the standard update path. On success, redirect into the
+		// edit page for the newly-created row so the owner can fill in
+		// the rest of the fields.
+		$action = isset( $_POST['action'] ) ? sanitize_key( wp_unslash( (string) $_POST['action'] ) ) : '';
+		if ( 'create_preset' === $action ) {
+			$slug      = isset( $_POST['preset_slug'] ) ? sanitize_title( wp_unslash( (string) $_POST['preset_slug'] ) ) : '';
+			$form_type = isset( $_POST['form_type'] ) ? sanitize_key( wp_unslash( (string) $_POST['form_type'] ) ) : 'direct_cal_booking';
+			if ( '' === $slug ) {
+				add_settings_error( 'handik_additional_forms', 'preset_create_blank', __( 'Slug is required.', 'handik-booking-app' ), 'error' );
+				return;
+			}
+			$new_id = $this->presets ? $this->presets->insert_blank( $slug, $form_type ) : 0;
+			if ( ! $new_id ) {
+				add_settings_error( 'handik_additional_forms', 'preset_create_collision', __( 'That slug is already in use. Pick a different one.', 'handik-booking-app' ), 'error' );
+				return;
+			}
+			add_settings_error( 'handik_additional_forms', 'preset_created', __( 'Preset created. Fill in the rest of the fields and tick Enabled when ready.', 'handik-booking-app' ), 'updated' );
+			$redirect = add_query_arg(
+				array(
+					'page'      => self::PAGE_SLUG,
+					'tab'       => 'presets',
+					'preset_id' => $new_id,
+				),
+				admin_url( 'admin.php' )
+			);
+			wp_safe_redirect( $redirect );
+			exit;
+		}
 
 		$preset_id = isset( $_POST['preset_id'] ) ? absint( $_POST['preset_id'] ) : 0;
 		if ( ! $preset_id ) {

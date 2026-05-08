@@ -313,20 +313,33 @@ class Handik_Booking_App_Admin {
 			return;
 		}
 
+		// Sprint 10 fix: was 6 items on a 360px screen — labels truncated,
+		// each item got <60px wide, the cluster looked cramped. Trimmed to
+		// 5 by removing the standalone Forms entry (presets stay reachable
+		// from Setup → tabs and from the top WP submenu); kept Dashboard,
+		// Bookings, People, Setup, Logs. Forms admin is still discoverable
+		// from inside Setup; this just declutters the thumb-nav.
 		$items = array(
 			'handik-booking-app'           => array( 'icon' => '🏠', 'label' => __( 'Dashboard', 'handik-booking-app' ) ),
 			'handik-booking-app-bookings'  => array( 'icon' => '📅', 'label' => __( 'Bookings', 'handik-booking-app' ) ),
 			'handik-booking-app-crm'       => array( 'icon' => '👥', 'label' => __( 'People', 'handik-booking-app' ) ),
-			'handik-booking-app-additional-forms' => array( 'icon' => '📝', 'label' => __( 'Forms', 'handik-booking-app' ) ),
 			'handik-booking-app-settings'  => array( 'icon' => '⚙️', 'label' => __( 'Setup', 'handik-booking-app' ) ),
 			'handik-booking-app-operations'=> array( 'icon' => '📜', 'label' => __( 'Logs', 'handik-booking-app' ) ),
 		);
 
+		// Sprint 10 fix: when the current page is the Additional Forms
+		// admin (which we removed from the bottom nav above), highlight
+		// Setup so the active state isn't blank.
+		$active_slug = $page;
+		if ( 'handik-booking-app-additional-forms' === $page ) {
+			$active_slug = 'handik-booking-app-settings';
+		}
+
 		echo '<nav class="handik-admin-bottom-nav" data-handik-bottom-nav aria-label="' . esc_attr__( 'Handik admin sections', 'handik-booking-app' ) . '">';
 		foreach ( $items as $slug => $item ) {
 			$url = Handik_Booking_App_Admin_Helpers::admin_url_for( $slug );
-			$cls = 'handik-admin-bottom-nav__item' . ( $page === $slug ? ' is-active' : '' );
-			echo '<a class="' . $cls . '" href="' . esc_url( $url ) . '">';
+			$cls = 'handik-admin-bottom-nav__item' . ( $active_slug === $slug ? ' is-active' : '' );
+			echo '<a class="' . esc_attr( $cls ) . '" href="' . esc_url( $url ) . '">';
 			echo '<span class="handik-admin-bottom-nav__icon" aria-hidden="true">' . $item['icon'] . '</span>';
 			echo '<span class="handik-admin-bottom-nav__label">' . esc_html( $item['label'] ) . '</span>';
 			echo '</a>';

@@ -59,11 +59,40 @@ class Handik_Booking_App_Admin_Bookings {
 	// LIST (B1)
 	// =====================================================================
 
+	const PAGE_SIZE = 50;
+
+	/**
+	 * Sprint 10 fix: capture the current list filter / search / page in
+	 * `from_*` query params so the booking-detail "Back" link can restore
+	 * the same view. Used by both the card grid and the desktop table.
+	 *
+	 * @return array<string, string|int>
+	 */
+	protected function detail_back_params() {
+		// phpcs:disable WordPress.Security.NonceVerification.Recommended
+		$out = array();
+		if ( ! empty( $_GET['filter_time'] ) ) {
+			$out['from_filter_time'] = sanitize_key( wp_unslash( $_GET['filter_time'] ) );
+		}
+		if ( ! empty( $_GET['filter_status'] ) ) {
+			$out['from_filter_status'] = sanitize_key( wp_unslash( $_GET['filter_status'] ) );
+		}
+		if ( ! empty( $_GET['q'] ) ) {
+			$out['from_q'] = sanitize_text_field( wp_unslash( $_GET['q'] ) );
+		}
+		if ( ! empty( $_GET['paged'] ) ) {
+			$out['from_paged'] = absint( wp_unslash( $_GET['paged'] ) );
+		}
+		// phpcs:enable
+		return $out;
+	}
+
 	protected function render_list() {
 		// phpcs:disable WordPress.Security.NonceVerification.Recommended
 		$filter_time   = isset( $_GET['filter_time'] ) ? sanitize_key( wp_unslash( $_GET['filter_time'] ) ) : 'all';
 		$filter_status = isset( $_GET['filter_status'] ) ? sanitize_key( wp_unslash( $_GET['filter_status'] ) ) : 'all';
 		$query         = isset( $_GET['q'] ) ? sanitize_text_field( wp_unslash( $_GET['q'] ) ) : '';
+		$paged         = isset( $_GET['paged'] ) ? max( 1, absint( $_GET['paged'] ) ) : 1;
 		// phpcs:enable
 
 		Handik_Booking_App_Admin_Helpers::page_start(
@@ -100,12 +129,22 @@ class Handik_Booking_App_Admin_Bookings {
 			return strcmp( (string) ( $b['start_time'] ?? '' ), (string) ( $a['start_time'] ?? '' ) );
 		} );
 
+		// Sprint 10 fix: pagination. Was capped at 500 rows total with no
+		// paging UI — at 10k bookings the owner silently lost everything
+		// older than ~9 months. Now `load_filtered_bookings` pulls 2000
+		// (covers 18+ months for solo-owner volumes), and the page
+		// slices to PAGE_SIZE here. We always show all upcoming (rare
+		// to have >50 future bookings) and paginate the PAST set.
+		$total_upcoming = count( $upcoming );
+		$total_past     = count( $past );
+		$total_pages    = max( 1, (int) ceil( $total_past / self::PAGE_SIZE ) );
+		$paged          = min( $paged, $total_pages );
+		$past_offset    = ( $paged - 1 ) * self::PAGE_SIZE;
+		$past_page      = array_slice( $past, $past_offset, self::PAGE_SIZE );
+
 		// Sprint 7 (admin perf): bulk-load decorations (request/contact/address)
-		// once and pass them down to the card + table loops. Used to do
-		// 3 lookups × every row in 3 places (cards, table, divider) →
-		// ~N+1 queries per row. A 100-row window dropped from ~300 queries
-		// to 4. See decorate_bookings().
-		$decorations = $this->decorate_bookings( array_merge( $upcoming, $past ) );
+		// once and pass them down to the card + table loops.
+		$decorations = $this->decorate_bookings( array_merge( $upcoming, $past_page ) );
 
 		echo '<div class="handik-admin-bookings-list">';
 
@@ -114,19 +153,65 @@ class Handik_Booking_App_Admin_Bookings {
 		foreach ( $upcoming as $row ) {
 			echo $this->booking_card( $row, false, $decorations );
 		}
-		if ( $past ) {
-			echo '<div class="handik-admin-divider"><span>' . esc_html( sprintf( _n( '%d past booking', '%d past bookings', count( $past ), 'handik-booking-app' ), count( $past ) ) ) . '</span></div>';
-			foreach ( $past as $row ) {
+		if ( $past_page ) {
+			$divider = sprintf(
+				/* translators: 1 = page row count, 2 = total past rows */
+				_n( '%1$d of %2$d past booking', '%1$d of %2$d past bookings', $total_past, 'handik-booking-app' ),
+				count( $past_page ),
+				$total_past
+			);
+			echo '<div class="handik-admin-divider"><span>' . esc_html( $divider ) . '</span></div>';
+			foreach ( $past_page as $row ) {
 				echo $this->booking_card( $row, true, $decorations );
 			}
 		}
 		echo '</div>';
 
-		echo $this->bookings_table_markup( $upcoming, $past, $decorations );
+		echo $this->bookings_table_markup( $upcoming, $past_page, $decorations );
 
+		echo $this->pagination_markup( $paged, $total_pages, $total_upcoming, $total_past );
 		echo '</div>';
 
 		Handik_Booking_App_Admin_Helpers::page_end();
+	}
+
+	protected function pagination_markup( $paged, $total_pages, $total_upcoming, $total_past ) {
+		// Sprint 10: status row always visible (so owner sees the
+		// total volume), prev/next links only when there's something
+		// to navigate to. Filters preserved across pages.
+		$base_args = array_filter( array(
+			'page'          => 'handik-booking-app-bookings',
+			'filter_time'   => isset( $_GET['filter_time'] ) ? sanitize_key( wp_unslash( $_GET['filter_time'] ) ) : '', // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+			'filter_status' => isset( $_GET['filter_status'] ) ? sanitize_key( wp_unslash( $_GET['filter_status'] ) ) : '', // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+			'q'             => isset( $_GET['q'] ) ? sanitize_text_field( wp_unslash( $_GET['q'] ) ) : '', // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		), static function ( $v ) { return '' !== $v && 'all' !== $v; } );
+
+		$page_url = function ( $n ) use ( $base_args ) {
+			$args = $base_args;
+			if ( $n > 1 ) { $args['paged'] = $n; }
+			return add_query_arg( $args, admin_url( 'admin.php' ) );
+		};
+
+		$out  = '<nav class="handik-admin-pagination" aria-label="' . esc_attr__( 'Bookings pagination', 'handik-booking-app' ) . '">';
+		$out .= '<span class="handik-admin-pagination__summary">';
+		$out .= esc_html( sprintf(
+			/* translators: 1 = upcoming, 2 = past total, 3 = current page, 4 = total pages */
+			__( '%1$d upcoming · %2$d past · page %3$d of %4$d', 'handik-booking-app' ),
+			$total_upcoming, $total_past, $paged, $total_pages
+		) );
+		$out .= '</span>';
+		if ( $total_pages > 1 ) {
+			$out .= '<span class="handik-admin-pagination__nav">';
+			if ( $paged > 1 ) {
+				$out .= '<a class="button" href="' . esc_url( $page_url( $paged - 1 ) ) . '">‹ ' . esc_html__( 'Newer', 'handik-booking-app' ) . '</a>';
+			}
+			if ( $paged < $total_pages ) {
+				$out .= '<a class="button" href="' . esc_url( $page_url( $paged + 1 ) ) . '">' . esc_html__( 'Older', 'handik-booking-app' ) . ' ›</a>';
+			}
+			$out .= '</span>';
+		}
+		$out .= '</nav>';
+		return $out;
 	}
 
 	protected function filter_bar_markup( $filter_time, $filter_status, $query ) {
@@ -139,12 +224,23 @@ class Handik_Booking_App_Admin_Bookings {
 			'this_month' => __( 'This month', 'handik-booking-app' ),
 			'past'       => __( 'Past', 'handik-booking-app' ),
 		);
+		// Sprint 10 fix: Sprint 8 split `booked` (Cal webhook acknowledged,
+		// blue pill) from `confirmed` (contractor-confirmed, green pill)
+		// from `completed` (final, teal pill), but the filter still
+		// bundled `booked` ∪ `confirmed` under one "Confirmed" chip — so
+		// the filter surfaced blue rows next to the Confirmed label and
+		// the owner couldn't isolate the truly-confirmed-by-me set.
+		// Filter chips now mirror the pill taxonomy 1:1, plus a wider
+		// "On the schedule" chip that matches both for the legacy mental
+		// model (booked + confirmed = "this is going to happen").
 		$status_options = array(
-			'all'       => __( 'All', 'handik-booking-app' ),
-			'confirmed' => __( 'Confirmed', 'handik-booking-app' ),
-			'pending'   => __( 'Pending', 'handik-booking-app' ),
-			'cancelled' => __( 'Cancelled', 'handik-booking-app' ),
-			'completed' => __( 'Completed', 'handik-booking-app' ),
+			'all'         => __( 'All', 'handik-booking-app' ),
+			'on_schedule' => __( 'On the schedule', 'handik-booking-app' ),
+			'booked'      => __( 'Booked (Cal)', 'handik-booking-app' ),
+			'confirmed'   => __( 'Confirmed', 'handik-booking-app' ),
+			'pending'     => __( 'Pending', 'handik-booking-app' ),
+			'cancelled'   => __( 'Cancelled', 'handik-booking-app' ),
+			'completed'   => __( 'Completed', 'handik-booking-app' ),
 		);
 
 		ob_start();
@@ -185,9 +281,11 @@ class Handik_Booking_App_Admin_Bookings {
 			return array();
 		}
 
-		// Pull a wide window first, then apply in-PHP filters that don't fit the
-		// shipped service interface cleanly (status, search). For a solo-owner
-		// admin this is fine — we cap at 500 most-recent.
+		// Pull a wide window first, then apply in-PHP filters that don't fit
+		// the shipped service interface cleanly (status, search). Cap raised
+		// from 500 → 2000 in Sprint 10 to cover ~18 months of solo-owner
+		// volume; pagination at the page level keeps the rendered list
+		// to PAGE_SIZE rows so a 5-year archive doesn't blow up the page.
 		$tz = new DateTimeZone( Handik_Booking_App_Admin_Helpers::TIMEZONE );
 		$now_et = new DateTimeImmutable( 'now', $tz );
 
@@ -221,7 +319,7 @@ class Handik_Booking_App_Admin_Bookings {
 		$rows = $this->bookings->list_in_window(
 			$from->setTimezone( new DateTimeZone( 'UTC' ) )->format( 'Y-m-d H:i:s' ),
 			$to->setTimezone( new DateTimeZone( 'UTC' ) )->format( 'Y-m-d H:i:s' ),
-			500
+			2000
 		);
 
 		$query = strtolower( trim( (string) $query ) );
@@ -231,7 +329,17 @@ class Handik_Booking_App_Admin_Bookings {
 			$status = $this->bookings->effective_status( $row );
 			if ( 'all' !== $filter_status ) {
 				$matches = false;
-				if ( 'confirmed' === $filter_status && in_array( $status, array( 'booked', 'confirmed' ), true ) ) {
+				// Sprint 10 fix: 'confirmed' matches ONLY confirmed
+				// (green pill); 'booked' is its own chip (blue pill);
+				// 'on_schedule' is the legacy union chip for the
+				// "anything that's on the calendar" mental model.
+				if ( 'on_schedule' === $filter_status && in_array( $status, array( 'booked', 'confirmed' ), true ) ) {
+					$matches = true;
+				}
+				if ( 'booked' === $filter_status && 'booked' === $status ) {
+					$matches = true;
+				}
+				if ( 'confirmed' === $filter_status && 'confirmed' === $status ) {
 					$matches = true;
 				}
 				if ( 'pending' === $filter_status && in_array( $status, array( 'pending', 'booking_pending' ), true ) ) {
@@ -330,7 +438,13 @@ class Handik_Booking_App_Admin_Bookings {
 	 * @param array<int, array{request: ?array, contact: ?array, address: ?array}>|null      $decorations Bulk decorations keyed by booking id.
 	 */
 	protected function booking_card( array $row, $is_past = false, ?array $decorations = null ) {
-		$detail_url = Handik_Booking_App_Admin_Helpers::admin_url_for( 'handik-booking-app-bookings', array( 'booking_id' => (int) $row['id'] ) );
+		$detail_url = Handik_Booking_App_Admin_Helpers::admin_url_for(
+			'handik-booking-app-bookings',
+			array_merge(
+				array( 'booking_id' => (int) $row['id'] ),
+				$this->detail_back_params()
+			)
+		);
 		if ( null !== $decorations && isset( $decorations[ (int) $row['id'] ] ) ) {
 			$bundle  = $decorations[ (int) $row['id'] ];
 			$request = $bundle['request'];
@@ -398,8 +512,12 @@ class Handik_Booking_App_Admin_Bookings {
 				<tbody>
 					<?php
 					$past_divider_inserted = false;
+					$back_params = $this->detail_back_params();
 					foreach ( $rows as $row ) :
-						$detail_url = Handik_Booking_App_Admin_Helpers::admin_url_for( 'handik-booking-app-bookings', array( 'booking_id' => (int) $row['id'] ) );
+						$detail_url = Handik_Booking_App_Admin_Helpers::admin_url_for(
+							'handik-booking-app-bookings',
+							array_merge( array( 'booking_id' => (int) $row['id'] ), $back_params )
+						);
 						if ( null !== $decorations && isset( $decorations[ (int) $row['id'] ] ) ) {
 							$bundle  = $decorations[ (int) $row['id'] ];
 							$request = $bundle['request'];
@@ -468,7 +586,18 @@ class Handik_Booking_App_Admin_Bookings {
 	}
 
 	protected function sticky_action_bar_markup( array $booking, $contact, $full_address ) {
-		$back_url = Handik_Booking_App_Admin_Helpers::admin_url_for( 'handik-booking-app-bookings' );
+		// Sprint 10 fix: preserve filter + paged + search params when the
+		// owner taps Back. Was P1 — the back arrow always landed on the
+		// unfiltered, un-paged list, forcing the owner to re-apply
+		// "this week" / "completed" / page 3 every time they peeked at
+		// a single row's detail.
+		$back_args = array_filter( array(
+			'filter_time'   => isset( $_GET['from_filter_time'] ) ? sanitize_key( wp_unslash( $_GET['from_filter_time'] ) ) : '', // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+			'filter_status' => isset( $_GET['from_filter_status'] ) ? sanitize_key( wp_unslash( $_GET['from_filter_status'] ) ) : '', // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+			'q'             => isset( $_GET['from_q'] ) ? sanitize_text_field( wp_unslash( $_GET['from_q'] ) ) : '', // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+			'paged'         => isset( $_GET['from_paged'] ) ? absint( wp_unslash( $_GET['from_paged'] ) ) : 0, // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		), static function ( $v ) { return '' !== $v && 0 !== $v && 'all' !== $v; } );
+		$back_url = Handik_Booking_App_Admin_Helpers::admin_url_for( 'handik-booking-app-bookings', $back_args );
 		$dt = Handik_Booking_App_Admin_Helpers::utc_to_eastern( (string) ( $booking['start_time'] ?? '' ) );
 		$when_short = $dt ? $dt->format( 'D, M j · g:i A' ) : __( 'Not scheduled', 'handik-booking-app' );
 

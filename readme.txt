@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.1.16.0
+Stable tag: 2.1.17.0
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, silent returning-client recognition, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,42 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.1.17.0 =
+* **Sprint 10 — full P0 + P1 batch from the v2.1.16.0 customer + admin UX audits.** ~50 findings closed across 10 customer-side clusters and 9 admin-side clusters; 2 commits on branch `claude/sprint-10-customer-admin-p0-p1`.
+
+**Customer-side (main + Additional Forms SPAs):**
+* **OTP "Resend in Xs" countdown auto-ticks.** Was frozen at render time — customer stared at "27s" forever until typing. 1-second `setInterval` in `bind()` surgically updates the resend-pending span; clears itself on step change or expiry. Same fix in both SPAs.
+* **Photo upload size cap enforced before XHR.** 25 MB iPhone videos used to upload fully on 3G then get rejected server-side, file gone, generic toast. New per-file pre-flight: 10 MB images / 50 MB videos, lists offending names + size on rejection. Photo remove button bumped from 28×28 → 44×44 px to clear WCAG 2.5.5.
+* **ZIP out-of-area now a persistent inline error.** Was a 4.2-second auto-dismiss toast that left the customer staring at a Continue button that did nothing. Now flips the address field to invalid state with a stable message naming the offending ZIP; clears when the customer re-types or picks a new Places result.
+* **Restart preserves the 30-day verified-client cache.** Was unconditionally clearing it — a customer who tapped Restart mid-OTP lost their cached identity and had to OTP again. Restart now keeps `verifiedToken` / `verifiedPhone` / `verifiedProfile` / `phoneVerified` by default; explicit Sign-Out path (`executeRestart({signOut:true})` / `restart({signOut:true})`) wipes them. Also clears the assistant "we got stuck" banner. Forms SPA restart of a verified user lands on `details`, not `phone`.
+* **Returning-customer back navigation no longer dead-ends.** Sprint 9 hid `contact_details` + `otp_verify` from the verified-user timeline, but Back-from-address still tried to land on them — silently invalidating cached profile if the customer edited the phone there. Back from `address_details` now goes to `photos` for verified customers (their actual previous step). Forms `details-back` for cache-restored users goes to `phone` (was `otp`, which fired a fresh `/phone-verify/start` and duplicated the SMS via Twilio rate-limit).
+* **Cal.com embed reliability.** Three sub-fixes:
+  1. The 15-second slow-load fallback used to check `calEmbedMountKey` (which flips synchronously after the inline call returned) — missed the actual failure mode where the script loaded but the iframe never rendered. New `calEmbedReadyKey` set in the `bookerReady` listener; fallback fires when reader-key isn't set after 15s.
+  2. Cal listeners were registered on BOTH `window.Cal` and `calApi`, doubling the fire rate; consolidated to `calApi` only and added a client-side idempotency guard on `captureBookingSuccess` so the same booking-id only surfaces a toast once.
+  3. Forms SPA timeout no longer clobbers the entire container with a bare "Open in new tab" button — INSERTS a notice ABOVE the existing skeleton/iframe so a late-arriving script doesn't fight it.
+* **Forms `'pick-back'` action no longer dead-ends.** Sprint 5 renamed `address` → `details` (combined contact + address into one step) but this transition was missed; project-day picker's Back button landed on a non-existent step rendering a blank `genericError`. Owner-reported P0.
+* **Welcome-back toast on cache restore.** `tryRestoreVerifiedClient` now queues a deferred toast that fires after first render (avoiding the loading overlay clobbering it); gated on `isReturningClient` so new-client cached tokens don't get a misleading greeting.
+* **Focus management + modal a11y.**
+  - `focusStepHeading` actually moves focus now (was only removing tabindex from a heading that never had one). New polite ARIA-live announcer for step changes.
+  - Restart modal: ESC dismisses, backdrop click dismisses. Was missing entirely on both SPAs — mobile users on 320px had no X.
+  - `prefers-reduced-motion` guard on the goTo smooth-scroll. CSS respected the OS pref elsewhere; JS didn't.
+* **OTP error differentiates wrong-code from rate-limit lockout.** Wrong-code stays red ("That code is invalid or expired"); rate-limit response from `Auth_Service` surfaces with amber styling + dedicated copy "Too many verification attempts. Try again in a few minutes." so the customer doesn't keep mashing the keypad against a backend that's already locked them out.
+
+**Admin-side:**
+* **Bookings list pagination + status filter alignment.** Was capped at 500 rows total with no paging UI — at 10k bookings the owner silently lost everything older than ~9 months. Cap raised to 2000; new prev/next nav with "X of Y" summary; filters preserved across pages. Status filter realigned to the Sprint 8 pill taxonomy: `Booked` (blue), `Confirmed` (green), `Completed` (teal) are now separate filter chips; legacy "On the schedule" chip is the union of Booked + Confirmed for the prior mental model. Filter + page state preserved across booking-detail "Back" via `from_*` query params.
+* **Migration error visibility.** Run-migrations REST response (Sprint 7's `{success, ran[], skipped, error, no_changes}`) now surfaces in the UI: System info shows `LAST_ERROR_OPTION` in a red callout if the previous run failed, plus a new "Last attempt" timestamp; the JS toast on the System info button reports "Migrations applied: …", "No pending migrations", "Skipped — another in progress", or the actual error message instead of always claiming green.
+* **Mark Completed / Cancel patch DOM instead of full reload.** Was costing 2-5s of cellular flicker for a near-no-op action from the truck. Now the sticky bar's status pill flips inline + the action button disables to prevent double-tap; toast confirms.
+* **Bookings search debounce 350ms → 600ms.** Less aggressive full-page submission on every keystroke; full AJAX search deferred (would require a server-rendered fragment endpoint).
+* **Bottom nav 6 → 5 items, sub-page padding fixed.** Forms entry consolidated into Setup (presets stay reachable from Setup → tabs and from the top WP submenu). The bottom-nav padding-bottom selector was using `body.toplevel_page_*` only, which ONLY matches the dashboard — sub-pages get `body.handik-booking_page_*` and were never matching, so content hid under the fixed nav. New attribute-prefix selector covers both forms.
+* **Catalog editor robustness.** Was filtering out rows that didn't have BOTH `id` AND `label`, so an owner who tabbed out mid-edit silently lost the row on auto-save. Now keeps partial rows where the user has started typing in either id or label. Delete confirmation is now ref-aware: when the task has `in use by N requests`, the modal names the count and uses different copy ("Remove anyway") so click-confirm-gone is no longer accidental. Group delete also uses the unified modal instead of `window.confirm`.
+* **People page hardening.**
+  - Address delete modal copy now explicitly says soft-delete (server already does it via `deleted_at`, but the prior modal said "Delete?" which made the owner think past bookings would corrupt).
+  - Add-person form gained `minlength` + `pattern` hints on phone (10-digit) and `minlength` on full_name, so a typo is caught client-side before the round-trip.
+  - Person edit `<details>` now persists open/closed state per tab via `sessionStorage` (data-handik-details-key), so a refresh doesn't snap the form shut.
+* **Logs page mobile.** Filter row collapses to a `<details>` toggle on mobile (auto-opens when any filter is active so the customer sees the current scope). Pagination at 50/page replaces the dump-all-2000-cards behavior; prev/next nav preserves all filters.
+* **"Add new preset" CTA on Additional Forms.** Owner-reported P1 dead-end — the only path to create a new preset was via WP-CLI / SQL. New button → slug + form-type picker → `Booking_Presets_Service::insert_blank()` (new method) → redirect into the full edit form for the rest of the fields. Slug uniqueness validated server-side.
+* **Sticky action bar mobile fix.** Was using `top: var(--wp-admin--admin-bar--height, 32px)` — but vanilla wp-admin doesn't declare that var, so the 32px fallback always won, and on mobile (where the WP admin bar is 46px) the sticky bar overlapped the back arrow by ~14px. New `@media (max-width: 782px)` rule sets `top: 46px` explicitly. Customer phone number is now KEPT visible on mobile in the call CTA (was `display: none`, hiding the number that owners use to verify it's the right customer); other CTAs still hide their labels on mobile.
 
 = 2.1.16.0 =
 * **Three owner-reported regression fixes.** No new features; closes the gaps in flows that were partially built but never wired through.
