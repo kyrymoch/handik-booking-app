@@ -116,6 +116,26 @@ class Handik_Booking_App_Messages_Service {
 	}
 
 	/**
+	 * Sprint 12 — bulk-drop transcript messages for a request. Used by
+	 * Job_Requests_Service::delete_hard during the cascade. Returns the
+	 * number of rows actually deleted so the caller can include the
+	 * count in the audit-log entry.
+	 *
+	 * @param int $request_id Job request id.
+	 * @return int Rows deleted.
+	 */
+	public function delete_for_request( $request_id ) {
+		global $wpdb;
+		$request_id = (int) $request_id;
+		if ( $request_id <= 0 ) {
+			return 0;
+		}
+		$table = Handik_Booking_App_DB::table( 'messages' );
+		$out = $wpdb->delete( $table, array( 'request_id' => $request_id ), array( '%d' ) );
+		return false === $out ? 0 : (int) $out;
+	}
+
+	/**
 	 * @return int|null
 	 */
 	protected function find_recent_duplicate( $request_id, $role, $content ) {

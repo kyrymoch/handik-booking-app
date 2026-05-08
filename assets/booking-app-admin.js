@@ -165,6 +165,117 @@
 		};
 	}
 
+	/**
+	 * Sprint 12 — typed-confirmation modal for destructive cascades.
+	 *
+	 * Click-confirm modals are too easy to mash through on mobile, so
+	 * hard-delete actions (Person / Request / Booking) require the
+	 * operator to type the literal string "DELETE" before the
+	 * destructive button activates. Resolves to `true` on confirm,
+	 * `null` on cancel/escape — same shape openModal() uses, so the
+	 * caller can `await` without a special branch.
+	 *
+	 * Options:
+	 *   title        — dialog title.
+	 *   body         — descriptive paragraph.
+	 *   preview      — optional second paragraph listing what gets
+	 *                  swept (e.g. "3 requests, 2 bookings…").
+	 *   confirmLabel — destructive CTA label.
+	 *   token        — string the operator has to type (default
+	 *                  "DELETE").
+	 */
+	function openTypedConfirmModal( opts ) {
+		opts = opts || {};
+		const token = String( opts.token || 'DELETE' );
+		return new Promise( function ( resolve ) {
+			const backdrop = document.createElement( 'div' );
+			backdrop.className = 'handik-admin-modal-backdrop';
+			const modal = document.createElement( 'div' );
+			modal.className = 'handik-admin-modal handik-admin-modal--danger';
+			modal.setAttribute( 'role', 'dialog' );
+			modal.setAttribute( 'aria-modal', 'true' );
+
+			const title = document.createElement( 'h3' );
+			title.textContent = opts.title || 'Permanent delete';
+			modal.appendChild( title );
+
+			const body = document.createElement( 'div' );
+			body.className = 'handik-admin-modal__body';
+			if ( opts.body ) {
+				const p = document.createElement( 'p' );
+				p.textContent = opts.body;
+				body.appendChild( p );
+			}
+			if ( opts.preview ) {
+				const p2 = document.createElement( 'p' );
+				p2.className = 'handik-admin-muted';
+				p2.innerHTML = '<strong>' + String( opts.preview ).replace( /[<>&]/g, function ( c ) {
+					return { '<': '&lt;', '>': '&gt;', '&': '&amp;' }[ c ];
+				} ) + '</strong>';
+				body.appendChild( p2 );
+			}
+			const instruction = document.createElement( 'p' );
+			instruction.innerHTML = ( i18n.typedConfirmInstruction || 'Type %s to confirm. This is irreversible.' )
+				.replace( '%s', '<code>' + token + '</code>' );
+			body.appendChild( instruction );
+
+			const input = document.createElement( 'input' );
+			input.type = 'text';
+			input.autocomplete = 'off';
+			input.spellcheck = false;
+			input.className = 'handik-admin-modal__typed-confirm';
+			input.setAttribute( 'aria-label', ( i18n.typedConfirmAria || 'Type %s to enable delete' ).replace( '%s', token ) );
+			body.appendChild( input );
+			modal.appendChild( body );
+
+			const actions = document.createElement( 'div' );
+			actions.className = 'handik-admin-modal__actions';
+			const cancel = document.createElement( 'button' );
+			cancel.type = 'button';
+			cancel.className = 'button';
+			cancel.textContent = opts.cancelLabel || i18n.cancel || 'Cancel';
+			const confirm = document.createElement( 'button' );
+			confirm.type = 'button';
+			confirm.className = 'button button-link-delete';
+			confirm.textContent = opts.confirmLabel || i18n.delete || 'Delete';
+			confirm.disabled = true;
+			actions.appendChild( cancel );
+			actions.appendChild( confirm );
+			modal.appendChild( actions );
+			backdrop.appendChild( modal );
+
+			let releaseFocusTrap = function () {};
+			function close( value ) {
+				releaseFocusTrap();
+				if ( backdrop.parentNode ) { backdrop.parentNode.removeChild( backdrop ); }
+				document.removeEventListener( 'keydown', onKey, true );
+				resolve( value );
+			}
+			function onKey( event ) {
+				if ( 'Escape' === event.key ) { close( null ); }
+			}
+			input.addEventListener( 'input', function () {
+				confirm.disabled = input.value !== token;
+			} );
+			input.addEventListener( 'keydown', function ( event ) {
+				if ( 'Enter' === event.key && ! confirm.disabled ) {
+					event.preventDefault();
+					close( true );
+				}
+			} );
+			document.addEventListener( 'keydown', onKey, true );
+			cancel.addEventListener( 'click', function () { close( null ); } );
+			confirm.addEventListener( 'click', function () { close( true ); } );
+			backdrop.addEventListener( 'click', function ( event ) {
+				if ( event.target === backdrop ) { close( null ); }
+			} );
+
+			document.body.appendChild( backdrop );
+			releaseFocusTrap = trapModalFocus( modal );
+			window.setTimeout( function () { input.focus(); }, 0 );
+		} );
+	}
+
 	function openModal( opts ) {
 		opts = opts || {};
 		return new Promise( function( resolve ) {
@@ -1004,6 +1115,99 @@
 
 	// Sprint 10 fix: remember whether collapsible <details> sections are
 	// open across page reloads. Each section opts in via
+	/**
+	 * Sprint 12 — danger-zone delete handler. Listens for clicks on
+	 * `[data-handik-delete]` buttons emitted by the booking / request /
+	 * person detail pages. Pops the typed-confirm modal, fires the
+	 * REST DELETE on success, and on a clean response redirects to the
+	 * parent list (or stays put if the redirect attribute is empty).
+	 *
+	 * Copy + endpoint mapping is data-driven so the markup carries all
+	 * the per-entity context — keeps this handler generic.
+	 */
+	function initDangerZone() {
+		const ENTITY = {
+			booking: {
+				path: 'admin/booking/',
+				title: i18n.deleteBookingTitle || 'Permanently delete this booking?',
+				body:  i18n.deleteBookingBody  || 'The local row will be removed. The Cal.com booking on the contractor calendar is NOT cancelled.',
+				confirm: i18n.deleteBookingCta || 'Yes, delete this booking',
+			},
+			'job-request': {
+				path: 'admin/job-request/',
+				title: i18n.deleteRequestTitle || 'Permanently delete this request?',
+				body:  i18n.deleteRequestBody  || 'The request, its transcript, every photo, and any attached bookings will be wiped. The contact stays.',
+				confirm: i18n.deleteRequestCta || 'Yes, delete this request',
+			},
+			contact: {
+				path: 'admin/contact/',
+				title: i18n.deleteContactTitle || 'Permanently delete this person?',
+				body:  i18n.deleteContactBody  || 'Every record that references this person — addresses, requests, transcripts, bookings, photos — will be wiped. Use for spam cleanup or right-to-be-forgotten requests. Irreversible.',
+				confirm: i18n.deleteContactCta || 'Yes, delete this person',
+			},
+		};
+
+		document.querySelectorAll( '[data-handik-delete]' ).forEach( function ( btn ) {
+			btn.addEventListener( 'click', async function ( event ) {
+				event.preventDefault();
+				const kind = btn.dataset.handikDelete;
+				const id   = parseInt( btn.dataset.handikId || '0', 10 );
+				const cfg  = ENTITY[ kind ];
+				if ( ! cfg || id <= 0 ) { return; }
+
+				// Pull the preview line from the markup if the page
+				// renders one (person + request detail include it
+				// inside the section header).
+				let preview = '';
+				const previewNode = btn.parentElement && btn.parentElement.querySelector( '.handik-admin-muted strong' );
+				if ( previewNode ) {
+					preview = previewNode.textContent || '';
+				}
+
+				let title = cfg.title;
+				if ( btn.dataset.handikLabel ) {
+					title = title.replace( /\?$/, ' — "' + btn.dataset.handikLabel + '"?' );
+				}
+
+				const ok = await openTypedConfirmModal( {
+					title:         title,
+					body:          cfg.body,
+					preview:       preview,
+					confirmLabel:  cfg.confirm,
+					token:         'DELETE',
+				} );
+				if ( ! ok ) { return; }
+
+				try {
+					await withButtonLoading( btn, async function () {
+						const r = await adminFetch( null, cfg.path + id, { method: 'DELETE' } );
+						const sumLines = [];
+						if ( r && r.summary ) {
+							for ( const k in r.summary ) {
+								if ( r.summary[ k ] > 0 ) {
+									sumLines.push( r.summary[ k ] + ' ' + k.replace( /_/g, ' ' ) );
+								}
+							}
+						}
+						toast(
+							( i18n.deletedSummary || 'Deleted: %s' ).replace( '%s', sumLines.join( ', ' ) || cfg.confirm ),
+							'success'
+						);
+					} );
+				} catch ( err ) {
+					toast( ( err && err.message ) || i18n.saveFailed || 'Delete failed', 'error' );
+					return;
+				}
+
+				if ( btn.dataset.handikRedirect ) {
+					window.location.href = btn.dataset.handikRedirect;
+				} else {
+					window.location.reload();
+				}
+			} );
+		} );
+	}
+
 	// `data-handik-details-key="<unique key>"`. State is per-tab via
 	// sessionStorage so opening a panel in one tab doesn't haunt another.
 	function initDetailsMemory() {
@@ -1060,6 +1264,7 @@
 		initDebouncedSearch();
 		initDetailsMemory();
 		initRestoreScroll();
+		initDangerZone();
 	} );
 
 }( window, document ) );

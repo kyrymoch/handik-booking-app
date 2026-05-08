@@ -287,6 +287,55 @@ class Handik_Booking_App_Bookings_Service {
 	}
 
 	/**
+	 * Sprint 12 — hard-delete a single booking row.
+	 *
+	 * Per the audit, `cal_booking_id` is denormalized: the same Cal UID
+	 * is mirrored on `handik_job_requests.cal_booking_id` /
+	 * `cal_booking_url`. After we drop the booking row that parent
+	 * back-pointer would still claim "there's a Cal booking attached"
+	 * even though the row is gone, which corrupts the bookings-list
+	 * status logic. We clear those columns first; the request itself
+	 * stays (use Job_Requests_Service::delete_hard for that).
+	 *
+	 * The Cal.com side is intentionally NOT cancelled — owner-decided
+	 * scope for Sprint 12 (visit happened; we're cleaning local DB).
+	 *
+	 * @param int $booking_id Booking id.
+	 * @return bool True if a row was deleted.
+	 */
+	public function delete_hard( $booking_id ) {
+		global $wpdb;
+		$booking_id = (int) $booking_id;
+		if ( $booking_id <= 0 ) {
+			return false;
+		}
+		$table         = Handik_Booking_App_DB::table( 'bookings' );
+		$requests      = Handik_Booking_App_DB::table( 'job_requests' );
+		$row           = $this->get( $booking_id );
+		if ( ! $row ) {
+			return false;
+		}
+		$cal_uid       = (string) ( $row['cal_booking_id'] ?? '' );
+		$request_id    = (int) ( $row['job_request_id'] ?? 0 );
+
+		// Clear the parent's back-pointer if THIS booking was the
+		// authoritative one for the request (matched by uid). Multiple
+		// bookings on one request would each clear in turn — that's OK,
+		// the column is a single-value pointer that the next booking-
+		// upsert re-populates.
+		if ( '' !== $cal_uid && $request_id > 0 ) {
+			$wpdb->update(
+				$requests,
+				array( 'cal_booking_id' => '', 'cal_booking_url' => null ),
+				array( 'id' => $request_id, 'cal_booking_id' => $cal_uid )
+			);
+		}
+
+		$deleted = $wpdb->delete( $table, array( 'id' => $booking_id ), array( '%d' ) );
+		return false !== $deleted && $deleted > 0;
+	}
+
+	/**
 	 * @param string $value Datetime.
 	 * @return string|null
 	 */

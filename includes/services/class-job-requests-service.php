@@ -234,6 +234,51 @@ class Handik_Booking_App_Job_Requests_Service {
 	}
 
 	/**
+	 * Sprint 12 — drop a single job_request row. Does NOT cascade —
+	 * use Cascade_Delete_Service::delete_request() for the full
+	 * messages + bookings + photos sweep. This is the solo low-level
+	 * step the coordinator calls last.
+	 *
+	 * @param int $request_id ID.
+	 * @return bool
+	 */
+	public function delete_hard_solo( $request_id ) {
+		global $wpdb;
+		$request_id = (int) $request_id;
+		if ( $request_id <= 0 ) {
+			return false;
+		}
+		$table = Handik_Booking_App_DB::table( 'job_requests' );
+		$ok = $wpdb->delete( $table, array( 'id' => $request_id ), array( '%d' ) );
+		return false !== $ok && $ok > 0;
+	}
+
+	/**
+	 * Sprint 12 — pre-flight counts so the admin confirm modal can show
+	 * "Delete this request? Removes 47 messages, 1 booking, 3 photos."
+	 *
+	 * @param int $request_id ID.
+	 * @return array{messages:int, bookings:int, photos:int}
+	 */
+	public function count_dependents( $request_id ) {
+		global $wpdb;
+		$request_id = (int) $request_id;
+		$out = array( 'messages' => 0, 'bookings' => 0, 'photos' => 0 );
+		if ( $request_id <= 0 ) {
+			return $out;
+		}
+		$messages = Handik_Booking_App_DB::table( 'messages' );
+		$bookings = Handik_Booking_App_DB::table( 'bookings' );
+		$out['messages'] = (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM {$messages} WHERE request_id = %d", $request_id ) );
+		$out['bookings'] = (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM {$bookings} WHERE job_request_id = %d", $request_id ) );
+		$row = $this->get( $request_id );
+		if ( $row && is_array( $row['photos'] ?? null ) ) {
+			$out['photos'] = count( $row['photos'] );
+		}
+		return $out;
+	}
+
+	/**
 	 * @param int $request_id ID.
 	 * @return array<string, mixed>|null
 	 */

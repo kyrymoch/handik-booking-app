@@ -27,6 +27,7 @@ class Handik_Booking_App_Loader {
 			'includes/services/class-job-requests-service.php',
 			'includes/services/class-bookings-service.php',
 			'includes/services/class-messages-service.php',
+			'includes/services/class-cascade-delete-service.php',
 			'includes/services/class-auth-service.php',
 			'includes/services/class-routing-service.php',
 			'includes/services/class-cal-service.php',
