@@ -1439,6 +1439,30 @@ a.handik-admin-today-card-link:focus-visible .handik-admin-today-card {
 	object-fit: contain;
 }
 
+/* Sprint 11 fix: explicit close button so keyboard / iPad users have an
+ * affordance besides the implicit "click the backdrop" gesture. */
+.handik-admin-lightbox-close {
+	position: absolute;
+	top: 16px;
+	right: 16px;
+	width: 44px;
+	height: 44px;
+	border-radius: 50%;
+	border: 0;
+	background: rgba(255, 255, 255, 0.92);
+	color: #0f172a;
+	font-size: 1.5rem;
+	line-height: 1;
+	cursor: pointer;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+}
+.handik-admin-lightbox-close:focus-visible {
+	outline: 2px solid #2563eb;
+	outline-offset: 2px;
+}
+
 /* --------- Button spinner (F2) --------------------------------------- */
 
 .handik-admin-spinner {

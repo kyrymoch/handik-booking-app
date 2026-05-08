@@ -556,10 +556,25 @@ class Handik_Booking_App_Admin_Additional_Forms {
 				$action_cell .= '<button type="submit" class="button button-small button-link-delete">' . esc_html__( 'Cancel', 'handik-booking-app' ) . '</button>';
 				$action_cell .= '</form>';
 			}
+			// Sprint 11 fix: ISO timestamps were printed raw (e.g.
+			// "2026-05-08T14:00:00.000Z") — Sprint 8's format unification
+			// missed this page. Convert ISO 8601 to MySQL DATETIME first
+			// (in UTC) so format_short() can reuse its existing ET
+			// pipeline.
+			$iso_to_mysql = static function ( $iso ) {
+				$iso = trim( (string) $iso );
+				if ( '' === $iso ) { return ''; }
+				try {
+					$dt = new DateTimeImmutable( $iso );
+					return $dt->setTimezone( new DateTimeZone( 'UTC' ) )->format( 'Y-m-d H:i:s' );
+				} catch ( Exception $e ) {
+					return $iso;
+				}
+			};
 			echo '<tr>';
 			echo '<td>' . (int) $day['day_index'] . '</td>';
-			echo '<td>' . esc_html( (string) $day['start_iso'] ) . '</td>';
-			echo '<td>' . esc_html( (string) $day['end_iso'] ) . '</td>';
+			echo '<td>' . esc_html( Handik_Booking_App_Admin_Helpers::format_short( $iso_to_mysql( $day['start_iso'] ?? '' ) ) ) . '</td>';
+			echo '<td>' . esc_html( Handik_Booking_App_Admin_Helpers::format_short( $iso_to_mysql( $day['end_iso'] ?? '' ) ) ) . '</td>';
 			echo '<td>' . esc_html( (string) $day['status'] ) . '</td>';
 			echo '<td>' . $cal . '</td>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
 			echo '<td>' . $action_cell . '</td>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped

@@ -84,9 +84,20 @@ class Handik_Booking_App_Admin_Integrations {
 		// to a bookings admin), but this tab shows a notice instead of
 		// the form when the user lacks the wider cap.
 		if ( ! current_user_can( Handik_Booking_App_Capabilities::MANAGE_INTEGRATIONS ) ) {
+			// Sprint 11 fix: actually name the cap key so the
+			// administrator knows what to grant. Was P2 — the prior
+			// copy said "Manage Handik integrations" (the human label)
+			// without the underlying cap string, leaving the admin to
+			// guess what to type into a role-management UI.
+			$cap_key = Handik_Booking_App_Capabilities::MANAGE_INTEGRATIONS;
 			echo '<section class="handik-admin-block">';
 			echo '<h2 class="handik-admin-section-title">' . esc_html__( 'Integrations', 'handik-booking-app' ) . '</h2>';
-			echo '<p>' . esc_html__( 'You don’t have permission to manage integration credentials. Ask a site administrator to grant you the “Manage Handik integrations” capability.', 'handik-booking-app' ) . '</p>';
+			echo '<p>' . esc_html__( 'You don’t have permission to manage integration credentials.', 'handik-booking-app' ) . '</p>';
+			echo '<p>' . sprintf(
+				/* translators: %s: capability slug, displayed as <code>. */
+				esc_html__( 'Ask a site administrator to grant you the %s capability (via a role-management plugin or by adding it to your role with WP-CLI).', 'handik-booking-app' ),
+				'<code>' . esc_html( $cap_key ) . '</code>'
+			) . '</p>';
 			echo '</section>';
 			return;
 		}

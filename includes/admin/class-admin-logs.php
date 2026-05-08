@@ -67,7 +67,24 @@ class Handik_Booking_App_Admin_Logs {
 		) ) . '</p>';
 
 		if ( empty( $page_logs ) ) {
-			echo '<div class="handik-admin-empty"><p>' . esc_html__( 'No log entries match these filters.', 'handik-booking-app' ) . '</p></div>';
+			// Sprint 11 fix: distinguish "no logs anywhere" from "filtered
+			// to nothing." The first is a fresh install / cleared logs;
+			// the second is just over-eager filtering. Different copy +
+			// clear-filters CTA when filters are active so the owner
+			// doesn't think the logger is broken.
+			$has_active_filter = (
+				'all' !== $filter_level || 'all' !== $filter_time || '' !== $query
+				|| $request_id > 0 || '' !== $thread_id || $show_debug
+			);
+			echo '<div class="handik-admin-empty">';
+			if ( $has_active_filter ) {
+				echo '<p>' . esc_html__( 'No log entries match these filters.', 'handik-booking-app' ) . '</p>';
+				$reset_url = admin_url( 'admin.php?page=handik-booking-app-operations&tab=logs' );
+				echo '<p><a class="button" href="' . esc_url( $reset_url ) . '">' . esc_html__( 'Clear filters', 'handik-booking-app' ) . '</a></p>';
+			} else {
+				echo '<p>' . esc_html__( 'No log entries yet. Once the plugin handles a request, log lines will surface here.', 'handik-booking-app' ) . '</p>';
+			}
+			echo '</div>';
 		} else {
 			echo '<ul class="handik-admin-log-cards">';
 			foreach ( $page_logs as $entry ) {
@@ -204,7 +221,11 @@ class Handik_Booking_App_Admin_Logs {
 					<input type="search" name="q" value="<?php echo esc_attr( $query ); ?>" />
 				</label>
 				<label class="handik-admin-checkbox">
-					<input type="checkbox" name="show_debug" value="1"<?php checked( $show_debug ); ?> />
+					<?php /* Sprint 11 fix: auto-submit on toggle. Was P2 —
+					   ticking the box did nothing until the owner also
+					   tapped Apply. onchange-form-submit is fine because
+					   the form already filters all other state via GET. */ ?>
+					<input type="checkbox" name="show_debug" value="1"<?php checked( $show_debug ); ?> onchange="this.form.submit();" />
 					<span><?php esc_html_e( 'Show debug', 'handik-booking-app' ); ?></span>
 				</label>
 				<button type="submit" class="button"><?php esc_html_e( 'Apply', 'handik-booking-app' ); ?></button>

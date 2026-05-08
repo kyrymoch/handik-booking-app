@@ -52,6 +52,33 @@ class Handik_Booking_App_Admin_Dashboard {
 
 		$data = $this->load_dashboard_data();
 
+		// Sprint 11 fix: surface the cache-age so an owner who just
+		// marked something completed and hopped back to the Dashboard
+		// can tell whether the counters reflect their action yet (the
+		// 60s transient was opaque). Includes a "Refresh now" link that
+		// busts the transient and re-renders.
+		$cached_at  = (int) ( $data['cached_at'] ?? 0 );
+		$age        = $cached_at > 0 ? max( 0, time() - $cached_at ) : 0;
+		$refresh_url = add_query_arg(
+			array( 'page' => 'handik-booking-app', 'refresh' => '1' ),
+			admin_url( 'admin.php' )
+		);
+		$age_label = 0 === $age
+			? __( 'Refreshed just now', 'handik-booking-app' )
+			: ( $age < 60
+				? sprintf(
+					/* translators: %d: seconds since refresh */
+					_n( 'Refreshed %ds ago', 'Refreshed %ds ago', $age, 'handik-booking-app' ),
+					$age
+				)
+				: sprintf(
+					/* translators: %d: minutes since refresh */
+					__( 'Refreshed %dm ago', 'handik-booking-app' ),
+					(int) round( $age / 60 )
+				)
+			);
+		echo '<p class="handik-admin-dashboard__refresh"><span class="handik-admin-muted">' . esc_html( $age_label ) . '</span> · <a href="' . esc_url( $refresh_url ) . '">' . esc_html__( 'Refresh now', 'handik-booking-app' ) . '</a></p>';
+
 		echo '<div class="handik-admin-dashboard">';
 		echo $this->today_strip_markup( $data );
 		echo $this->next_visits_markup( $data['next_visits'] );
@@ -66,6 +93,13 @@ class Handik_Booking_App_Admin_Dashboard {
 	// -------- data load ---------------------------------------------------
 
 	protected function load_dashboard_data() {
+		// Sprint 11 fix: ?refresh=1 busts the 60s transient so the owner
+		// can force fresh numbers from the "Refresh now" link without
+		// having to wait out the cache.
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		if ( ! empty( $_GET['refresh'] ) ) {
+			delete_transient( self::TRANSIENT_KEY );
+		}
 		$cached = get_transient( self::TRANSIENT_KEY );
 		if ( is_array( $cached ) ) {
 			// Rehydrate the next-visits list from IDs so we always show fresh contact data.
@@ -98,7 +132,12 @@ class Handik_Booking_App_Admin_Dashboard {
 
 		$today_first    = $this->bookings ? $this->bookings->list_in_window( $this->to_utc( $today_start_et ), $this->to_utc( $today_end_et ), 1 ) : array();
 		$tomorrow_first = $this->bookings ? $this->bookings->list_in_window( $this->to_utc( $tomorrow_start_et ), $this->to_utc( $tomorrow_end_et ), 1 ) : array();
-		$week_first     = $this->bookings ? $this->bookings->list_in_window( $this->to_utc( $today_start_et ), $this->to_utc( $week_end_et ), 1 ) : array();
+		// Sprint 11 fix: was starting at $today_start_et, so the "This week"
+		// preview line just duplicated whatever today's first row showed.
+		// Skip past today + tomorrow so the card surfaces the next NEW
+		// piece of info (a Wed/Thu/Fri visit, not "the same 8am job").
+		$week_after_tomorrow = $tomorrow_end_et;
+		$week_first     = $this->bookings ? $this->bookings->list_in_window( $this->to_utc( $week_after_tomorrow ), $this->to_utc( $week_end_et ), 1 ) : array();
 
 		$next_visits = $this->bookings ? $this->bookings->list_upcoming( 5 ) : array();
 
@@ -124,6 +163,11 @@ class Handik_Booking_App_Admin_Dashboard {
 			'month_count'        => $month_count,
 			'month_revenue'      => (float) $month_revenue,
 			'month_avg_minutes'  => (float) $month_avg_min,
+			// Sprint 11 fix: stamp when the dashboard data was actually
+			// computed so the page can render "Refreshed Xs ago" and
+			// the owner knows whether they're looking at fresh-from-DB
+			// numbers or a 60s-cache snapshot. Stored as a UTC unix ts.
+			'cached_at'          => time(),
 		);
 
 		set_transient( self::TRANSIENT_KEY, $data, self::TRANSIENT_TTL );
@@ -239,10 +283,11 @@ class Handik_Booking_App_Admin_Dashboard {
 			$inner .= '<span class="handik-admin-today-card__preview is-empty">' . esc_html( $empty_text ) . '</span>';
 		}
 		$inner .= '</div>';
-		if ( $count > 0 ) {
-			return '<a class="handik-admin-today-card-link" href="' . esc_url( $href ) . '">' . $inner . '</a>';
-		}
-		return $inner;
+		// Sprint 11 fix: empty stat cards now also link to the filtered
+		// list. Was P1 — tapping "0 today" felt like a dead chip; now
+		// it opens Bookings filtered to today (which surfaces the empty
+		// state with explicit messaging instead).
+		return '<a class="handik-admin-today-card-link" href="' . esc_url( $href ) . '">' . $inner . '</a>';
 	}
 
 	// -------- block 2: next 5 visits --------------------------------------
@@ -411,9 +456,13 @@ class Handik_Booking_App_Admin_Dashboard {
 					<strong><?php echo esc_html( (string) (int) $data['month_count'] ); ?></strong>
 					<span><?php esc_html_e( 'Bookings this month', 'handik-booking-app' ); ?></span>
 				</div>
-				<div class="handik-admin-month-stat">
+				<div class="handik-admin-month-stat" title="<?php esc_attr_e( 'Sum of the high end of every assistant-provided estimate for this month\'s bookings. Actual revenue is generally lower.', 'handik-booking-app' ); ?>">
 					<strong><?php echo esc_html( $revenue_text ); ?></strong>
-					<span><?php esc_html_e( 'Revenue (high estimate)', 'handik-booking-app' ); ?></span>
+					<?php /* Sprint 11 fix: explicit "ceiling" qualifier in the
+					   stat label so the owner doesn't mis-read this as
+					   actual revenue. The hover title carries the full
+					   explanation for desktop. */ ?>
+					<span><?php esc_html_e( 'Revenue ceiling (high estimate)', 'handik-booking-app' ); ?></span>
 				</div>
 				<div class="handik-admin-month-stat">
 					<strong><?php echo $avg_hours > 0 ? esc_html( number_format_i18n( $avg_hours, 1 ) . ' h' ) : '—'; ?></strong>

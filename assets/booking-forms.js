@@ -841,16 +841,25 @@
 		if ( ! this.state.restartConfirmVisible ) {
 			return '';
 		}
+		// Sprint 11 fix: hard-coded English fallbacks for the modal copy
+		// so an install where the i18n bag is empty doesn't render a bare
+		// dialog with no title or body — that was a P2 from the audit
+		// ("first-time admin experience"). `t()` already returns '' on
+		// missing keys, so the OR short-circuits to the fallback.
+		var title  = this.t( 'restartConfirmTitle' )  || 'Start over?';
+		var body   = this.t( 'restartConfirmBody' )   || 'Your current entries will be cleared. The session continues; you can use a different number or pick different work.';
+		var cancel = this.t( 'restartConfirmCancel' ) || 'Keep going';
+		var cta    = this.t( 'restartConfirmCta' )    || 'Yes, start over';
 		return '<div class="handik-modal-backdrop" role="presentation">' +
-				'<section class="handik-modal" role="dialog" aria-modal="true" aria-label="' + escapeAttr( this.t( 'restartConfirmTitle' ) ) + '">' +
-					'<h3>' + escapeHtml( this.t( 'restartConfirmTitle' ) ) + '</h3>' +
-					'<p>' + escapeHtml( this.t( 'restartConfirmBody' ) ) + '</p>' +
+				'<section class="handik-modal" role="dialog" aria-modal="true" aria-label="' + escapeAttr( title ) + '">' +
+					'<h3>' + escapeHtml( title ) + '</h3>' +
+					'<p>' + escapeHtml( body ) + '</p>' +
 					'<div class="handik-modal__actions">' +
 						'<button type="button" class="handik-btn is-secondary" data-action="restart-cancel">' +
-							'<span class="handik-btn__label">' + escapeHtml( this.t( 'restartConfirmCancel' ) ) + '</span>' +
+							'<span class="handik-btn__label">' + escapeHtml( cancel ) + '</span>' +
 						'</button>' +
 						'<button type="button" class="handik-btn is-primary" data-action="restart-confirm">' +
-							'<span class="handik-btn__label">' + escapeHtml( this.t( 'restartConfirmCta' ) ) + '</span>' +
+							'<span class="handik-btn__label">' + escapeHtml( cta ) + '</span>' +
 						'</button>' +
 					'</div>' +
 				'</section>' +

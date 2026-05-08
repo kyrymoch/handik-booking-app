@@ -473,7 +473,14 @@ class Handik_Booking_App_Admin_Settings {
 	// =====================================================================
 
 	protected function section_open( $title ) {
-		echo '<details class="handik-admin-details" open>';
+		// Sprint 11 fix: settings sections now opt into the shared
+		// sessionStorage memory (data-handik-details-key from Sprint 10).
+		// First render keeps `open` so first-time admins see all the
+		// fields; subsequent renders restore whatever the owner closed.
+		// Key derived from the title slug so each section persists
+		// independently across the multi-tab Setup page.
+		$key = 'settings-' . sanitize_title( (string) $title );
+		echo '<details class="handik-admin-details" open data-handik-details-key="' . esc_attr( $key ) . '">';
 		echo '<summary><strong>' . esc_html( $title ) . '</strong></summary>';
 		echo '<div class="handik-admin-details__body">';
 	}

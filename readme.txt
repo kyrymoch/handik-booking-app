@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.1.17.0
+Stable tag: 2.1.18.0
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, silent returning-client recognition, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,38 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.1.18.0 =
+* **Sprint 11 — P2/P3 cleanup from the v2.1.16.0 audits.** 11 focused clusters; no new features, no schema changes, no public-flow regressions. Branch: `claude/sprint-11-p2-p3-cleanup`.
+
+**Customer-side:**
+* **Hard-coded support email moved to `config.strings.supportEmail`.** Was leaking `alex@handik.pro` into the public SPA on the unsafe step and the ZIP-not-serviced inline error — installs with a different owner address would surface the wrong contact. Falls back to the historical address so existing setups still work.
+* **`Loading…` glyph unified.** Mixed `Loading…` / `Loading...` / `Loading` across the photos CTA and busy-buttons; standardised on the single ellipsis character.
+* **Photo dropzone copy aligned with error.** Prior copy said "Up to 8 files · Photos to 10 MB · Videos to 50 MB"; the over-cap error said "up to 8 photos or videos". Both now say "8 photos or videos" so the help text and the failure mode agree.
+* **Restart modal fallbacks (Forms SPA).** When the i18n bag was empty, the dialog rendered with no title or body. Hard-coded English fallbacks ("Start over?" / "Your current entries will be cleared." / "Keep going" / "Yes, start over") so first-time admin installs aren't confused.
+* **`inputAttrsForModel` dead-code cleanup.** Removed an unreachable duplicate `case 'contact.full_name'` that was kept "for grep safety" but tripped linters and confused readers.
+
+**Admin-side:**
+* **Dashboard polish.**
+  - Empty stat cards (Today / Tomorrow / This week with count = 0) now also link to the filtered Bookings list — was a dead chip before.
+  - "This week" preview row no longer duplicates "Today" — query window now starts after tomorrow so the card surfaces the next NEW piece of info (a Wed/Thu/Fri visit, not the same 8am job already shown above).
+  - Action-needed chips with count = 0 are now clickable too (visually muted via `is-zero` but reachable). Useful for navigating back to a filtered list after the count drops to zero.
+  - Month "Revenue" stat relabelled to **"Revenue ceiling (high estimate)"** + hover title with full explanation. Was reading like actual revenue and risked over-forecasting.
+  - New "Refreshed Xs ago · **Refresh now**" header. The 60s transient was opaque — owner had no idea whether the counters reflected an action they just took. The link busts the transient via `?refresh=1` and re-renders fresh-from-DB.
+* **People page polish.**
+  - Filter chips ("All people / With bookings / Drafts only / No address") now preserve the active search query and `show_spam` toggle. Was dropping `q=Smith` on every chip click.
+  - Mailto-body sprintf hardened against `%` characters in customer names — used `str_replace` instead of `sprintf` so a name like "50% off John" doesn't crash PHP.
+  - Spam toggle is now bidirectional. Showing spam? "Hide spam contacts" link. Hiding spam? "Show N hidden" link as before. Was one-direction (`show_spam=1`) until you edited the URL by hand.
+  - "Nothing here. Nice." replaced with neutral copy "No requests in this bucket right now." for tone consistency with the other admin empty states.
+* **Catalog editor: diff-based save.** Was POST'ing the entire catalog on every blur, even with no actual change — tabbing through 30 fields could fire 30 identical save requests. New `lastSavedJson` snapshot; `scheduleSave` short-circuits when the serialized output is identical to last successful save, and the "Saving…" status pill stops flashing on no-ops.
+* **Logs page UX.**
+  - "Show debug" checkbox now auto-submits on toggle (was inert until the owner also tapped Apply).
+  - Empty-state distinguishes "no logs anywhere" (fresh install) from "filtered to nothing" (over-eager filter); the latter shows a "Clear filters" button so the owner doesn't think the logger is broken.
+* **Integrations notice now names the cap key.** A `MANAGE_BOOKINGS`-only user who hits the Integrations tab sees `<code>handik_manage_integrations</code>` so they (and their site admin) know exactly what to grant. Was just "Manage Handik integrations" (the human label) without the underlying cap string.
+* **Sprint 8 format-unification leftover.** Project-day rows in the Additional Forms admin were printing raw ISO 8601 timestamps like `2026-05-08T14:00:00.000Z`. ISO is now converted to MySQL DATETIME (UTC) before going through `Admin_Helpers::format_short()`, so the table reads like the rest of the admin (`Mon, May 8 · 2:00 PM`).
+* **Photo lightbox keyboard accessibility.** Added an explicit `×` close button (44×44 px, focus-ring) and an Escape handler. Was mouse-click-on-backdrop only — iPad users with a Bluetooth keyboard got stuck. Focus restores to the trigger element on close.
+* **Debounced search no longer jumps the page to top.** Stash the current `pageYOffset` to `sessionStorage` before submitting; restore on `DOMContentLoaded` and clear so the value doesn't haunt unrelated navigation. Owner reading a long bookings list keeps their scroll position when typing into the search field.
+* **Settings sections remember their open/closed state.** Sprint 10's `initDetailsMemory()` only honored "open" from storage — once an owner collapsed a long section, the next page load reverted to the markup default (almost always `open`). Now closed state persists too. App Setup sections opt into the same memory via `data-handik-details-key="settings-<slug>"`, so a 9-section Booking-flow tab no longer re-opens everything every time.
 
 = 2.1.17.0 =
 * **Sprint 10 — full P0 + P1 batch from the v2.1.16.0 customer + admin UX audits.** ~50 findings closed across 10 customer-side clusters and 9 admin-side clusters; 2 commits on branch `claude/sprint-10-customer-admin-p0-p1`.

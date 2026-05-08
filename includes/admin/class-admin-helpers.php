@@ -376,7 +376,11 @@ class Handik_Booking_App_Admin_Helpers {
 		}
 		$dot = $active ? '<span class="handik-admin-chip__dot" aria-hidden="true"></span>' : '';
 		$inner = $dot . '<strong>' . esc_html( (string) $count ) . '</strong> <span>' . esc_html( $label ) . '</span>';
-		if ( $href && $active ) {
+		// Sprint 11 fix: render the chip as an `<a>` even when count is 0
+		// IF a href is provided. Was P2 — owners who just filtered "ready
+		// not booked" couldn't tap the chip to navigate back to the
+		// filtered list. The `is-zero` class still mutes it visually.
+		if ( $href ) {
 			return '<a class="' . $cls . '" href="' . esc_url( $href ) . '">' . $inner . '</a>';
 		}
 		return '<span class="' . $cls . '">' . $inner . '</span>';
