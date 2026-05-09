@@ -37,12 +37,19 @@ class Handik_Booking_App_Direct_Booking_Service {
 	/** @var Handik_Booking_App_Logger|null */
 	protected $logger;
 
-	public function __construct( $presets, $contacts, $addresses, $settings, $logger = null ) {
+	/** @var Handik_Booking_App_Bookings_Service|null */
+	protected $bookings;
+
+	public function __construct( $presets, $contacts, $addresses, $settings, $logger = null, $bookings = null ) {
 		$this->presets   = $presets;
 		$this->contacts  = $contacts;
 		$this->addresses = $addresses;
 		$this->settings  = $settings;
 		$this->logger    = $logger;
+		// Sprint 13.5 — wired so capture_booking can mirror the
+		// direct row into handik_bookings, making it visible in the
+		// unified Bookings list.
+		$this->bookings  = $bookings;
 		// Sprint 13 hotfix (F3): GC for orphan OPENED rows.
 		add_action( self::CRON_HOOK_GC, array( $this, 'gc_abandoned' ) );
 		add_action( 'init', array( $this, 'maybe_schedule_gc' ) );
@@ -488,6 +495,21 @@ class Handik_Booking_App_Direct_Booking_Service {
 			),
 			array( 'id' => (int) $request_id )
 		);
+
+		// Sprint 13.5 — mirror into handik_bookings so the unified
+		// admin Bookings list ("?page=handik-booking-app-bookings")
+		// surfaces the row. Was P0 owner-reported: admin used the new
+		// "+ Add booking" CTA but the booking didn't appear in the
+		// list. The webhook will run dispatch_direct shortly after
+		// and re-upsert with the same cal_booking_id (UNIQUE → no
+		// duplicate); whichever fires first wins.
+		if ( $this->bookings && method_exists( $this->bookings, 'upsert_from_direct_capture' ) ) {
+			$this->bookings->upsert_from_direct_capture(
+				(int) $request_id,
+				$payload,
+				self::STATUS_BOOKED
+			);
+		}
 
 		if ( $this->logger ) {
 			$this->logger->info(

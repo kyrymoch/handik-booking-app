@@ -409,19 +409,46 @@ class Handik_Booking_App_Admin_Bookings {
 	 * @return array<int, array{request: ?array, contact: ?array, address: ?array}>
 	 */
 	protected function decorate_bookings( array $rows ) {
+		global $wpdb;
 		if ( empty( $rows ) ) {
 			return array();
 		}
-		$request_ids = array();
+		// Sprint 13.5 — split rows by source. Main-SPA Cal bookings hang
+		// off `job_request_id`; direct-form bookings (Sprint 4 onward,
+		// admin-initiated since Sprint 13) hang off `direct_request_id`
+		// and have NO job_request — their contact/address come from
+		// `handik_direct_booking_requests` instead.
+		$request_ids        = array();
+		$direct_request_ids = array();
 		foreach ( $rows as $row ) {
-			$rid = (int) ( $row['job_request_id'] ?? 0 );
-			if ( $rid > 0 ) {
-				$request_ids[] = $rid;
-			}
+			$rid  = (int) ( $row['job_request_id']    ?? 0 );
+			$drid = (int) ( $row['direct_request_id'] ?? 0 );
+			if ( $rid > 0 )  { $request_ids[]        = $rid; }
+			if ( $drid > 0 ) { $direct_request_ids[] = $drid; }
 		}
+
 		$requests = ( $this->job_requests && method_exists( $this->job_requests, 'get_many' ) )
 			? $this->job_requests->get_many( $request_ids )
 			: array();
+
+		// Bulk-fetch direct rows. There's no get_many on
+		// Direct_Booking_Service today, so single SELECT IN(...) here
+		// matches the perf shape of get_many.
+		$direct_rows = array();
+		if ( ! empty( $direct_request_ids ) ) {
+			$direct_request_ids = array_values( array_unique( array_filter( array_map( 'absint', $direct_request_ids ) ) ) );
+			if ( ! empty( $direct_request_ids ) ) {
+				$placeholders = implode( ',', array_fill( 0, count( $direct_request_ids ), '%d' ) );
+				$direct_table = Handik_Booking_App_DB::table( 'direct_booking_requests' );
+				$rows_db = $wpdb->get_results(
+					$wpdb->prepare( "SELECT * FROM {$direct_table} WHERE id IN ({$placeholders})", $direct_request_ids ), // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+					ARRAY_A
+				);
+				foreach ( (array) $rows_db as $r ) {
+					$direct_rows[ (int) $r['id'] ] = $r;
+				}
+			}
+		}
 
 		$contact_ids = array();
 		$address_ids = array();
@@ -431,21 +458,48 @@ class Handik_Booking_App_Admin_Bookings {
 			if ( $cid > 0 ) { $contact_ids[] = $cid; }
 			if ( $aid > 0 ) { $address_ids[] = $aid; }
 		}
+		foreach ( $direct_rows as $dr ) {
+			$cid = (int) ( $dr['contact_id'] ?? 0 );
+			$aid = (int) ( $dr['address_id'] ?? 0 );
+			if ( $cid > 0 ) { $contact_ids[] = $cid; }
+			if ( $aid > 0 ) { $address_ids[] = $aid; }
+		}
 		$contacts  = ( $this->contacts  && method_exists( $this->contacts,  'get_many' ) ) ? $this->contacts->get_many( $contact_ids )   : array();
 		$addresses = ( $this->addresses && method_exists( $this->addresses, 'get_many' ) ) ? $this->addresses->get_many( $address_ids ) : array();
 
 		$out = array();
 		foreach ( $rows as $row ) {
-			$bid = (int) $row['id'];
-			$rid = (int) ( $row['job_request_id'] ?? 0 );
-			$req = $rid && isset( $requests[ $rid ] ) ? $requests[ $rid ] : null;
-			$cid = $req ? (int) ( $req['contact_id'] ?? 0 ) : 0;
-			$aid = $req ? (int) ( $req['address_id'] ?? 0 ) : 0;
-			$out[ $bid ] = array(
-				'request' => $req,
-				'contact' => $cid && isset( $contacts[ $cid ] )   ? $contacts[ $cid ]   : null,
-				'address' => $aid && isset( $addresses[ $aid ] ) ? $addresses[ $aid ] : null,
-			);
+			$bid  = (int) $row['id'];
+			$rid  = (int) ( $row['job_request_id']    ?? 0 );
+			$drid = (int) ( $row['direct_request_id'] ?? 0 );
+			if ( $rid && isset( $requests[ $rid ] ) ) {
+				$req = $requests[ $rid ];
+				$cid = (int) ( $req['contact_id'] ?? 0 );
+				$aid = (int) ( $req['address_id'] ?? 0 );
+				$out[ $bid ] = array(
+					'request'        => $req,
+					'direct_request' => null,
+					'contact'        => $cid && isset( $contacts[ $cid ] )  ? $contacts[ $cid ]  : null,
+					'address'        => $aid && isset( $addresses[ $aid ] ) ? $addresses[ $aid ] : null,
+				);
+			} elseif ( $drid && isset( $direct_rows[ $drid ] ) ) {
+				$dr  = $direct_rows[ $drid ];
+				$cid = (int) ( $dr['contact_id'] ?? 0 );
+				$aid = (int) ( $dr['address_id'] ?? 0 );
+				$out[ $bid ] = array(
+					'request'        => null,
+					'direct_request' => $dr,
+					'contact'        => $cid && isset( $contacts[ $cid ] )  ? $contacts[ $cid ]  : null,
+					'address'        => $aid && isset( $addresses[ $aid ] ) ? $addresses[ $aid ] : null,
+				);
+			} else {
+				$out[ $bid ] = array(
+					'request'        => null,
+					'direct_request' => null,
+					'contact'        => null,
+					'address'        => null,
+				);
+			}
 		}
 		return $out;
 	}
@@ -462,6 +516,7 @@ class Handik_Booking_App_Admin_Bookings {
 	 * @param array<int, array{request: ?array, contact: ?array, address: ?array}>|null      $decorations Bulk decorations keyed by booking id.
 	 */
 	protected function booking_card( array $row, $is_past = false, ?array $decorations = null ) {
+		global $wpdb;
 		$detail_url = Handik_Booking_App_Admin_Helpers::admin_url_for(
 			'handik-booking-app-bookings',
 			array_merge(
@@ -472,19 +527,43 @@ class Handik_Booking_App_Admin_Bookings {
 		if ( null !== $decorations && isset( $decorations[ (int) $row['id'] ] ) ) {
 			$bundle  = $decorations[ (int) $row['id'] ];
 			$request = $bundle['request'];
+			$direct  = $bundle['direct_request'] ?? null;
 			$contact = $bundle['contact'];
 			$address = $bundle['address'];
 		} else {
 			$request = ! empty( $row['job_request_id'] ) && $this->job_requests ? $this->job_requests->get( (int) $row['job_request_id'] ) : null;
-			$contact = ( $request && ! empty( $request['contact_id'] ) && $this->contacts ) ? $this->contacts->get( (int) $request['contact_id'] ) : null;
-			$address = ( $request && ! empty( $request['address_id'] ) && $this->addresses ) ? $this->addresses->get( (int) $request['address_id'] ) : null;
+			$direct  = null;
+			if ( ! $request && ! empty( $row['direct_request_id'] ) ) {
+				global $wpdb;
+				$direct = $wpdb->get_row( $wpdb->prepare(
+					'SELECT * FROM ' . Handik_Booking_App_DB::table( 'direct_booking_requests' ) . ' WHERE id = %d LIMIT 1',
+					(int) $row['direct_request_id']
+				), ARRAY_A );
+			}
+			$contact_id = $request
+				? (int) ( $request['contact_id'] ?? 0 )
+				: ( $direct ? (int) ( $direct['contact_id'] ?? 0 ) : 0 );
+			$address_id = $request
+				? (int) ( $request['address_id'] ?? 0 )
+				: ( $direct ? (int) ( $direct['address_id'] ?? 0 ) : 0 );
+			$contact = ( $contact_id && $this->contacts ) ? $this->contacts->get( $contact_id ) : null;
+			$address = ( $address_id && $this->addresses ) ? $this->addresses->get( $address_id ) : null;
 		}
 
 		$client = $contact ? (string) ( $contact['full_name'] ?? '' ) : __( 'Unknown', 'handik-booking-app' );
-		$task_summary = $request ? Handik_Booking_App_Admin_Helpers::task_summary_text(
-			is_array( $request['selected_tasks'] ?? null ) ? $request['selected_tasks'] : array(),
-			$this->catalog
-		) : '';
+		// Sprint 13.5 — task summary: main-SPA bookings have a list of
+		// catalog task ids; direct bookings only have the preset's
+		// form_title (single label). Fall back to whichever applies.
+		if ( $request ) {
+			$task_summary = Handik_Booking_App_Admin_Helpers::task_summary_text(
+				is_array( $request['selected_tasks'] ?? null ) ? $request['selected_tasks'] : array(),
+				$this->catalog
+			);
+		} elseif ( $direct ) {
+			$task_summary = (string) ( $direct['form_title'] ?? __( 'Direct booking', 'handik-booking-app' ) );
+		} else {
+			$task_summary = '';
+		}
 		$city = Handik_Booking_App_Admin_Helpers::request_city( $request, $address );
 		$status = $this->bookings ? $this->bookings->effective_status( $row ) : (string) ( $row['status'] ?? '' );
 		$when_text = Handik_Booking_App_Admin_Helpers::format_booking_window( $row, 'card' );
@@ -492,6 +571,9 @@ class Handik_Booking_App_Admin_Bookings {
 		$cls = 'handik-admin-booking-card';
 		if ( $is_past ) {
 			$cls .= ' is-past';
+		}
+		if ( $direct ) {
+			$cls .= ' is-direct';
 		}
 
 		ob_start();
@@ -517,6 +599,7 @@ class Handik_Booking_App_Admin_Bookings {
 	 * @param array<int, array{request: ?array, contact: ?array, address: ?array}>|null      $decorations Bulk decorations keyed by booking id (Sprint 7 perf).
 	 */
 	protected function bookings_table_markup( array $upcoming, array $past, ?array $decorations = null ) {
+		global $wpdb;
 		$rows = array_merge( $upcoming, $past );
 
 		ob_start();
@@ -542,15 +625,25 @@ class Handik_Booking_App_Admin_Bookings {
 							'handik-booking-app-bookings',
 							array_merge( array( 'booking_id' => (int) $row['id'] ), $back_params )
 						);
+						$direct = null;
 						if ( null !== $decorations && isset( $decorations[ (int) $row['id'] ] ) ) {
 							$bundle  = $decorations[ (int) $row['id'] ];
 							$request = $bundle['request'];
+							$direct  = $bundle['direct_request'] ?? null;
 							$contact = $bundle['contact'];
 							$address = $bundle['address'];
 						} else {
 							$request = ! empty( $row['job_request_id'] ) && $this->job_requests ? $this->job_requests->get( (int) $row['job_request_id'] ) : null;
-							$contact = ( $request && ! empty( $request['contact_id'] ) && $this->contacts ) ? $this->contacts->get( (int) $request['contact_id'] ) : null;
-							$address = ( $request && ! empty( $request['address_id'] ) && $this->addresses ) ? $this->addresses->get( (int) $request['address_id'] ) : null;
+							if ( ! $request && ! empty( $row['direct_request_id'] ) ) {
+								$direct = $wpdb->get_row( $wpdb->prepare(
+									'SELECT * FROM ' . Handik_Booking_App_DB::table( 'direct_booking_requests' ) . ' WHERE id = %d LIMIT 1',
+									(int) $row['direct_request_id']
+								), ARRAY_A );
+							}
+							$cid = $request ? (int) ( $request['contact_id'] ?? 0 ) : ( $direct ? (int) ( $direct['contact_id'] ?? 0 ) : 0 );
+							$aid = $request ? (int) ( $request['address_id'] ?? 0 ) : ( $direct ? (int) ( $direct['address_id'] ?? 0 ) : 0 );
+							$contact = ( $cid && $this->contacts ) ? $this->contacts->get( $cid ) : null;
+							$address = ( $aid && $this->addresses ) ? $this->addresses->get( $aid ) : null;
 						}
 						$is_past = empty( $row['start_time'] ) || $row['start_time'] < gmdate( 'Y-m-d H:i:s' );
 						if ( $is_past && ! $past_divider_inserted && ! empty( $past ) ) {
@@ -558,7 +651,14 @@ class Handik_Booking_App_Admin_Bookings {
 							$past_divider_inserted = true;
 						}
 						$status = $this->bookings ? $this->bookings->effective_status( $row ) : (string) ( $row['status'] ?? '' );
-						$tasks  = $request ? Handik_Booking_App_Admin_Helpers::task_summary_text( is_array( $request['selected_tasks'] ?? null ) ? $request['selected_tasks'] : array(), $this->catalog ) : '';
+						// Sprint 13.5 — Direct rows show preset title; main rows show task summary.
+						if ( $request ) {
+							$tasks = Handik_Booking_App_Admin_Helpers::task_summary_text( is_array( $request['selected_tasks'] ?? null ) ? $request['selected_tasks'] : array(), $this->catalog );
+						} elseif ( $direct ) {
+							$tasks = (string) ( $direct['form_title'] ?? __( 'Direct booking', 'handik-booking-app' ) );
+						} else {
+							$tasks = '';
+						}
 					?>
 					<tr class="handik-admin-row-link" tabindex="0" data-href="<?php echo esc_url( $detail_url ); ?>">
 						<td><?php echo esc_html( Handik_Booking_App_Admin_Helpers::format_booking_window( $row, 'compact' ) ); ?></td>
@@ -739,6 +839,7 @@ class Handik_Booking_App_Admin_Bookings {
 	}
 
 	protected function render_detail( $booking_id ) {
+		global $wpdb;
 		$booking = $this->bookings ? $this->bookings->get( $booking_id ) : null;
 		if ( ! $booking ) {
 			Handik_Booking_App_Admin_Helpers::page_start( __( 'Booking', 'handik-booking-app' ) );
@@ -747,25 +848,75 @@ class Handik_Booking_App_Admin_Bookings {
 			return;
 		}
 
+		// Sprint 13.5 — direct bookings have no job_request. Resolve
+		// contact + address from the linked direct_booking_requests row
+		// instead, so the detail page renders something useful.
 		$request = ! empty( $booking['job_request_id'] ) && $this->job_requests ? $this->job_requests->get( (int) $booking['job_request_id'] ) : null;
-		$contact = ( $request && ! empty( $request['contact_id'] ) && $this->contacts ) ? $this->contacts->get( (int) $request['contact_id'] ) : null;
-		$address = ( $request && ! empty( $request['address_id'] ) && $this->addresses ) ? $this->addresses->get( (int) $request['address_id'] ) : null;
-		$photos  = is_array( $request['photos'] ?? null ) ? $request['photos'] : array();
+		$direct  = null;
+		if ( ! $request && ! empty( $booking['direct_request_id'] ) ) {
+			$direct = $wpdb->get_row( $wpdb->prepare(
+				'SELECT * FROM ' . Handik_Booking_App_DB::table( 'direct_booking_requests' ) . ' WHERE id = %d LIMIT 1',
+				(int) $booking['direct_request_id']
+			), ARRAY_A );
+		}
+		$contact_id = $request ? (int) ( $request['contact_id'] ?? 0 ) : ( $direct ? (int) ( $direct['contact_id'] ?? 0 ) : 0 );
+		$address_id = $request ? (int) ( $request['address_id'] ?? 0 ) : ( $direct ? (int) ( $direct['address_id'] ?? 0 ) : 0 );
+		$contact = ( $contact_id && $this->contacts ) ? $this->contacts->get( $contact_id ) : null;
+		$address = ( $address_id && $this->addresses ) ? $this->addresses->get( $address_id ) : null;
+		$photos  = is_array( $request['photos'] ?? null ) ? $request['photos'] : array(); // direct bookings have no photos
 		$full_address = Handik_Booking_App_Admin_Helpers::full_request_address( $request, $address );
 
 		echo '<div class="wrap handik-admin-wrap handik-admin-booking-detail">';
 		echo $this->sticky_action_bar_markup( $booking, $contact, $full_address );
 		echo $this->actions_bar_markup( $booking );
 		echo $this->at_a_glance_markup( $booking, $contact, $full_address, $request );
-		echo $this->photos_block_markup( $photos );
-		echo $this->transcript_block_markup( $request, $booking );
-		echo $this->summary_estimate_block_markup( $request );
-		echo $this->tasks_block_markup( $request );
+		// Photos / transcript / summary / tasks blocks all expect a
+		// job_request — for direct rows render a simpler "preset"
+		// block instead so the page isn't broken.
+		if ( $request ) {
+			echo $this->photos_block_markup( $photos );
+			echo $this->transcript_block_markup( $request, $booking );
+			echo $this->summary_estimate_block_markup( $request );
+			echo $this->tasks_block_markup( $request );
+		} elseif ( $direct ) {
+			echo $this->direct_preset_block_markup( $direct );
+		}
 		echo $this->address_block_markup( $full_address );
 		echo $this->technical_block_markup( $request, $booking );
-		echo $this->chat_logs_block_markup( $request, $booking );
+		if ( $request ) {
+			echo $this->chat_logs_block_markup( $request, $booking );
+		}
 		echo $this->danger_zone_markup( $booking );
 		echo '</div>';
+	}
+
+	/**
+	 * Sprint 13.5 — minimal "what was booked" block for direct-form
+	 * rows (no assistant, no photos, no chat). Renders the preset
+	 * title + booking_type + duration so the operator sees what
+	 * service the customer signed up for.
+	 *
+	 * @param array<string, mixed> $direct Row from handik_direct_booking_requests.
+	 * @return string
+	 */
+	protected function direct_preset_block_markup( array $direct ) {
+		ob_start();
+		?>
+		<section class="handik-admin-block">
+			<h2 class="handik-admin-section-title"><?php esc_html_e( 'Service', 'handik-booking-app' ); ?></h2>
+			<?php
+			echo Handik_Booking_App_Admin_Helpers::detail_list_markup( array(
+				__( 'Form preset', 'handik-booking-app' )       => (string) ( $direct['form_title'] ?? '' ),
+				__( 'Booking type', 'handik-booking-app' )      => (string) ( $direct['booking_type'] ?? '' ),
+				__( 'Duration', 'handik-booking-app' )          => ! empty( $direct['duration_minutes'] ) ? ( (int) $direct['duration_minutes'] . ' ' . __( 'min', 'handik-booking-app' ) ) : '',
+				__( 'Source', 'handik-booking-app' )            => 'admin:bookings' === ( $direct['source_url'] ?? '' )
+					? __( 'Admin booking (added on behalf of customer)', 'handik-booking-app' )
+					: __( 'Public direct booking form', 'handik-booking-app' ),
+			) );
+			?>
+		</section>
+		<?php
+		return (string) ob_get_clean();
 	}
 
 	/**
