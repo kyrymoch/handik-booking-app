@@ -500,6 +500,14 @@ class Handik_Booking_App_Admin_Settings {
 					?>
 				</small>
 			</p>
+			<p class="handik-admin-muted" style="margin-top: 16px; padding-top: 12px; border-top: 1px dashed #cbd5e1;">
+				<?php esc_html_e( 'Templates above came in pre-filled when you first activated the plugin. If you’ve been using the plugin since before 2.1.21.4, your saved HTML body is the older bare-paragraph version (since defaults only land on fresh activation). Click below to refresh to the current bundled default — Cal-style structured layout with a checkmark badge, "What / When / Where" rows, and a Reschedule/Cancel button. Your custom edits are overwritten on click.', 'handik-booking-app' ); ?>
+			</p>
+			<p>
+				<button type="submit" class="button" name="handik_action" value="reset_template_customer_confirmation_subject"><?php esc_html_e( 'Reset subject', 'handik-booking-app' ); ?></button>
+				<button type="submit" class="button" name="handik_action" value="reset_template_customer_confirmation_body_html"><?php esc_html_e( 'Reset HTML body', 'handik-booking-app' ); ?></button>
+				<button type="submit" class="button" name="handik_action" value="reset_template_customer_confirmation_body_text"><?php esc_html_e( 'Reset plain-text body', 'handik-booking-app' ); ?></button>
+			</p>
 		<?php $this->section_close(); ?>
 
 		<?php $this->section_open( __( 'Customer cancellation email', 'handik-booking-app' ) ); ?>

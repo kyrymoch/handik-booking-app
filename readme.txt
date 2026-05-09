@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.1.22.0
+Stable tag: 2.1.22.1
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, silent returning-client recognition, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,16 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.1.22.1 =
+* **P0 hotfix — `{{booking_when_long}}` was rendering empty + `.ics` not attaching** in customer-confirmation emails. Owner-reported via real-booking test: subject came through as "Booking confirmed —" (placeholder empty), body said "Your visit is confirmed for ." (also empty), no calendar attachment despite the body promising one.
+* Root cause: Cal embed v2's `bookingSuccessful` event passes data with the start time at `payload.date` (top-level) OR `payload.booking.startTime` (nested), plus a separate `duration` field. The plugin's `flatten_when_single()` was only checking top-level `startTime` / `start` (the Cal **webhook** payload shape), so it returned an empty string. That cascaded: empty `start_iso` → empty `{{booking_when_long}}` → `Ics_Builder::build_single` bails (DTSTART required) → no `.ics` attached. Same bug in `extract_cal_url` (nested `rescheduleUrl`) and `extract_cal_uid` (nested `uid`).
+* Fix in `Notifications_Service`: probe order extended to cover Cal v2 top-level (`date`), nested (`booking.startTime`), AND derive `end_iso` from `start + duration` when only the start ships. `extract_cal_url` + `extract_cal_uid` now also probe inside the nested `booking` object. Verified end-to-end with a 6-case smoke test covering Cal v2 minimal, Cal v2 nested, Cal webhook (regression check), empty payload, and missing-end-with-duration.
+* **P0 also — empty "What we'll be doing:" line.** Direct flow: when the booking preset had no human-readable `label` field, the customer email rendered the section header with no list under it. Now falls back to `payload.eventType.title` / `payload.type` (Cal carries the event-type label there, e.g. "Standard Visit") — same fallback wired for the main SPA flow when `selected_tasks` is empty.
+* **Cal-style branded default template** for `customer_confirmation_body_html`. Replaces the bare-paragraph default with a centered card layout: green checkmark badge at top, "Booking confirmed" heading, structured "What / When / Where" table with each row hidden when its data is empty (no more dangling "Where: " lines), Cal-style "Reschedule or cancel" button using `{{cal_url}}` (renders ONLY when Cal shipped a URL). Three new pre-rendered placeholders make it work: `{{checkmark_block_html}}`, `{{booking_summary_block_html}}`, `{{cal_links_block_html}}`. All three are allow-listed past the HTML-escape pass since they're built with internal escape passes.
+* **"Reset to default" buttons** under the customer-confirmation section. Existing installs (anyone who enabled customer confirmations on 2.1.21.0–2.1.22.0) have an older saved template that won't auto-update — defaults only land on fresh activation. New buttons reset the saved value of subject / HTML body / plain-text body to the bundled current default in one click. Resettable-key allow-list defends against forged forms resetting unrelated settings.
+* New `Settings::reset_to_default( $key )` API. Callable from any code that wants to revert one setting; bypasses sanitize_settings() because the default is already trusted.
+* No DB change, no breaking change, no behaviour change for installs that haven't enabled customer confirmations.
 
 = 2.1.22.0 =
 * **Sprint 14c — cancellation + reschedule emails.** When Cal.com webhooks a cancellation or time change, the plugin now sends customer + owner emails about it (separate toggles, both default OFF). Customer side gets a branded HTML email with proper RFC 5546 .ics attachment so the booking is removed from / updated in their calendar on import. Owner side gets a plain-text "Cancelled / Rescheduled — Jane on Tue" notification.
