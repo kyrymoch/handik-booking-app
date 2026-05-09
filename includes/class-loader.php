@@ -37,6 +37,7 @@ class Handik_Booking_App_Loader {
 			'includes/services/class-chatkit-service.php',
 			'includes/services/class-updater-service.php',
 			'includes/services/class-webhook-service.php',
+			'includes/services/class-ics-builder.php',
 			'includes/services/class-notifications-service.php',
 			'includes/forms/class-forms-helpers.php',
 			'includes/forms/class-cal-api-service.php',

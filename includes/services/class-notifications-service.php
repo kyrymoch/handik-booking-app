@@ -181,32 +181,482 @@ class Handik_Booking_App_Notifications_Service {
 	}
 
 	/**
-	 * Day 2 wires the real send pipeline (multipart/alternative HTML +
-	 * plain-text body, .ics attachment, wp_mail filter lifecycle). For
-	 * now this is a stub so Day 1 can ship the skeleton + idempotency
-	 * lock without sending anything.
+	 * Send the branded customer-confirmation email.
+	 *
+	 * Builds subject + HTML body + plain-text body from the admin
+	 * templates (with `{{placeholder}}` substitution), generates a
+	 * .ics attachment via Ics_Builder, and ships through `wp_mail`
+	 * configured for multipart/alternative. The plain-text alternative
+	 * is set on the PHPMailer instance via `phpmailer_init` so clients
+	 * that block HTML still see the message.
+	 *
+	 * Filter lifecycle is wrapped in try/finally so other plugins'
+	 * wp_mail hooks aren't disturbed if our send throws.
+	 *
+	 * On wp_mail returning false:
+	 *   - logs an error with the recipient + source for triage
+	 *   - persists `LAST_EMAIL_ERROR_OPTION` (System info will surface
+	 *     this in 14b)
+	 *   - returns false so the caller releases the idempotency stamp
+	 *     (allowing a manual retry via the admin "Resend" path that
+	 *     Sprint 14b will add)
 	 *
 	 * @param array<string, mixed> $context        Booking context.
 	 * @param string               $customer_email Sanitized recipient.
-	 * @return bool True on send success (so the idempotency stamp stays).
+	 * @return bool True iff wp_mail accepted the message.
 	 */
 	protected function send_customer_confirmation( array $context, $customer_email ) {
+		$placeholders = $this->build_placeholders( $context );
+
+		$subject_template = (string) $this->settings->get( 'customer_confirmation_subject', '' );
+		$html_template    = (string) $this->settings->get( 'customer_confirmation_body_html', '' );
+		$text_template    = (string) $this->settings->get( 'customer_confirmation_body_text', '' );
+
+		$subject = Handik_Booking_App_Admin_Helpers::render_template( $subject_template, $placeholders );
+		$html    = Handik_Booking_App_Admin_Helpers::render_template( $html_template, $placeholders );
+		$text    = Handik_Booking_App_Admin_Helpers::render_template( $text_template, $placeholders );
+
+		// Plain-text bodies should wrap at 78 octets (RFC 5322) — long
+		// auto-generated lines render badly in legacy clients.
+		$text = wordwrap( $text, 78, "\n", false );
+
+		$ics_path = $this->write_ics_temp_file( $context );
+
+		$from_name    = trim( (string) $this->settings->get( 'email_from_name', '' ) );
+		$from_address = sanitize_email( (string) $this->settings->get( 'email_from_address', '' ) );
+		$reply_to     = sanitize_email( (string) $this->settings->get( 'customer_confirmation_reply_to', '' ) );
+		if ( '' === $reply_to ) {
+			$reply_to = $from_address;
+		}
+
+		$headers = array( 'Content-Type: text/html; charset=UTF-8' );
+		if ( '' !== $from_address ) {
+			$from_label = '' !== $from_name
+				? sprintf( '%s <%s>', $from_name, $from_address )
+				: $from_address;
+			$headers[] = 'From: ' . $from_label;
+		}
+		if ( '' !== $reply_to ) {
+			$headers[] = 'Reply-To: ' . $reply_to;
+		}
+
+		$attachments = ( '' !== $ics_path && file_exists( $ics_path ) ) ? array( $ics_path ) : array();
+
+		// Filter callbacks live in closures so they reference the right
+		// $text body without bleeding via $this. Both register before
+		// wp_mail and remove() inside finally so failure can't leak them.
+		$content_type_cb = static function () {
+			return 'text/html';
+		};
+		$altbody_cb = static function ( $phpmailer ) use ( $text ) {
+			$phpmailer->AltBody = $text; // phpcs:ignore WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+		};
+		// Tag the .ics attachment with the right Content-Type so calendar
+		// apps render it as an invite instead of a generic file. Without
+		// this Outlook + Apple Mail show "ics file" as a download icon.
+		$ics_filename = '' !== $ics_path ? basename( $ics_path ) : '';
+		$attachment_cb = static function ( $phpmailer ) use ( $ics_filename ) {
+			if ( '' === $ics_filename ) {
+				return;
+			}
+			$attachments = $phpmailer->getAttachments();
+			$rebuilt     = array();
+			$phpmailer->clearAttachments();
+			foreach ( $attachments as $attachment ) {
+				// PHPMailer's getAttachments() returns an indexed array per attachment:
+				// 0:path, 1:filename, 2:name (basename), 3:encoding, 4:type, 5:isStringAttachment, 6:disposition, 7:CID
+				$path     = $attachment[0];
+				$filename = $attachment[2];
+				if ( $filename === $ics_filename ) {
+					$phpmailer->addAttachment(
+						$path,
+						$filename,
+						'base64',
+						'text/calendar; charset=UTF-8; method=REQUEST',
+						'attachment'
+					);
+				} else {
+					$phpmailer->addAttachment(
+						$path,
+						$filename,
+						$attachment[3],
+						$attachment[4],
+						$attachment[6]
+					);
+				}
+				$rebuilt[] = $filename;
+			}
+		};
+
+		add_filter( 'wp_mail_content_type', $content_type_cb, PHP_INT_MAX );
+		add_action( 'phpmailer_init', $altbody_cb, PHP_INT_MAX );
+		if ( '' !== $ics_filename ) {
+			// Run AFTER wp_mail's own attachment processing — PHPMailer
+			// adds attachments before phpmailer_init fires, so this
+			// callback (also at PHP_INT_MAX, but registered after the
+			// AltBody one) re-attaches the .ics with the right MIME
+			// type. Order between same-priority callbacks is insertion
+			// order in WP.
+			add_action( 'phpmailer_init', $attachment_cb, PHP_INT_MAX );
+		}
+
+		$sent = false;
+		try {
+			$sent = (bool) wp_mail( $customer_email, $subject, $html, $headers, $attachments );
+		} catch ( \Throwable $e ) {
+			$sent = false;
+			if ( $this->logger ) {
+				$this->logger->error(
+					'Notifications: wp_mail threw.',
+					array(
+						'source'    => $context['source'] ?? '',
+						'recipient' => $customer_email,
+						'message'   => $e->getMessage(),
+					)
+				);
+			}
+		} finally {
+			remove_filter( 'wp_mail_content_type', $content_type_cb, PHP_INT_MAX );
+			remove_action( 'phpmailer_init', $altbody_cb, PHP_INT_MAX );
+			if ( '' !== $ics_filename ) {
+				remove_action( 'phpmailer_init', $attachment_cb, PHP_INT_MAX );
+			}
+			if ( '' !== $ics_path && file_exists( $ics_path ) ) {
+				@unlink( $ics_path ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
+			}
+		}
+
+		if ( ! $sent ) {
+			update_option(
+				'handik_booking_app_last_email_error',
+				array(
+					'time'    => time(),
+					'message' => 'wp_mail returned false',
+					'context' => array(
+						'request_id' => (int) ( $context['request_id'] ?? 0 ),
+						'source'     => (string) ( $context['source'] ?? '' ),
+						'to'         => $customer_email,
+					),
+				),
+				false
+			);
+			if ( $this->logger ) {
+				$this->logger->error(
+					'Notifications: wp_mail returned false.',
+					array(
+						'source'    => $context['source'] ?? '',
+						'recipient' => $customer_email,
+					)
+				);
+			}
+			return false;
+		}
+
+		// Clear any prior error now that we've sent successfully.
+		delete_option( 'handik_booking_app_last_email_error' );
+
 		if ( $this->logger ) {
 			$this->logger->info(
-				'Notifications: customer-confirmation send path stub (Day 1 — real send lands in Day 2).',
+				'Notifications: customer confirmation sent.',
 				array(
-					'source'        => $context['source'] ?? '',
-					'recipient'     => $customer_email,
-					'request_id'    => $context['request_id'] ?? 0,
+					'source'          => $context['source'] ?? '',
+					'request_id'      => $context['request_id'] ?? 0,
+					'recipient'       => $customer_email,
 					'cal_booking_uid' => $context['cal_booking_uid'] ?? '',
 				)
 			);
 		}
-		// Pretend the send succeeded so the idempotency stamp stays — Day 1
-		// is about getting the action plumbing in place, not about producing
-		// real customer-visible email. The master toggle defaults to OFF so
-		// production sites won't reach this path until Day 2 is shipped.
 		return true;
+	}
+
+	/**
+	 * @param array<string, mixed> $context Booking context.
+	 * @return array<string, string>
+	 */
+	protected function build_placeholders( array $context ) {
+		$contact = isset( $context['contact'] ) && is_array( $context['contact'] ) ? $context['contact'] : array();
+		$address = isset( $context['address'] ) && is_array( $context['address'] ) ? $context['address'] : array();
+		$tasks   = isset( $context['tasks'] ) && is_array( $context['tasks'] ) ? $context['tasks'] : array();
+		$when    = isset( $context['when'] ) && is_array( $context['when'] ) ? $context['when'] : array();
+		$source  = (string) ( $context['source'] ?? '' );
+
+		$customer_name = '' !== (string) ( $contact['full_name'] ?? '' )
+			? (string) $contact['full_name']
+			: __( 'there', 'handik-booking-app' );
+
+		$address_line = $this->format_address( $address );
+
+		// Project flow has `when.days[]`; cal/direct have `when.start_iso`.
+		$is_project    = 'project' === $source;
+		$booking_when      = '';
+		$booking_when_long = '';
+		$days_list_html    = '';
+		$days_list_text    = '';
+		$days_count        = 0;
+		if ( $is_project ) {
+			$days = isset( $when['days'] ) && is_array( $when['days'] ) ? $when['days'] : array();
+			$days_count    = count( $days );
+			$days_list_html = '<ol>';
+			$days_text_lines = array();
+			foreach ( $days as $day ) {
+				$start = (string) ( $day['start_iso'] ?? '' );
+				$end   = (string) ( $day['end_iso'] ?? '' );
+				$line  = $this->format_when_long( $start, $end );
+				$days_list_html .= '<li>' . esc_html( $line ) . '</li>';
+				$days_text_lines[] = '- ' . $line;
+			}
+			$days_list_html .= '</ol>';
+			$days_list_text = implode( "\n", $days_text_lines );
+			// First day stands in for the singular {{booking_when}}.
+			$first = $days_count > 0 ? $days[0] : null;
+			if ( $first ) {
+				$booking_when      = $this->format_when_short( (string) ( $first['start_iso'] ?? '' ) );
+				$booking_when_long = $this->format_when_long( (string) ( $first['start_iso'] ?? '' ), (string) ( $first['end_iso'] ?? '' ) );
+			}
+		} else {
+			$booking_when      = $this->format_when_short( (string) ( $when['start_iso'] ?? '' ) );
+			$booking_when_long = $this->format_when_long( (string) ( $when['start_iso'] ?? '' ), (string) ( $when['end_iso'] ?? '' ) );
+		}
+
+		$tasks_html_parts = array();
+		$tasks_text_parts = array();
+		foreach ( $tasks as $task ) {
+			$label = (string) ( $task['label'] ?? '' );
+			if ( '' === $label ) {
+				continue;
+			}
+			$tasks_html_parts[] = '<li>' . esc_html( $label ) . '</li>';
+			$tasks_text_parts[] = '- ' . $label;
+		}
+		$tasks_list_html = empty( $tasks_html_parts )
+			? ''
+			: '<ul>' . implode( '', $tasks_html_parts ) . '</ul>';
+		$tasks_list_text = implode( "\n", $tasks_text_parts );
+
+		return array(
+			'customer_name'        => $customer_name,
+			'booking_when'         => $booking_when,
+			'booking_when_long'    => $booking_when_long,
+			'address'              => $address_line,
+			'tasks_list_html'      => $tasks_list_html,
+			'tasks_list_text'      => $tasks_list_text,
+			'cal_url'              => (string) ( $context['booking_url'] ?? '' ),
+			'restart_url'          => (string) ( $context['restart_url'] ?? '' ),
+			'site_name'            => (string) get_bloginfo( 'name' ),
+			'from_name'            => (string) $this->settings->get( 'email_from_name', '' ),
+			'site_url'             => (string) home_url( '/' ),
+			'operator_first_name'  => (string) $this->settings->get( 'operator_first_name', 'Alex' ),
+			'days_list_html'       => $days_list_html,
+			'days_list_text'       => $days_list_text,
+			'days_count'           => (string) $days_count,
+		);
+	}
+
+	/**
+	 * @param array<string, mixed> $address Flattened address.
+	 * @return string Single-line address with optional unit.
+	 */
+	protected function format_address( array $address ) {
+		$full = trim( (string) ( $address['address_full'] ?? '' ) );
+		$unit = trim( (string) ( $address['address_unit'] ?? '' ) );
+		if ( '' === $full ) {
+			return '';
+		}
+		if ( '' !== $unit ) {
+			return sprintf( '%s, Unit %s', $full, $unit );
+		}
+		return $full;
+	}
+
+	/**
+	 * @param string $start_iso ISO 8601 datetime.
+	 * @return string e.g. "Mon, Jan 15 · 2:00 PM"
+	 */
+	protected function format_when_short( $start_iso ) {
+		$ts = $this->iso_to_timestamp( $start_iso );
+		if ( ! $ts ) {
+			return '';
+		}
+		// Site timezone — owner-configured tz wins over server tz.
+		return wp_date( 'D, M j · g:i A', $ts );
+	}
+
+	/**
+	 * @param string $start_iso ISO 8601 datetime.
+	 * @param string $end_iso   ISO 8601 datetime.
+	 * @return string e.g. "Monday, January 15, 2026 · 2:00 PM – 4:00 PM ET"
+	 */
+	protected function format_when_long( $start_iso, $end_iso ) {
+		$start_ts = $this->iso_to_timestamp( $start_iso );
+		if ( ! $start_ts ) {
+			return '';
+		}
+		$end_ts = $this->iso_to_timestamp( $end_iso );
+		$tz_abbr = wp_date( 'T', $start_ts );
+		if ( $end_ts && $end_ts > $start_ts ) {
+			return sprintf(
+				'%s · %s – %s %s',
+				wp_date( 'l, F j, Y', $start_ts ),
+				wp_date( 'g:i A', $start_ts ),
+				wp_date( 'g:i A', $end_ts ),
+				$tz_abbr
+			);
+		}
+		return sprintf(
+			'%s · %s %s',
+			wp_date( 'l, F j, Y', $start_ts ),
+			wp_date( 'g:i A', $start_ts ),
+			$tz_abbr
+		);
+	}
+
+	/**
+	 * @param string $iso ISO 8601 datetime.
+	 * @return int|false Unix timestamp or false on parse failure.
+	 */
+	protected function iso_to_timestamp( $iso ) {
+		if ( '' === (string) $iso ) {
+			return false;
+		}
+		try {
+			$dt = new DateTimeImmutable( $iso );
+		} catch ( \Exception $e ) {
+			return false;
+		}
+		return $dt->getTimestamp();
+	}
+
+	/**
+	 * Write the booking's .ics to a temp file. Returns the path or '' if
+	 * we couldn't produce one (e.g. payload missing dtstart). Caller is
+	 * responsible for unlinking after wp_mail returns.
+	 *
+	 * @param array<string, mixed> $context Booking context.
+	 * @return string Absolute path or ''.
+	 */
+	protected function write_ics_temp_file( array $context ) {
+		if ( ! class_exists( 'Handik_Booking_App_Ics_Builder' ) ) {
+			return '';
+		}
+
+		$contact      = isset( $context['contact'] ) && is_array( $context['contact'] ) ? $context['contact'] : array();
+		$address_line = $this->format_address( isset( $context['address'] ) && is_array( $context['address'] ) ? $context['address'] : array() );
+		$source       = (string) ( $context['source'] ?? '' );
+		$site_host    = (string) wp_parse_url( home_url(), PHP_URL_HOST );
+		if ( '' === $site_host ) {
+			$site_host = 'handik.local';
+		}
+
+		$organizer_email = sanitize_email( (string) $this->settings->get( 'email_from_address', '' ) );
+		$organizer_name  = trim( (string) $this->settings->get( 'email_from_name', '' ) );
+		$attendee_email  = sanitize_email( (string) ( $contact['email'] ?? '' ) );
+		$attendee_name   = (string) ( $contact['full_name'] ?? '' );
+
+		$tasks       = isset( $context['tasks'] ) && is_array( $context['tasks'] ) ? $context['tasks'] : array();
+		$task_labels = array();
+		foreach ( $tasks as $task ) {
+			$label = (string) ( $task['label'] ?? '' );
+			if ( '' !== $label ) {
+				$task_labels[] = $label;
+			}
+		}
+		$summary_suffix = ! empty( $task_labels ) ? ' · ' . implode( ', ', $task_labels ) : '';
+
+		$ics = '';
+		if ( 'project' === $source ) {
+			$days = isset( $context['when']['days'] ) && is_array( $context['when']['days'] ) ? $context['when']['days'] : array();
+			$events = array();
+			foreach ( $days as $day ) {
+				$day_index = (int) ( $day['day_index'] ?? 0 );
+				$events[]  = array(
+					'uid'             => sprintf(
+						'handik-project-%d-day-%d@%s',
+						(int) ( $context['request_id'] ?? 0 ),
+						$day_index,
+						$site_host
+					),
+					'summary'         => 'Handik visit' . $summary_suffix . ( $day_index ? ' (day ' . $day_index . ')' : '' ),
+					'description'     => $this->build_ics_description( $context ),
+					'location'        => $address_line,
+					'dtstart_iso'     => (string) ( $day['start_iso'] ?? '' ),
+					'dtend_iso'       => (string) ( $day['end_iso'] ?? '' ),
+					'organizer_name'  => $organizer_name,
+					'organizer_email' => $organizer_email,
+					'attendee_name'   => $attendee_name,
+					'attendee_email'  => $attendee_email,
+				);
+			}
+			$ics = Handik_Booking_App_Ics_Builder::build_multi( $events );
+		} else {
+			$when = isset( $context['when'] ) && is_array( $context['when'] ) ? $context['when'] : array();
+			$cal_uid = (string) ( $context['cal_booking_uid'] ?? '' );
+			$uid     = '' !== $cal_uid
+				? 'handik-booking-' . $cal_uid . '@' . $site_host
+				: 'handik-booking-' . (int) ( $context['request_id'] ?? 0 ) . '@' . $site_host;
+			$ics = Handik_Booking_App_Ics_Builder::build_single( array(
+				'uid'             => $uid,
+				'summary'         => 'Handik visit' . $summary_suffix,
+				'description'     => $this->build_ics_description( $context ),
+				'location'        => $address_line,
+				'dtstart_iso'     => (string) ( $when['start_iso'] ?? '' ),
+				'dtend_iso'       => (string) ( $when['end_iso'] ?? '' ),
+				'organizer_name'  => $organizer_name,
+				'organizer_email' => $organizer_email,
+				'attendee_name'   => $attendee_name,
+				'attendee_email'  => $attendee_email,
+			) );
+		}
+
+		if ( '' === $ics ) {
+			return '';
+		}
+
+		$tmp_dir = sys_get_temp_dir();
+		$path    = wp_tempnam( 'handik-booking-' . wp_generate_uuid4() . '.ics', $tmp_dir );
+		if ( ! $path ) {
+			return '';
+		}
+		// wp_tempnam returns a path with no extension; rename to .ics so
+		// PHPMailer + downstream clients see the file extension when
+		// inspecting the attachment metadata.
+		$ics_path = $path . '.ics';
+		if ( ! rename( $path, $ics_path ) ) {
+			$ics_path = $path;
+		}
+		$bytes = file_put_contents( $ics_path, $ics ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents
+		if ( false === $bytes ) {
+			@unlink( $ics_path ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
+			return '';
+		}
+		return $ics_path;
+	}
+
+	/**
+	 * @param array<string, mixed> $context Booking context.
+	 * @return string Body for the .ics DESCRIPTION property.
+	 */
+	protected function build_ics_description( array $context ) {
+		$parts = array();
+		$tasks = isset( $context['tasks'] ) && is_array( $context['tasks'] ) ? $context['tasks'] : array();
+		$labels = array();
+		foreach ( $tasks as $task ) {
+			$label = (string) ( $task['label'] ?? '' );
+			if ( '' !== $label ) {
+				$labels[] = $label;
+			}
+		}
+		if ( ! empty( $labels ) ) {
+			$parts[] = 'Tasks: ' . implode( ', ', $labels );
+		}
+		$address = $this->format_address( isset( $context['address'] ) && is_array( $context['address'] ) ? $context['address'] : array() );
+		if ( '' !== $address ) {
+			$parts[] = 'Address: ' . $address;
+		}
+		$cal_url = (string) ( $context['booking_url'] ?? '' );
+		if ( '' !== $cal_url ) {
+			$parts[] = 'Reschedule / cancel: ' . $cal_url;
+		}
+		return implode( "\n", $parts );
 	}
 
 	/**

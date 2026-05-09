@@ -684,10 +684,8 @@ class Handik_Booking_App_Auth_Service {
 			$subject = '' !== $subject_template ? $subject_template : $default_subject;
 			$body    = '' !== $body_template    ? $body_template    : $default_body;
 
-			foreach ( $placeholders as $key => $value ) {
-				$subject = str_replace( '{{' . $key . '}}', (string) $value, $subject );
-				$body    = str_replace( '{{' . $key . '}}', (string) $value, $body );
-			}
+			$subject = Handik_Booking_App_Admin_Helpers::render_template( $subject, $placeholders );
+			$body    = Handik_Booking_App_Admin_Helpers::render_template( $body, $placeholders );
 
 			wp_mail( $email, $subject, $body );
 			remove_filter( 'wp_mail_from', array( $this, 'mail_from' ) );
