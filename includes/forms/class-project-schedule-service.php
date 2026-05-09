@@ -624,6 +624,13 @@ class Handik_Booking_App_Project_Schedule_Service {
 			);
 		}
 
+		// Sprint 14a — single email per schedule (not per day); the
+		// .ics attachment carries one VEVENT per day so the customer
+		// gets the full picture in one calendar invite.
+		if ( class_exists( 'Handik_Booking_App_Notifications_Service' ) ) {
+			Handik_Booking_App_Notifications_Service::dispatch_for_project( (int) $schedule_id );
+		}
+
 		return array( 'success' => true, 'status' => self::STATUS_CONFIRMED );
 	}
 

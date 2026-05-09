@@ -521,6 +521,18 @@ class Handik_Booking_App_Direct_Booking_Service {
 				)
 			);
 		}
+
+		// Sprint 14a — fire the booking-confirmed action. We're inside the
+		// OPENED → BOOKED branch (not the early-return idempotent BOOKED
+		// branch), so this is the unique "first time we noticed this
+		// booking happened" code path. The atomic UPDATE on
+		// `confirmation_email_sent_at` inside Notifications_Service still
+		// dedupes against the parallel webhook-side dispatch_direct path
+		// that also calls upsert_from_direct_capture — whichever path
+		// reaches the email send first wins.
+		if ( class_exists( 'Handik_Booking_App_Notifications_Service' ) ) {
+			Handik_Booking_App_Notifications_Service::dispatch_for_direct( (int) $request_id, $payload );
+		}
 		return array( 'success' => true );
 	}
 
