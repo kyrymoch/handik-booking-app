@@ -176,6 +176,159 @@ class Handik_Booking_App_Direct_Booking_Service {
 	}
 
 	/**
+	 * Sprint 13 — admin-initiated direct booking submission. Owner uses
+	 * the same flow as the public Additional Forms direct-booking
+	 * preset, but from `wp-admin` so they can book on behalf of an
+	 * existing customer (e.g. a phone-call repeat customer who doesn't
+	 * want to type into the public form themselves).
+	 *
+	 * Differences from `submit()`:
+	 *   - Accepts `contact_id` (use existing) instead of upserting one.
+	 *     Skips name/phone/email validation in that branch — the contact
+	 *     already exists.
+	 *   - Accepts `address_id` (use existing) instead of syncing.
+	 *   - Tags `source_url='admin:bookings'` and `client_type='admin_initiated'`
+	 *     so the row can be filtered out of public stats / abandoned-
+	 *     cart cron.
+	 *
+	 * The webhook dispatcher (`Webhook_Service::dispatch_direct`) will
+	 * pick up the resulting Cal booking by `metadata.handik_direct_request_id`
+	 * exactly the same way as a public submission — no webhook changes
+	 * needed.
+	 *
+	 * @param string               $slug    Preset slug.
+	 * @param array<string, mixed> $payload Admin form payload. Must
+	 *                                       include either `contact_id`
+	 *                                       OR (full_name + phone), and
+	 *                                       either `address_id` OR
+	 *                                       `address_full`.
+	 * @return array{request_id?: int, cal_booking_url?: string, error?: string, status?: int}
+	 */
+	public function admin_submit( $slug, array $payload ) {
+		$preset = $this->presets->find_by_slug( $slug );
+		if ( ! $preset || empty( $preset['enabled'] ) || self::form_type( $preset ) !== Handik_Booking_App_Booking_Presets_Service::FORM_TYPE_DIRECT ) {
+			return array(
+				'error'  => __( 'This booking form is not available right now.', 'handik-booking-app' ),
+				'status' => 404,
+			);
+		}
+
+		// 1. Resolve contact — existing or new.
+		$contact_id = isset( $payload['contact_id'] ) ? absint( $payload['contact_id'] ) : 0;
+		if ( $contact_id > 0 ) {
+			$existing = $this->contacts->get( $contact_id );
+			if ( ! $existing ) {
+				return array(
+					'error'  => __( 'Selected contact no longer exists.', 'handik-booking-app' ),
+					'status' => 404,
+				);
+			}
+		} else {
+			$contact_payload = array(
+				'full_name' => isset( $payload['full_name'] ) ? sanitize_text_field( (string) $payload['full_name'] ) : '',
+				'phone'     => isset( $payload['phone'] ) ? sanitize_text_field( (string) $payload['phone'] ) : '',
+				'email'     => isset( $payload['email'] ) ? sanitize_email( (string) $payload['email'] ) : '',
+				'source'    => 'admin_direct_booking',
+			);
+			if ( '' === $contact_payload['full_name'] ) {
+				return array( 'error' => __( 'Please enter the customer\'s full name.', 'handik-booking-app' ), 'status' => 400 );
+			}
+			if ( '' === $contact_payload['phone'] ) {
+				return array( 'error' => __( 'Please enter the customer\'s phone number.', 'handik-booking-app' ), 'status' => 400 );
+			}
+			$contact_id = (int) $this->contacts->upsert( $contact_payload );
+			if ( ! $contact_id ) {
+				return array( 'error' => __( 'Could not save contact details.', 'handik-booking-app' ), 'status' => 500 );
+			}
+		}
+
+		// 2. Resolve address — existing or new.
+		$address_id   = isset( $payload['address_id'] ) ? absint( $payload['address_id'] ) : 0;
+		$address_full = '';
+		$address_unit = '';
+		if ( $address_id > 0 ) {
+			$existing_addr = $this->addresses->get( $address_id );
+			if ( ! $existing_addr || (int) $existing_addr['contact_id'] !== $contact_id ) {
+				return array(
+					'error'  => __( 'Selected address does not belong to that contact.', 'handik-booking-app' ),
+					'status' => 400,
+				);
+			}
+			$address_full = (string) ( $existing_addr['address_full'] ?? '' );
+			$address_unit = (string) ( $existing_addr['address_unit'] ?? '' );
+		} else {
+			$address_full = isset( $payload['address_full'] ) ? sanitize_textarea_field( (string) $payload['address_full'] ) : '';
+			$address_full = $this->normalize_address_country( $address_full );
+			if ( '' === $address_full ) {
+				return array( 'error' => __( 'Please enter the address.', 'handik-booking-app' ), 'status' => 400 );
+			}
+			$address_unit = isset( $payload['address_unit'] ) ? sanitize_text_field( (string) $payload['address_unit'] ) : '';
+			$address_id = (int) $this->addresses->sync(
+				$contact_id,
+				array(
+					'address_full' => $address_full,
+					'address_unit' => $address_unit,
+					'is_default'   => 1,
+				)
+			);
+			if ( $address_id <= 0 ) {
+				return array( 'error' => __( 'Could not save the address.', 'handik-booking-app' ), 'status' => 500 );
+			}
+		}
+
+		// 3. Insert direct_booking_request, build Cal URL — same shape
+		//    as public submit() so the webhook flow is identical.
+		global $wpdb;
+		$table = Handik_Booking_App_DB::table( 'direct_booking_requests' );
+		$capture_token = wp_generate_password( 32, false, false );
+		$row = array(
+			'contact_id'       => $contact_id,
+			'address_id'       => $address_id,
+			'preset_slug'      => (string) $preset['preset_slug'],
+			'form_title'       => (string) $preset['form_title'],
+			'booking_type'     => (string) $preset['booking_type'],
+			'duration_minutes' => (int) $preset['duration_minutes'],
+			'status'           => self::STATUS_READY,
+			'source_url'       => 'admin:bookings',
+			'client_type'      => 'admin_initiated',
+			'client_ip'        => Handik_Booking_App_Forms_Helpers::client_ip_packed(),
+			'capture_token'    => $capture_token,
+		);
+		$wpdb->insert( $table, $row );
+		$request_id = (int) $wpdb->insert_id;
+		if ( ! $request_id ) {
+			return array( 'error' => __( 'Could not save the request.', 'handik-booking-app' ), 'status' => 500 );
+		}
+
+		$contact = $this->contacts->get( $contact_id );
+		$cal_url = $this->build_cal_url( $request_id, $preset, $contact, $address_full, $address_unit );
+		if ( '' !== $cal_url ) {
+			$wpdb->update(
+				$table,
+				array( 'cal_booking_url' => $cal_url, 'status' => self::STATUS_OPENED ),
+				array( 'id' => $request_id )
+			);
+		}
+
+		if ( $this->logger ) {
+			$this->logger->info( 'Admin direct booking form submitted.', array(
+				'request_id'  => $request_id,
+				'contact_id'  => $contact_id,
+				'address_id'  => $address_id,
+				'preset_slug' => $preset['preset_slug'],
+				'admin_id'    => function_exists( 'get_current_user_id' ) ? get_current_user_id() : 0,
+			) );
+		}
+
+		return array(
+			'request_id'      => $request_id,
+			'cal_booking_url' => $cal_url,
+			'preset_slug'     => $preset['preset_slug'],
+			'capture_token'   => $capture_token,
+		);
+	}
+
+	/**
 	 * Called by the SPA when Cal.com's onBookingSuccessful fires.
 	 *
 	 * Security:

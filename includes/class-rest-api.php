@@ -31,8 +31,12 @@ class Handik_Booking_App_REST_API {
 	protected $service_catalog;
 	/** @var Handik_Booking_App_Cascade_Delete_Service|null */
 	protected $cascade_delete;
+	/** @var Handik_Booking_App_Direct_Booking_Service|null */
+	protected $direct_booking;
+	/** @var Handik_Booking_App_Booking_Presets_Service|null */
+	protected $booking_presets;
 
-	public function __construct( $app, $auth, $chatkit, $webhook, $messages = null, $bookings = null, $contacts = null, $addresses = null, $settings = null, $logger = null, $job_requests = null, $service_catalog = null, $cascade_delete = null ) {
+	public function __construct( $app, $auth, $chatkit, $webhook, $messages = null, $bookings = null, $contacts = null, $addresses = null, $settings = null, $logger = null, $job_requests = null, $service_catalog = null, $cascade_delete = null, $direct_booking = null, $booking_presets = null ) {
 		$this->app             = $app;
 		$this->auth            = $auth;
 		$this->chatkit         = $chatkit;
@@ -46,6 +50,8 @@ class Handik_Booking_App_REST_API {
 		$this->job_requests    = $job_requests;
 		$this->service_catalog = $service_catalog;
 		$this->cascade_delete  = $cascade_delete;
+		$this->direct_booking  = $direct_booking;
+		$this->booking_presets = $booking_presets;
 
 		add_action( 'rest_api_init', array( $this, 'register_routes' ) );
 	}
@@ -121,6 +127,22 @@ class Handik_Booking_App_REST_API {
 			'methods'             => WP_REST_Server::DELETABLE,
 			'callback'            => array( $this, 'admin_booking_delete' ),
 			'permission_callback' => array( $this, 'admin_delete_permission' ),
+		) );
+		// Sprint 13 — admin-initiated direct booking. Accepts the same
+		// shape the public form sends but supports `contact_id` /
+		// `address_id` shortcuts so the admin can book on behalf of an
+		// existing customer without re-typing.
+		register_rest_route( $namespace, '/admin/booking/new', array(
+			'methods'             => WP_REST_Server::CREATABLE,
+			'callback'            => array( $this, 'admin_booking_new' ),
+			'permission_callback' => array( $this, 'admin_permission' ),
+		) );
+		// Contact autocomplete for the Add-Booking form: search by name
+		// fragment / phone digits / email prefix. Returns up to 10 hits.
+		register_rest_route( $namespace, '/admin/contact/search', array(
+			'methods'             => WP_REST_Server::READABLE,
+			'callback'            => array( $this, 'admin_contact_search' ),
+			'permission_callback' => array( $this, 'admin_permission' ),
 		) );
 		register_rest_route( $namespace, '/admin/address/(?P<id>\d+)', array(
 			'methods'             => WP_REST_Server::EDITABLE,
@@ -544,6 +566,96 @@ class Handik_Booking_App_REST_API {
 			'success' => true,
 			'summary' => $res['summary'] ?? array(),
 		) );
+	}
+
+	/**
+	 * Sprint 13 — admin booking creation. Forwards the form payload
+	 * to Direct_Booking_Service::admin_submit(), which handles both
+	 * "use existing contact" (contact_id + address_id shortcuts) and
+	 * "book a brand-new walk-in" (full_name + phone + address_full)
+	 * paths. Returns the same shape as the public submit so the admin
+	 * JS can mount the Cal embed identically.
+	 */
+	public function admin_booking_new( WP_REST_Request $request ) {
+		if ( ! $this->direct_booking ) {
+			return $this->admin_unavailable();
+		}
+		$body = $request->get_json_params();
+		if ( ! is_array( $body ) ) {
+			$body = $request->get_params();
+		}
+		$slug = isset( $body['preset_slug'] ) ? sanitize_title( (string) $body['preset_slug'] ) : '';
+		if ( '' === $slug ) {
+			return new WP_Error(
+				'handik_admin_no_preset',
+				__( 'Pick a booking preset first.', 'handik-booking-app' ),
+				array( 'status' => 400 )
+			);
+		}
+		$res = $this->direct_booking->admin_submit( $slug, $body );
+		if ( ! empty( $res['error'] ) ) {
+			$status = (int) ( $res['status'] ?? 400 );
+			return new WP_Error( 'handik_admin_book_failed', $res['error'], array( 'status' => $status ) );
+		}
+		return rest_ensure_response( array(
+			'success'         => true,
+			'request_id'      => (int) ( $res['request_id'] ?? 0 ),
+			'cal_booking_url' => (string) ( $res['cal_booking_url'] ?? '' ),
+			'capture_token'   => (string) ( $res['capture_token'] ?? '' ),
+		) );
+	}
+
+	/**
+	 * Sprint 13 — contact autocomplete for the Add-Booking form.
+	 * Matches by leading-fragment on full_name, phone digits, or
+	 * email. Returns up to 10 lightweight hits with primary address
+	 * pre-attached so the form can populate the address picker
+	 * without a second round trip.
+	 */
+	public function admin_contact_search( WP_REST_Request $request ) {
+		global $wpdb;
+		if ( ! $this->contacts ) {
+			return $this->admin_unavailable();
+		}
+		$q = trim( (string) $request->get_param( 'q' ) );
+		if ( strlen( $q ) < 2 ) {
+			return rest_ensure_response( array( 'results' => array() ) );
+		}
+		$contacts_table  = Handik_Booking_App_DB::table( 'contacts' );
+		$addresses_table = Handik_Booking_App_DB::table( 'addresses' );
+		$digits = preg_replace( '/\D/', '', $q );
+		$like = '%' . $wpdb->esc_like( $q ) . '%';
+		$rows = $wpdb->get_results( $wpdb->prepare(
+			"SELECT id, full_name, phone, email FROM {$contacts_table}
+			 WHERE full_name LIKE %s OR email LIKE %s OR REPLACE(REPLACE(REPLACE(REPLACE(phone,'+',''),' ',''),'(',''),')','') LIKE %s
+			 ORDER BY updated_at DESC LIMIT 10", // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+			$like, $like, '%' . $wpdb->esc_like( $digits ) . '%'
+		), ARRAY_A );
+
+		$results = array();
+		foreach ( (array) $rows as $row ) {
+			$contact_id = (int) $row['id'];
+			$addresses = $wpdb->get_results( $wpdb->prepare(
+				"SELECT id, address_full, address_unit FROM {$addresses_table}
+				 WHERE contact_id = %d AND (deleted_at IS NULL OR deleted_at = '0000-00-00 00:00:00')
+				 ORDER BY is_default DESC, id DESC LIMIT 5",
+				$contact_id
+			), ARRAY_A );
+			$results[] = array(
+				'id'        => $contact_id,
+				'full_name' => (string) $row['full_name'],
+				'phone'     => (string) $row['phone'],
+				'email'     => (string) $row['email'],
+				'addresses' => array_map( static function ( $a ) {
+					return array(
+						'id'           => (int) $a['id'],
+						'address_full' => (string) $a['address_full'],
+						'address_unit' => (string) $a['address_unit'],
+					);
+				}, (array) $addresses ),
+			);
+		}
+		return rest_ensure_response( array( 'results' => $results ) );
 	}
 
 	public function admin_address_primary( WP_REST_Request $request ) {

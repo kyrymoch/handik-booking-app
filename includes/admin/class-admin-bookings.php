@@ -35,17 +35,32 @@ class Handik_Booking_App_Admin_Bookings {
 	/** @var Handik_Booking_App_Messages_Service|null */
 	protected $messages;
 
-	public function __construct( $bookings, $job_requests, $contacts, $addresses, $catalog, $logger, $messages ) {
-		$this->bookings     = $bookings;
-		$this->job_requests = $job_requests;
-		$this->contacts     = $contacts;
-		$this->addresses    = $addresses;
-		$this->catalog      = $catalog;
-		$this->logger       = $logger;
-		$this->messages     = $messages;
+	public function __construct( $bookings, $job_requests, $contacts, $addresses, $catalog, $logger, $messages, $booking_presets = null ) {
+		$this->bookings        = $bookings;
+		$this->job_requests    = $job_requests;
+		$this->contacts        = $contacts;
+		$this->addresses       = $addresses;
+		$this->catalog         = $catalog;
+		$this->logger          = $logger;
+		$this->messages        = $messages;
+		// Sprint 13 — used by the Add Booking page to populate the
+		// preset picker with currently-enabled direct presets.
+		$this->booking_presets = $booking_presets;
 	}
 
 	public function render() {
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		$action = isset( $_GET['action'] ) ? sanitize_key( wp_unslash( $_GET['action'] ) ) : '';
+		if ( 'new' === $action ) {
+			// Sprint 13 — admin-initiated direct booking. Lives under
+			// the Bookings page slug so the operator's mental model
+			// ("Bookings → + Add") matches the URL. Contact_id can be
+			// passed from the Person detail page to pre-fill the form.
+			// phpcs:ignore WordPress.Security.NonceVerification.Recommended
+			$contact_id = isset( $_GET['contact_id'] ) ? absint( wp_unslash( $_GET['contact_id'] ) ) : 0;
+			$this->render_new_booking( $contact_id );
+			return;
+		}
 		// phpcs:ignore WordPress.Security.NonceVerification.Recommended
 		$booking_id = isset( $_GET['booking_id'] ) ? absint( wp_unslash( $_GET['booking_id'] ) ) : 0;
 		if ( $booking_id ) {
@@ -99,6 +114,13 @@ class Handik_Booking_App_Admin_Bookings {
 			__( 'Bookings', 'handik-booking-app' ),
 			__( 'Upcoming first, then past visits.', 'handik-booking-app' )
 		);
+
+		// Sprint 13 — admin can book on behalf of a customer through
+		// the same Cal.com flow the public direct-booking form uses.
+		// The CTA shows for any user with the bookings cap; capability
+		// for the underlying REST is the same (admin_permission gate).
+		$add_url = Handik_Booking_App_Admin_Helpers::admin_url_for( 'handik-booking-app-bookings', array( 'action' => 'new' ) );
+		echo '<p class="handik-admin-bookings-list__cta"><a class="button button-primary" href="' . esc_url( $add_url ) . '">+ ' . esc_html__( 'Add booking', 'handik-booking-app' ) . '</a></p>';
 
 		echo $this->filter_bar_markup( $filter_time, $filter_status, $query );
 
@@ -555,6 +577,160 @@ class Handik_Booking_App_Admin_Bookings {
 	// =====================================================================
 	// DETAIL (B2 + B4)
 	// =====================================================================
+
+	// =====================================================================
+	// NEW BOOKING (Sprint 13) — admin-initiated direct booking
+	// =====================================================================
+
+	/**
+	 * Render the "Add booking" page. Two flows in one form:
+	 *   - Existing customer: pre-filled contact picker (autocomplete via
+	 *     /admin/contact/search) + saved-address dropdown + preset
+	 *     picker + Cal.com inline embed.
+	 *   - New walk-in: explicit name / phone / address inputs (toggled
+	 *     by the "+ New customer" button).
+	 *
+	 * Submit calls /admin/booking/new which forwards to
+	 * Direct_Booking_Service::admin_submit; the response includes a
+	 * ready-to-mount cal_booking_url that the JS swaps into the embed
+	 * container. The Cal-side bookingSuccessful event POSTs to the
+	 * existing /forms/direct/{id}/capture so the local row flips to
+	 * BOOKED, and the cal-webhook will keep doing its dispatch as if
+	 * a real customer had used the public form.
+	 *
+	 * @param int $contact_id Optional pre-selected contact (e.g. when
+	 *                        the operator clicks "Book a visit" on the
+	 *                        Person detail page).
+	 */
+	protected function render_new_booking( $contact_id = 0 ) {
+		Handik_Booking_App_Admin_Helpers::page_start(
+			__( 'Add booking', 'handik-booking-app' ),
+			__( 'Book on behalf of a customer using the same Cal.com flow as the public direct-booking form.', 'handik-booking-app' )
+		);
+
+		$presets = array();
+		if ( $this->booking_presets && method_exists( $this->booking_presets, 'enabled' ) ) {
+			foreach ( $this->booking_presets->enabled() as $preset ) {
+				if ( ( $preset['form_type'] ?? '' ) === 'direct_cal_booking' ) {
+					$presets[] = $preset;
+				}
+			}
+		}
+
+		$prefilled = $contact_id > 0 && $this->contacts ? $this->contacts->get( $contact_id ) : null;
+		$prefilled_addresses = array();
+		if ( $prefilled && $this->addresses && method_exists( $this->addresses, 'list_for_contact' ) ) {
+			$prefilled_addresses = $this->addresses->list_for_contact( $contact_id );
+		}
+
+		$back_url     = Handik_Booking_App_Admin_Helpers::admin_url_for( 'handik-booking-app-bookings' );
+		$rest_base    = trailingslashit( rest_url( 'handik-booking-app/v1/' ) );
+		$rest_nonce   = wp_create_nonce( 'wp_rest' );
+		?>
+		<p><a class="handik-admin-muted" href="<?php echo esc_url( $back_url ); ?>">&larr; <?php esc_html_e( 'Back to bookings', 'handik-booking-app' ); ?></a></p>
+
+		<?php if ( empty( $presets ) ) : ?>
+			<div class="notice notice-warning"><p>
+				<?php esc_html_e( 'No enabled direct-booking presets found. Create one in App Setup → Additional Forms before booking from the admin.', 'handik-booking-app' ); ?>
+			</p></div>
+			<?php Handik_Booking_App_Admin_Helpers::page_end(); ?>
+			<?php return; ?>
+		<?php endif; ?>
+
+		<section class="handik-admin-block handik-admin-new-booking"
+			data-handik-new-booking
+			data-handik-rest-base="<?php echo esc_attr( $rest_base ); ?>"
+			data-handik-rest-nonce="<?php echo esc_attr( $rest_nonce ); ?>"
+			data-handik-redirect-base="<?php echo esc_attr( Handik_Booking_App_Admin_Helpers::admin_url_for( 'handik-booking-app-bookings' ) ); ?>"
+		>
+			<h2 class="handik-admin-section-title"><?php esc_html_e( 'Step 1 — Customer & address', 'handik-booking-app' ); ?></h2>
+
+			<div class="handik-admin-new-booking__customer-mode">
+				<button type="button" class="button" data-handik-mode="existing" aria-pressed="true"><?php esc_html_e( 'Existing customer', 'handik-booking-app' ); ?></button>
+				<button type="button" class="button" data-handik-mode="new" aria-pressed="false"><?php esc_html_e( '+ New customer', 'handik-booking-app' ); ?></button>
+			</div>
+
+			<div class="handik-admin-new-booking__existing" data-handik-pane="existing"<?php echo $prefilled ? '' : ''; ?>>
+				<label class="handik-admin-field">
+					<span><?php esc_html_e( 'Search by name or phone', 'handik-booking-app' ); ?></span>
+					<input type="search"
+						data-handik-contact-search
+						placeholder="<?php esc_attr_e( 'e.g. Smith or 617…', 'handik-booking-app' ); ?>"
+						value="<?php echo esc_attr( $prefilled ? (string) ( $prefilled['full_name'] ?? '' ) : '' ); ?>"
+						autocomplete="off" />
+				</label>
+				<ul class="handik-admin-new-booking__results" data-handik-results hidden></ul>
+				<div class="handik-admin-new-booking__chosen" data-handik-chosen<?php echo $prefilled ? '' : ' hidden'; ?>>
+					<?php if ( $prefilled ) : ?>
+						<input type="hidden" data-handik-contact-id value="<?php echo esc_attr( (string) (int) $prefilled['id'] ); ?>" />
+						<p>
+							<strong data-handik-chosen-name><?php echo esc_html( (string) $prefilled['full_name'] ); ?></strong>
+							<span class="handik-admin-muted" data-handik-chosen-phone>· <?php echo esc_html( (string) $prefilled['phone'] ); ?></span>
+						</p>
+					<?php else : ?>
+						<input type="hidden" data-handik-contact-id value="" />
+						<p><strong data-handik-chosen-name></strong> <span class="handik-admin-muted" data-handik-chosen-phone></span></p>
+					<?php endif; ?>
+					<label class="handik-admin-field">
+						<span><?php esc_html_e( 'Address', 'handik-booking-app' ); ?></span>
+						<select data-handik-address-picker>
+							<option value=""><?php esc_html_e( '— Pick an address —', 'handik-booking-app' ); ?></option>
+							<?php foreach ( $prefilled_addresses as $addr ) : ?>
+								<option value="<?php echo esc_attr( (string) (int) $addr['id'] ); ?>" data-full="<?php echo esc_attr( (string) ( $addr['address_full'] ?? '' ) ); ?>" data-unit="<?php echo esc_attr( (string) ( $addr['address_unit'] ?? '' ) ); ?>">
+									<?php echo esc_html( trim( ( (string) ( $addr['address_full'] ?? '' ) ) . ' ' . ( ! empty( $addr['address_unit'] ) ? '· ' . (string) $addr['address_unit'] : '' ) ) ); ?>
+								</option>
+							<?php endforeach; ?>
+							<option value="__new"><?php esc_html_e( '+ New address', 'handik-booking-app' ); ?></option>
+						</select>
+					</label>
+					<div data-handik-new-address hidden>
+						<label class="handik-admin-field"><span><?php esc_html_e( 'Address', 'handik-booking-app' ); ?></span><input type="text" data-handik-address-full autocomplete="street-address" /></label>
+						<label class="handik-admin-field"><span><?php esc_html_e( 'Unit (optional)', 'handik-booking-app' ); ?></span><input type="text" data-handik-address-unit autocomplete="address-line2" /></label>
+					</div>
+				</div>
+			</div>
+
+			<div class="handik-admin-new-booking__new" data-handik-pane="new" hidden>
+				<div class="handik-admin-grid">
+					<label class="handik-admin-field"><span><?php esc_html_e( 'Full name', 'handik-booking-app' ); ?>*</span><input type="text" data-handik-new-name autocomplete="name" /></label>
+					<label class="handik-admin-field"><span><?php esc_html_e( 'Phone', 'handik-booking-app' ); ?>*</span><input type="tel" data-handik-new-phone autocomplete="tel" inputmode="tel" /></label>
+					<label class="handik-admin-field"><span><?php esc_html_e( 'Email (optional)', 'handik-booking-app' ); ?></span><input type="email" data-handik-new-email autocomplete="email" /></label>
+				</div>
+				<label class="handik-admin-field"><span><?php esc_html_e( 'Address', 'handik-booking-app' ); ?>*</span><input type="text" data-handik-new-address-full autocomplete="street-address" /></label>
+				<label class="handik-admin-field"><span><?php esc_html_e( 'Unit (optional)', 'handik-booking-app' ); ?></span><input type="text" data-handik-new-address-unit autocomplete="address-line2" /></label>
+			</div>
+
+			<h2 class="handik-admin-section-title"><?php esc_html_e( 'Step 2 — Pick a booking type', 'handik-booking-app' ); ?></h2>
+			<label class="handik-admin-field">
+				<span><?php esc_html_e( 'Preset', 'handik-booking-app' ); ?></span>
+				<select data-handik-preset-picker>
+					<option value=""><?php esc_html_e( '— Select preset —', 'handik-booking-app' ); ?></option>
+					<?php foreach ( $presets as $preset ) : ?>
+						<option value="<?php echo esc_attr( (string) $preset['preset_slug'] ); ?>">
+							<?php echo esc_html( (string) $preset['form_title'] ); ?>
+							<?php echo esc_html( ' · ' . (int) $preset['duration_minutes'] . ' min' ); ?>
+						</option>
+					<?php endforeach; ?>
+				</select>
+			</label>
+
+			<p>
+				<button type="button" class="button button-primary" data-handik-new-booking-submit disabled>
+					<?php esc_html_e( 'Open Cal.com to pick a slot →', 'handik-booking-app' ); ?>
+				</button>
+				<span class="handik-admin-muted" data-handik-new-booking-status></span>
+			</p>
+		</section>
+
+		<section class="handik-admin-block handik-admin-new-booking__cal" data-handik-cal-section hidden>
+			<h2 class="handik-admin-section-title"><?php esc_html_e( 'Step 3 — Pick a slot', 'handik-booking-app' ); ?></h2>
+			<p class="handik-admin-muted"><?php esc_html_e( 'Pick a date and time below. The booking is recorded the moment Cal.com confirms it; you can leave the page after the success message appears.', 'handik-booking-app' ); ?></p>
+			<div class="handik-admin-new-booking__cal-frame" data-handik-cal-frame></div>
+		</section>
+		<?php
+
+		Handik_Booking_App_Admin_Helpers::page_end();
+	}
 
 	protected function render_detail( $booking_id ) {
 		$booking = $this->bookings ? $this->bookings->get( $booking_id ) : null;
