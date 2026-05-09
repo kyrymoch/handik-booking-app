@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.1.20.0
+Stable tag: 2.1.20.1
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, silent returning-client recognition, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,21 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.1.20.1 =
+* **Hotfix — independent audit on the 2.1.20.0 admin booking flow.** 11 fixes from a 20-finding QA pass. No new features; hardens the flow shipped yesterday.
+* **F1+F2 (P1) — admin captures saved empty cal_booking_id / cal_booking_uid.** The admin JS posted `{capture_token, booking}` but `Forms_Rest_Api::capture_direct` reads `booking_payload`; the fallback handed `capture_booking()` the entire envelope as the "booking", so the id-extractors saw nothing useful. Local row flipped to BOOKED but with no Cal handle — anyone searching by Cal ID would miss it until the cal-webhook reconciled. Renamed the JS key to match the public form; cal_booking_id / cal_booking_uid land immediately now.
+* **F4 (P1) — submit button could double-create requests.** `withButtonLoading` re-enabled the button on `.finally()`, so a second click after the Cal embed mounted POSTed `/admin/booking/new` again and inserted a duplicate `direct_booking_requests` row. Added a `draftCreated` latch + `is-frozen` CSS state on the form that visually dims and pointer-locks Steps 1+2 once the draft commits.
+* **F5 (P1) — admin Cal embed didn't strip Cal-side deep-link params.** The public form's `parseCalEmbedConfig` drops `overlayCalendar` / `month` / `date` / `slot` / `embed` / `embed_origin` / `layout` (would otherwise force the embed into "no slots available"), and re-prefixes `phone` with `+`. Admin's `parseCalEmbedUrl` was a 4-line stub that did neither. Mirrored the public-form behaviour byte-for-byte; same `CAL_EMBED_DROP_PARAMS` shape.
+* **F6 (P2) — client-side de-dupe of `bookingSuccessful`.** Cal.com sometimes fires the event twice; the public form has `state._captureSent`, admin had nothing. Server is already idempotent (capture_booking short-circuits on STATUS_BOOKED) so this only avoided a duplicate toast + redirect race, but it's a one-line fix and keeps the two surfaces in parity.
+* **F7 (P2) — orphan row when preset has no Cal URL.** `admin_submit` inserted the request row, then `build_cal_url` returned '' (preset misconfigured), then the JS threw "Cal.com URL missing" — but the half-baked READY-status row stayed in the table forever. Now we delete the just-inserted row before returning the error, and the message names the preset-edit page so the operator knows where to fix it.
+* **F8 (P2) — stale "+ New address" inputs after switching contacts.** `chooseContact` rebuilt the address dropdown but didn't reset the inline `[data-handik-address-full]` / `[data-handik-address-unit]` inputs or hide the sub-pane. So: pick A → "+ New address" → type "123 Main" → pick B → "123 Main" stayed visible. Reset on every contact change.
+* **F9 (P2) — mode toggle preserved stale state.** Toggling Existing → New → Existing kept the chosen contact_id hidden input and any typed walk-in fields. Mode toggle is a deliberate "throw the previous attempt away" gesture; clear the inactive pane on `setMode` so a half-finished walk-in form can't be submitted alongside an existing-contact pick.
+* **F10 (P2) — phone-format validation in admin "+ New customer".** `Contacts_Service::normalize_phone` is forgiving — `"abc"` becomes empty + saves NULL, `"123"` becomes `+123`, `"hi 4"` becomes `+4`. `admin_submit` now requires ≥10 digits before calling upsert; admin form's `<input type="tel">` carries `minlength="10" pattern=".*\d{10,}.*"` so the browser pre-checks too.
+* **F11 (P2) — webhook re-flip protection.** `dispatch_direct`'s fallback path matches by `cal_booking_id` when metadata is missing, then calls `Direct_Booking_Service::update_status_by_uid` which used to blindly write whatever status came in. A Cal-side cancel-then-rebook sequence (or any stray webhook carrying just the UID) could resurrect a `cancelled` row to `booked`. Now `update_status_by_uid` refuses cancelled→booked transitions and logs a warning; the id-keyed primary path is untouched.
+* **F12 (P3) — friendly label for `admin_initiated` client_type.** `Admin_Helpers::client_type_label` recognised `returning_client` / `new_client` and fell through for the new admin slug, leaking the raw string `"admin_initiated"` into any list / CSV that rendered it. Added a case → "Admin booking".
+* **F3 (P2) — GC for orphan OPENED rows.** Mirroring `Project_Schedule_Service`'s `handik_booking_app_form_gc_abandoned` cron. New `handik_booking_app_direct_gc_abandoned` daily event drops `direct_booking_requests` rows that sat in `booking_opened` status for >24h with no `cal_booking_id` (i.e. customer or admin opened the embed and walked away). Bounded `LIMIT 500` per run; logs the count when it actually deletes anything.
+* **Property declaration fix (PHPStan).** `Admin_Bookings::$booking_presets` was assigned in the constructor but never declared at the class level. Worked today thanks to PHP's dynamic-property tolerance, but PHP 8.2+ deprecates that and 9.0 makes it fatal. One-line `protected $booking_presets;` declaration.
 
 = 2.1.20.0 =
 * **Admin can now book on behalf of a customer.** New "+ Add booking" CTA on the Bookings list page and "📅 Book a visit" button on every Person detail page. The flow uses the same Cal.com inline embed the public Additional Forms direct-booking preset uses — no parallel infrastructure.

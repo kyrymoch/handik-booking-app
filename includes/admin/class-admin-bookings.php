@@ -695,7 +695,11 @@ class Handik_Booking_App_Admin_Bookings {
 			<div class="handik-admin-new-booking__new" data-handik-pane="new" hidden>
 				<div class="handik-admin-grid">
 					<label class="handik-admin-field"><span><?php esc_html_e( 'Full name', 'handik-booking-app' ); ?>*</span><input type="text" data-handik-new-name autocomplete="name" /></label>
-					<label class="handik-admin-field"><span><?php esc_html_e( 'Phone', 'handik-booking-app' ); ?>*</span><input type="tel" data-handik-new-phone autocomplete="tel" inputmode="tel" /></label>
+					<?php /* Sprint 13 hotfix (F10): require ≥10 digits before
+				 * submission. minlength on type=tel covers the raw
+				 * keystroke count; the server still re-validates after
+				 * stripping non-digits. */ ?>
+				<label class="handik-admin-field"><span><?php esc_html_e( 'Phone', 'handik-booking-app' ); ?>*</span><input type="tel" data-handik-new-phone autocomplete="tel" inputmode="tel" minlength="10" pattern=".*\d{10,}.*" title="<?php esc_attr_e( '10-digit phone, e.g. +1 617 555 0123', 'handik-booking-app' ); ?>" /></label>
 					<label class="handik-admin-field"><span><?php esc_html_e( 'Email (optional)', 'handik-booking-app' ); ?></span><input type="email" data-handik-new-email autocomplete="email" /></label>
 				</div>
 				<label class="handik-admin-field"><span><?php esc_html_e( 'Address', 'handik-booking-app' ); ?>*</span><input type="text" data-handik-new-address-full autocomplete="street-address" /></label>
