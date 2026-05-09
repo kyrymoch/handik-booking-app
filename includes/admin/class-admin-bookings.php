@@ -34,6 +34,8 @@ class Handik_Booking_App_Admin_Bookings {
 	protected $logger;
 	/** @var Handik_Booking_App_Messages_Service|null */
 	protected $messages;
+	/** @var Handik_Booking_App_Booking_Presets_Service|null */
+	protected $booking_presets;
 
 	public function __construct( $bookings, $job_requests, $contacts, $addresses, $catalog, $logger, $messages, $booking_presets = null ) {
 		$this->bookings        = $bookings;
