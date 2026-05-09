@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.1.20.2
+Stable tag: 2.1.21.0
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, silent returning-client recognition, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,24 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.1.21.0 =
+* **Sprint 14a — branded customer booking-confirmation emails.** Plugin now ships its own confirmation email (HTML + plain-text alternative, with a `.ics` calendar attachment) directly to the customer after every new booking — main SPA Cal flow, Additional Forms direct preset, and Additional Forms project work-days flow. Owner-controlled subject + HTML body + plain-text body templates with `{{placeholder}}` substitution. Reply-To is configurable (defaults to the existing `email_from_address`). Master toggle defaults OFF on upgrade; nothing changes until the owner enables it.
+* **REQUIRED before flipping the toggle: disable Cal.com's own confirmation email.** Otherwise customers receive two emails for every booking (Cal's + ours).
+  1. Cal.com dashboard → **Event Types** → click each event type Handik routes to.
+  2. Open the **Workflows** tab.
+  3. Find the default `New Event Booking` workflow.
+  4. Either delete it, or change its action away from `Send Email`.
+  5. Save. Repeat for every event type.
+* Then in WordPress: **Handik Booking → App Setup → Customer notifications → "Send our own confirmation emails"** (toggle on) → **Save**. Use the **Send test email** button to preview the rendered template (with sample data) before going live.
+* **DB migration 1.5.1** (idempotent, safe to re-run). Adds nullable `confirmation_email_sent_at DATETIME` column to `handik_bookings`, `handik_direct_booking_requests`, and `handik_project_scheduling_requests`. The new `Notifications_Service` uses an atomic `UPDATE … WHERE id = %d AND confirmation_email_sent_at IS NULL` against the relevant table to dedupe — Cal-webhook retries can't fire a second email, and the parallel direct-flow capture vs. webhook paths can't both deliver.
+* **New action `do_action( 'handik_booking_confirmed', $context )`.** Fires from all three booking-creation sites with a uniform context shape (source, contact, address, tasks, when, booking_url, request_id, cal_booking_uid, idempotency-table tuple). Owners can hook the same action from a custom plugin to ship their own Slack / SMS / etc. notification — same extensibility pattern as the existing `handik_booking_app_send_sms_code` action.
+* **Project flow: one email per schedule, not per day.** The `.ics` attachment carries one VEVENT per confirmed day, so the customer gets the full picture in a single calendar invite.
+* **`.ics` builder is RFC 5545 minimal subset.** Line-folded at 75 octets, CRLF endings, escape-on-output for `,`, `;`, `\`, and newlines. Tested against Apple Calendar, Google Calendar, and Outlook web. Attachment is tagged `text/calendar; method=REQUEST` so clients render it as a calendar invite instead of a generic file icon.
+* **`wp_mail` failure handling.** If `wp_mail` returns false the idempotency stamp rolls back to NULL (so a manual retry can re-fire), `handik_booking_app_last_email_error` is persisted (Sprint 14b will surface it on System info), and the failure is logged with the recipient + source for triage. Booking row itself is unaffected — the email is opt-in.
+* **Photos NOT included in the email.** Avoids Gmail's 25 MB attachment cap and keeps templates portable. Customer is welcome to ask if they want to see what was on file.
+* **Out of this sprint (deferred to 14b):** Owner-side "new booking from Jane" notification email. The `LAST_EMAIL_ERROR_OPTION` callout on the System info page. Per-flow template overrides. Cancellation / reschedule notices. SMTP / DKIM / SPF guidance in the readme.
+* `Auth_Service::send_message()` was refactored to use the existing `Admin_Helpers::render_template()` placeholder engine instead of an inline `str_replace` loop — same behaviour, one less duplicated implementation.
 
 = 2.1.20.2 =
 * **P0 hotfix — admin-created bookings now appear in the Bookings list.** Owner reported: clicked "+ Add booking" in the admin (Sprint 13 / 2.1.20), filled the form, picked a Cal.com slot, but the booking never showed up at `?page=handik-booking-app-bookings`. Root cause was deeper than the admin flow alone — *every* direct-booking-form submission (admin-initiated since 2.1.20.0, public-form-initiated since 2.1.9.0) lived only in `handik_direct_booking_requests` and was never mirrored into `handik_bookings`, which is the only table the unified Bookings list reads.

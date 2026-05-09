@@ -459,6 +459,30 @@ class Handik_Booking_App_Admin_Settings {
 			<?php Handik_Booking_App_Admin_Helpers::textarea_field( 'magic_link_email_body', __( 'Body', 'handik-booking-app' ), $s['magic_link_email_body'], '', 8 ); ?>
 		<?php $this->section_close(); ?>
 
+		<?php $this->section_open( __( 'Customer booking-confirmation email', 'handik-booking-app' ) ); ?>
+			<p class="handik-admin-muted">
+				<?php esc_html_e( 'When enabled, the plugin sends a branded confirmation email (HTML + plain-text alternative + .ics calendar attachment) to the customer after every new booking — main flow, direct preset, and project work-days. Disable Cal.com’s own confirmation email FIRST so customers don’t receive two messages. Placeholders:', 'handik-booking-app' ); ?>
+				<code>{{customer_name}}</code> · <code>{{booking_when_long}}</code> · <code>{{booking_when}}</code> · <code>{{address}}</code> · <code>{{tasks_list_html}}</code> · <code>{{tasks_list_text}}</code> · <code>{{cal_url}}</code> · <code>{{operator_first_name}}</code> · <code>{{from_name}}</code> · <code>{{site_name}}</code>
+			</p>
+			<?php Handik_Booking_App_Admin_Helpers::checkbox_field( 'customer_confirmations_enabled', __( 'Send our own confirmation emails (replaces Cal.com’s)', 'handik-booking-app' ), ! empty( $s['customer_confirmations_enabled'] ) ); ?>
+			<?php Handik_Booking_App_Admin_Helpers::field( 'customer_confirmation_subject', __( 'Subject', 'handik-booking-app' ), $s['customer_confirmation_subject'] ); ?>
+			<?php Handik_Booking_App_Admin_Helpers::textarea_field( 'customer_confirmation_body_html', __( 'HTML body', 'handik-booking-app' ), $s['customer_confirmation_body_html'], __( 'HTML allowed (same allow-list as post content). Project flows additionally support {{days_list_html}} and {{days_count}}.', 'handik-booking-app' ), 12 ); ?>
+			<?php Handik_Booking_App_Admin_Helpers::textarea_field( 'customer_confirmation_body_text', __( 'Plain-text body', 'handik-booking-app' ), $s['customer_confirmation_body_text'], __( 'Sent as the multipart/alternative fallback for clients that block HTML.', 'handik-booking-app' ), 10 ); ?>
+			<?php Handik_Booking_App_Admin_Helpers::field( 'customer_confirmation_reply_to', __( 'Reply-To address', 'handik-booking-app' ), $s['customer_confirmation_reply_to'], 'email' ); ?>
+			<p class="handik-admin-muted"><?php esc_html_e( 'Leave empty to fall back to the From address below.', 'handik-booking-app' ); ?></p>
+			<p>
+				<button type="submit" class="button button-secondary" name="handik_action" value="send_test_email">
+					<?php esc_html_e( 'Send test email to me', 'handik-booking-app' ); ?>
+				</button>
+				<small class="handik-admin-muted" style="margin-left:8px;">
+					<?php
+					/* translators: %s: current admin email address. */
+					echo esc_html( sprintf( __( 'Renders the templates with sample data and ships to %s. Bypasses the master toggle so you can preview before going live.', 'handik-booking-app' ), wp_get_current_user()->user_email ) );
+					?>
+				</small>
+			</p>
+		<?php $this->section_close(); ?>
+
 		<?php $this->section_open( __( 'Email envelope', 'handik-booking-app' ) ); ?>
 			<div class="handik-admin-grid">
 				<?php Handik_Booking_App_Admin_Helpers::field( 'email_from_name', __( 'From name', 'handik-booking-app' ), $s['email_from_name'] ); ?>

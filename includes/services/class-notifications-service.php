@@ -181,6 +181,77 @@ class Handik_Booking_App_Notifications_Service {
 	}
 
 	/**
+	 * Sprint 14a — admin "Send test email" handler. Builds a sample
+	 * context (no DB lookups, no idempotency stamp) and runs through the
+	 * same send pipeline production uses, so the operator can preview
+	 * their template edits before flipping the master toggle on.
+	 *
+	 * Bypasses both the master toggle AND the atomic idempotency lock —
+	 * test sends never touch the bookings tables.
+	 *
+	 * @param string                    $recipient_email Where to send.
+	 * @param array<string, string>|null $template_overrides Optional
+	 *        unsaved template values from the settings form (subject /
+	 *        html / text / reply_to). Keys: customer_confirmation_subject,
+	 *        customer_confirmation_body_html, customer_confirmation_body_text,
+	 *        customer_confirmation_reply_to. Pass null to use saved.
+	 * @return array{sent: bool, recipient: string, error?: string}
+	 */
+	public function send_test( $recipient_email, $template_overrides = null ) {
+		$recipient = sanitize_email( (string) $recipient_email );
+		if ( '' === $recipient ) {
+			return array( 'sent' => false, 'recipient' => '', 'error' => 'invalid_recipient' );
+		}
+
+		$overrides = is_array( $template_overrides ) ? $template_overrides : array();
+		$context   = $this->build_sample_context();
+		$sent      = $this->send_customer_confirmation( $context, $recipient, $overrides );
+
+		return array(
+			'sent'      => $sent,
+			'recipient' => $recipient,
+		);
+	}
+
+	/**
+	 * @return array<string, mixed>
+	 */
+	protected function build_sample_context() {
+		$tomorrow_2pm = ( new DateTimeImmutable( 'tomorrow 14:00', wp_timezone() ) )->format( DATE_ATOM );
+		$tomorrow_4pm = ( new DateTimeImmutable( 'tomorrow 16:00', wp_timezone() ) )->format( DATE_ATOM );
+
+		return array(
+			'source'          => 'cal',
+			'idempotency'     => array( 'table' => 'bookings', 'row_id' => 0 ),
+			'contact'         => array(
+				'id'        => 0,
+				'full_name' => 'Jane Doe',
+				'phone'     => '+1 555 123 4567',
+				'email'     => 'jane@example.com',
+			),
+			'address'         => array(
+				'address_full' => '123 Main St, Cambridge MA 02139',
+				'address_unit' => '',
+			),
+			'tasks'           => array(
+				array( 'label' => 'Plumbing', 'rate_label' => '' ),
+				array( 'label' => 'Electrical (small fixture)', 'rate_label' => '' ),
+				array( 'label' => 'Drywall patch', 'rate_label' => '' ),
+			),
+			'when'            => array(
+				'start_iso' => $tomorrow_2pm,
+				'end_iso'   => $tomorrow_4pm,
+				'timezone'  => (string) wp_timezone_string(),
+			),
+			'booking_url'     => 'https://cal.com/handik/sample-booking',
+			'restart_url'     => home_url( '/' ),
+			'request_id'      => 0,
+			'booking_id'      => null,
+			'cal_booking_uid' => 'handik-test-' . substr( wp_generate_uuid4(), 0, 8 ),
+		);
+	}
+
+	/**
 	 * Send the branded customer-confirmation email.
 	 *
 	 * Builds subject + HTML body + plain-text body from the admin
@@ -205,12 +276,19 @@ class Handik_Booking_App_Notifications_Service {
 	 * @param string               $customer_email Sanitized recipient.
 	 * @return bool True iff wp_mail accepted the message.
 	 */
-	protected function send_customer_confirmation( array $context, $customer_email ) {
+	protected function send_customer_confirmation( array $context, $customer_email, array $template_overrides = array() ) {
 		$placeholders = $this->build_placeholders( $context );
 
-		$subject_template = (string) $this->settings->get( 'customer_confirmation_subject', '' );
-		$html_template    = (string) $this->settings->get( 'customer_confirmation_body_html', '' );
-		$text_template    = (string) $this->settings->get( 'customer_confirmation_body_text', '' );
+		$resolve = function ( $key ) use ( $template_overrides ) {
+			if ( array_key_exists( $key, $template_overrides ) ) {
+				return (string) $template_overrides[ $key ];
+			}
+			return (string) $this->settings->get( $key, '' );
+		};
+
+		$subject_template = $resolve( 'customer_confirmation_subject' );
+		$html_template    = $resolve( 'customer_confirmation_body_html' );
+		$text_template    = $resolve( 'customer_confirmation_body_text' );
 
 		$subject = Handik_Booking_App_Admin_Helpers::render_template( $subject_template, $placeholders );
 		$html    = Handik_Booking_App_Admin_Helpers::render_template( $html_template, $placeholders );
@@ -224,7 +302,7 @@ class Handik_Booking_App_Notifications_Service {
 
 		$from_name    = trim( (string) $this->settings->get( 'email_from_name', '' ) );
 		$from_address = sanitize_email( (string) $this->settings->get( 'email_from_address', '' ) );
-		$reply_to     = sanitize_email( (string) $this->settings->get( 'customer_confirmation_reply_to', '' ) );
+		$reply_to     = sanitize_email( $resolve( 'customer_confirmation_reply_to' ) );
 		if ( '' === $reply_to ) {
 			$reply_to = $from_address;
 		}
