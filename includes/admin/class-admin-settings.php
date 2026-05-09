@@ -483,6 +483,29 @@ class Handik_Booking_App_Admin_Settings {
 			</p>
 		<?php $this->section_close(); ?>
 
+		<?php $this->section_open( __( 'Owner booking notification', 'handik-booking-app' ) ); ?>
+			<p class="handik-admin-muted">
+				<?php esc_html_e( 'When enabled, the plugin sends a plain-text notification to the owner address every time a new booking lands — main flow, direct preset, and project work-days. Independent of the customer-side toggle. The owner email’s Reply-To is set to the customer’s email so a quick "got it" reply lands directly with them. Placeholders:', 'handik-booking-app' ); ?>
+				<code>{{customer_name}}</code> · <code>{{customer_phone}}</code> · <code>{{customer_email}}</code> · <code>{{booking_when_long}}</code> · <code>{{booking_when}}</code> · <code>{{address}}</code> · <code>{{tasks_list_text}}</code> · <code>{{source_label}}</code> · <code>{{open_request_admin_link}}</code>
+			</p>
+			<?php Handik_Booking_App_Admin_Helpers::checkbox_field( 'owner_notification_enabled', __( 'Notify the owner on every new booking', 'handik-booking-app' ), ! empty( $s['owner_notification_enabled'] ) ); ?>
+			<?php Handik_Booking_App_Admin_Helpers::field( 'owner_notification_address', __( 'Recipient address', 'handik-booking-app' ), $s['owner_notification_address'], 'email' ); ?>
+			<p class="handik-admin-muted"><?php esc_html_e( 'Leave empty to fall back to the From address below. Useful if you want bookings to go to a phone-pinned alias (e.g. ops@) instead of your main inbox.', 'handik-booking-app' ); ?></p>
+			<?php Handik_Booking_App_Admin_Helpers::field( 'owner_notification_subject', __( 'Subject', 'handik-booking-app' ), $s['owner_notification_subject'] ); ?>
+			<?php Handik_Booking_App_Admin_Helpers::textarea_field( 'owner_notification_body', __( 'Body', 'handik-booking-app' ), $s['owner_notification_body'], __( 'Plain-text only. No HTML. Use {{open_request_admin_link}} to drop a deep-link to the admin booking detail.', 'handik-booking-app' ), 10 ); ?>
+			<p>
+				<button type="submit" class="button button-secondary" name="handik_action" value="send_test_owner_email">
+					<?php esc_html_e( 'Send owner test email to me', 'handik-booking-app' ); ?>
+				</button>
+				<small class="handik-admin-muted" style="margin-left:8px;">
+					<?php
+					/* translators: %s: current admin email address. */
+					echo esc_html( sprintf( __( 'Renders the owner template with sample data and ships to %s. Bypasses the toggle so you can preview before going live.', 'handik-booking-app' ), wp_get_current_user()->user_email ) );
+					?>
+				</small>
+			</p>
+		<?php $this->section_close(); ?>
+
 		<?php $this->section_open( __( 'Email envelope', 'handik-booking-app' ) ); ?>
 			<div class="handik-admin-grid">
 				<?php Handik_Booking_App_Admin_Helpers::field( 'email_from_name', __( 'From name', 'handik-booking-app' ), $s['email_from_name'] ); ?>

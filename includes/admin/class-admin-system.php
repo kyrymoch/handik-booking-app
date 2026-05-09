@@ -122,6 +122,44 @@ class Handik_Booking_App_Admin_System {
 				echo esc_html( $db_last_error );
 				echo '</div>';
 			}
+
+			// Sprint 14b — surface the most recent Notifications_Service
+			// wp_mail failure (set in `send_customer_confirmation` /
+			// `send_owner_notification` when wp_mail returns false).
+			// Cleared automatically on the next successful customer-side
+			// send. Mirrors the Sprint 7 LAST_ERROR_OPTION migration
+			// callout above so a misconfigured SMTP / wrong From-domain
+			// surfaces in one place instead of vanishing into the log
+			// stream.
+			$last_email_error = get_option( 'handik_booking_app_last_email_error', null );
+			if ( is_array( $last_email_error ) && ! empty( $last_email_error['message'] ) ) {
+				$msg     = (string) $last_email_error['message'];
+				$ts      = isset( $last_email_error['time'] ) ? (int) $last_email_error['time'] : 0;
+				$ctx     = isset( $last_email_error['context'] ) && is_array( $last_email_error['context'] ) ? $last_email_error['context'] : array();
+				$to      = isset( $ctx['to'] ) ? (string) $ctx['to'] : '';
+				$source  = isset( $ctx['source'] ) ? (string) $ctx['source'] : '';
+				$side    = isset( $ctx['side'] ) ? (string) $ctx['side'] : 'customer';
+				echo '<div class="handik-admin-callout handik-admin-callout--error" role="alert">';
+				echo '<strong>' . esc_html__( 'Last email error', 'handik-booking-app' ) . ':</strong> ';
+				echo esc_html( $msg );
+				$tail_parts = array();
+				if ( '' !== $side ) {
+					$tail_parts[] = sprintf( '%s: %s', __( 'side', 'handik-booking-app' ), $side );
+				}
+				if ( '' !== $source ) {
+					$tail_parts[] = sprintf( '%s: %s', __( 'source', 'handik-booking-app' ), $source );
+				}
+				if ( '' !== $to ) {
+					$tail_parts[] = sprintf( '%s: %s', __( 'to', 'handik-booking-app' ), $to );
+				}
+				if ( ! empty( $tail_parts ) ) {
+					echo ' <small>(' . esc_html( implode( ' · ', $tail_parts ) ) . ')</small>';
+				}
+				if ( $ts ) {
+					echo '<br><small>' . esc_html( wp_date( 'Y-m-d H:i', $ts ) ) . '</small>';
+				}
+				echo '</div>';
+			}
 			?>
 		</section>
 

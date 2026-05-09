@@ -85,10 +85,13 @@ class Handik_Booking_App_Notifications_Service {
 			return;
 		}
 
-		// Master toggle — defaults OFF on upgrade. Customer keeps receiving
-		// Cal.com's email until the owner has both disabled Cal-side AND
-		// enabled this. See readme Cal-disable instructions.
-		if ( ! $this->customer_confirmations_enabled() ) {
+		// Sprint 14b — both toggles are independent, both default OFF.
+		// If neither side wants the email there's nothing to do; bail
+		// before consuming an idempotency stamp so a future toggle-on
+		// doesn't see "already sent" on every existing row.
+		$want_customer = $this->customer_confirmations_enabled();
+		$want_owner    = $this->owner_notifications_enabled();
+		if ( ! $want_customer && ! $want_owner ) {
 			return;
 		}
 
@@ -112,16 +115,25 @@ class Handik_Booking_App_Notifications_Service {
 			return;
 		}
 
-		// Customer must have an email — if not, nothing to send.
-		$contact       = isset( $context['contact'] ) && is_array( $context['contact'] ) ? $context['contact'] : array();
+		$contact        = isset( $context['contact'] ) && is_array( $context['contact'] ) ? $context['contact'] : array();
 		$customer_email = isset( $contact['email'] ) ? sanitize_email( (string) $contact['email'] ) : '';
-		if ( '' === $customer_email ) {
+		$owner_email    = $want_owner ? $this->resolve_owner_address() : '';
+
+		// Effective dispatch: customer needs the toggle on AND a valid
+		// recipient; owner needs the toggle on AND a configured address
+		// (which falls back to email_from_address if owner_notification_address
+		// is empty).
+		$do_customer = $want_customer && '' !== $customer_email;
+		$do_owner    = $want_owner && '' !== $owner_email;
+		if ( ! $do_customer && ! $do_owner ) {
 			if ( $this->logger ) {
 				$this->logger->info(
-					'Notifications: skipping customer confirmation — contact has no email.',
+					'Notifications: skipping booking-confirmed dispatch — no valid recipients.',
 					array(
-						'source'     => $context['source'] ?? '',
-						'contact_id' => $contact['id'] ?? 0,
+						'source'        => $context['source'] ?? '',
+						'contact_id'    => $contact['id'] ?? 0,
+						'want_customer' => $want_customer,
+						'want_owner'    => $want_owner,
 					)
 				);
 			}
@@ -134,9 +146,16 @@ class Handik_Booking_App_Notifications_Service {
 			return;
 		}
 
-		$sent = $this->send_customer_confirmation( $context, $customer_email );
+		// One combined idempotency stamp covers both sides. Per plan
+		// §6: "if either email fails, both retry". We consider the
+		// dispatch successful iff every side we attempted succeeded;
+		// any failure releases the stamp so a manual retry re-fires.
+		// Sides that were never attempted (toggle off or no recipient)
+		// don't count toward failure.
+		$customer_ok = $do_customer ? $this->send_customer_confirmation( $context, $customer_email ) : true;
+		$owner_ok    = $do_owner    ? $this->send_owner_notification( $context, $owner_email )       : true;
 
-		if ( ! $sent ) {
+		if ( ! ( $customer_ok && $owner_ok ) ) {
 			$this->release_idempotency( $table_short, $row_id );
 		}
 	}
@@ -197,7 +216,7 @@ class Handik_Booking_App_Notifications_Service {
 	 *        customer_confirmation_reply_to. Pass null to use saved.
 	 * @return array{sent: bool, recipient: string, error?: string}
 	 */
-	public function send_test( $recipient_email, $template_overrides = null ) {
+	public function send_test( $recipient_email, $template_overrides = null, $which = 'customer' ) {
 		$recipient = sanitize_email( (string) $recipient_email );
 		if ( '' === $recipient ) {
 			return array( 'sent' => false, 'recipient' => '', 'error' => 'invalid_recipient' );
@@ -205,11 +224,17 @@ class Handik_Booking_App_Notifications_Service {
 
 		$overrides = is_array( $template_overrides ) ? $template_overrides : array();
 		$context   = $this->build_sample_context();
-		$sent      = $this->send_customer_confirmation( $context, $recipient, $overrides );
+
+		if ( 'owner' === $which ) {
+			$sent = $this->send_owner_notification( $context, $recipient, $overrides );
+		} else {
+			$sent = $this->send_customer_confirmation( $context, $recipient, $overrides );
+		}
 
 		return array(
 			'sent'      => $sent,
 			'recipient' => $recipient,
+			'which'     => 'owner' === $which ? 'owner' : 'customer',
 		);
 	}
 
@@ -448,6 +473,133 @@ class Handik_Booking_App_Notifications_Service {
 	}
 
 	/**
+	 * Sprint 14b — owner-side "new booking from Jane" notification.
+	 *
+	 * Plain-text only; no .ics attachment (the owner sees the booking
+	 * on Cal.com and in the admin Bookings list — adding a calendar
+	 * invite would just clutter their personal calendar). Same
+	 * `{{placeholder}}` engine as the customer side, plus the four
+	 * owner-only tokens documented in the readme.
+	 *
+	 * @param array<string, mixed>    $context            Booking context.
+	 * @param string                  $owner_email        Sanitized recipient.
+	 * @param array<string, string>   $template_overrides Optional unsaved
+	 *                                                    template values from
+	 *                                                    the Send-Test path.
+	 * @return bool True iff wp_mail accepted the message.
+	 */
+	protected function send_owner_notification( array $context, $owner_email, array $template_overrides = array() ) {
+		$placeholders = $this->build_placeholders( $context );
+
+		$resolve = function ( $key ) use ( $template_overrides ) {
+			if ( array_key_exists( $key, $template_overrides ) ) {
+				return (string) $template_overrides[ $key ];
+			}
+			return (string) $this->settings->get( $key, '' );
+		};
+
+		$subject_template = $resolve( 'owner_notification_subject' );
+		$body_template    = $resolve( 'owner_notification_body' );
+
+		$subject = Handik_Booking_App_Admin_Helpers::render_template( $subject_template, $placeholders );
+		$body    = Handik_Booking_App_Admin_Helpers::render_template( $body_template, $placeholders );
+		$body    = wordwrap( $body, 78, "\n", false );
+
+		$from_name    = trim( (string) $this->settings->get( 'email_from_name', '' ) );
+		$from_address = sanitize_email( (string) $this->settings->get( 'email_from_address', '' ) );
+
+		// Plain-text headers; owner-side never uses HTML. Reply-To is
+		// the customer's email so a quick "got it, see you Tuesday"
+		// reply lands directly with them — most useful single default.
+		$headers = array( 'Content-Type: text/plain; charset=UTF-8' );
+		if ( '' !== $from_address ) {
+			$from_label = '' !== $from_name
+				? sprintf( '%s <%s>', $from_name, $from_address )
+				: $from_address;
+			$headers[] = 'From: ' . $from_label;
+		}
+		$contact         = isset( $context['contact'] ) && is_array( $context['contact'] ) ? $context['contact'] : array();
+		$customer_email  = sanitize_email( (string) ( $contact['email'] ?? '' ) );
+		if ( '' !== $customer_email ) {
+			$headers[] = 'Reply-To: ' . $customer_email;
+		}
+
+		// Owner email is plain-text: force wp_mail's content-type to
+		// text/plain for the duration of this call (other plugins may
+		// have set HTML as the global default). try/finally so any
+		// throw still removes our filter.
+		$content_type_cb = static function () {
+			return 'text/plain';
+		};
+		add_filter( 'wp_mail_content_type', $content_type_cb, PHP_INT_MAX );
+
+		$sent = false;
+		try {
+			$sent = (bool) wp_mail( $owner_email, $subject, $body, $headers );
+		} catch ( \Throwable $e ) {
+			$sent = false;
+			if ( $this->logger ) {
+				$this->logger->error(
+					'Notifications: owner-notification wp_mail threw.',
+					array(
+						'source'    => $context['source'] ?? '',
+						'recipient' => $owner_email,
+						'message'   => $e->getMessage(),
+					)
+				);
+			}
+		} finally {
+			remove_filter( 'wp_mail_content_type', $content_type_cb, PHP_INT_MAX );
+		}
+
+		if ( ! $sent ) {
+			update_option(
+				'handik_booking_app_last_email_error',
+				array(
+					'time'    => time(),
+					'message' => 'wp_mail (owner notification) returned false',
+					'context' => array(
+						'request_id' => (int) ( $context['request_id'] ?? 0 ),
+						'source'     => (string) ( $context['source'] ?? '' ),
+						'to'         => $owner_email,
+						'side'       => 'owner',
+					),
+				),
+				false
+			);
+			if ( $this->logger ) {
+				$this->logger->error(
+					'Notifications: owner-notification wp_mail returned false.',
+					array(
+						'source'    => $context['source'] ?? '',
+						'recipient' => $owner_email,
+					)
+				);
+			}
+			return false;
+		}
+
+		// Don't clear LAST_EMAIL_ERROR here — the customer-side path
+		// already clears on its own success, and clearing twice from
+		// two callers in the same dispatch race is fine but noisy in
+		// the System info "Last attempt" tracker. Leaving it to
+		// customer-side (or a future explicit "ok" stamp).
+
+		if ( $this->logger ) {
+			$this->logger->info(
+				'Notifications: owner notification sent.',
+				array(
+					'source'          => $context['source'] ?? '',
+					'request_id'      => $context['request_id'] ?? 0,
+					'recipient'       => $owner_email,
+					'cal_booking_uid' => $context['cal_booking_uid'] ?? '',
+				)
+			);
+		}
+		return true;
+	}
+
+	/**
 	 * @param array<string, mixed> $context Booking context.
 	 * @return array<string, string>
 	 */
@@ -527,7 +679,72 @@ class Handik_Booking_App_Notifications_Service {
 			'days_list_html'       => $days_list_html,
 			'days_list_text'       => $days_list_text,
 			'days_count'           => (string) $days_count,
+
+			// Sprint 14b — owner-notification-specific tokens. Harmless
+			// in customer templates (just unused), but only defined for
+			// the owner email's mailto: / tel: links and "where did this
+			// come from?" provenance line.
+			'customer_phone'           => (string) ( $contact['phone'] ?? '' ),
+			'customer_email'           => (string) ( $contact['email'] ?? '' ),
+			'source_label'             => $this->source_label( $source ),
+			'open_request_admin_link'  => $this->open_request_admin_link( $context ),
 		);
+	}
+
+	/**
+	 * @param string $source Context source (cal | direct | project).
+	 * @return string Human-readable label for the owner email "Source:" line.
+	 */
+	protected function source_label( $source ) {
+		switch ( (string) $source ) {
+			case 'cal':
+				return __( 'Main SPA', 'handik-booking-app' );
+			case 'direct':
+				return __( 'Direct booking form', 'handik-booking-app' );
+			case 'project':
+				return __( 'Project work-days', 'handik-booking-app' );
+			default:
+				return (string) $source;
+		}
+	}
+
+	/**
+	 * Build a deep-link the owner can paste into a phone or click in
+	 * their inbox to land on the relevant admin booking-detail page.
+	 *
+	 * The admin Bookings list (`?page=handik-booking-app-bookings`) reads
+	 * the unified `handik_bookings` table, which Sprint 13.5 made the
+	 * single visibility surface for both main-SPA and direct-form rows.
+	 * Project schedules don't mirror there (yet) — for the project
+	 * source we link to the Additional Forms admin page instead.
+	 *
+	 * @param array<string, mixed> $context Booking context.
+	 * @return string Absolute admin URL or '' when we can't resolve one.
+	 */
+	protected function open_request_admin_link( array $context ) {
+		$source     = (string) ( $context['source'] ?? '' );
+		$booking_id = isset( $context['booking_id'] ) ? (int) $context['booking_id'] : 0;
+		$request_id = isset( $context['request_id'] ) ? (int) $context['request_id'] : 0;
+
+		switch ( $source ) {
+			case 'cal':
+				if ( $booking_id ) {
+					return admin_url( 'admin.php?page=handik-booking-app-bookings&booking_id=' . $booking_id );
+				}
+				return admin_url( 'admin.php?page=handik-booking-app-bookings' );
+			case 'direct':
+				// Direct rows are visible in the unified Bookings list as
+				// of 2.1.20.2 — best link is the same list filtered, but
+				// without a stable per-direct-row deep-link we just send
+				// the operator there. They'll see the latest row at the top.
+				return admin_url( 'admin.php?page=handik-booking-app-bookings' );
+			case 'project':
+				return $request_id
+					? admin_url( 'admin.php?page=handik-booking-app-additional-forms&schedule_id=' . $request_id )
+					: admin_url( 'admin.php?page=handik-booking-app-additional-forms' );
+			default:
+				return admin_url( 'admin.php?page=handik-booking-app' );
+		}
 	}
 
 	/**
@@ -744,6 +961,29 @@ class Handik_Booking_App_Notifications_Service {
 		$value = $this->settings->get( 'customer_confirmations_enabled', '' );
 		// Treat any truthy stored value as enabled (1, '1', true).
 		return ! empty( $value );
+	}
+
+	/**
+	 * @return bool
+	 */
+	protected function owner_notifications_enabled() {
+		return ! empty( $this->settings->get( 'owner_notification_enabled', '' ) );
+	}
+
+	/**
+	 * Resolve the owner-notification recipient. Picker setting wins; falls
+	 * back to `email_from_address` so a fresh install works without
+	 * extra configuration. Empty return means no usable recipient — the
+	 * dispatcher will skip the owner branch.
+	 *
+	 * @return string Sanitized email or ''.
+	 */
+	protected function resolve_owner_address() {
+		$picked = sanitize_email( (string) $this->settings->get( 'owner_notification_address', '' ) );
+		if ( '' !== $picked ) {
+			return $picked;
+		}
+		return sanitize_email( (string) $this->settings->get( 'email_from_address', '' ) );
 	}
 
 	/* ------------------------------------------------------------------ *

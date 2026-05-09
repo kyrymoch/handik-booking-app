@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.1.21.0
+Stable tag: 2.1.21.1
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, silent returning-client recognition, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,19 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.1.21.1 =
+* **Sprint 14b — owner-side booking notification + email-error surface.** Closes the second half of the email work that 14a started. No new files, no schema change; extends the existing `Notifications_Service` and adds one System info callout. Master toggle defaults OFF on upgrade so existing installs see no behavioural change.
+* **Owner gets their own "new booking from Jane" email** on every confirmed booking — main flow, direct preset, and project work-days — independent of the customer-side toggle (you can run owner-only, customer-only, or both). Plain-text only (no HTML — overkill when you're emailing yourself); Reply-To is set to the customer's email so a quick "got it, see you Tuesday" lands directly with them.
+* **New settings on App Setup → Customer notifications → "Owner booking notification" section:**
+  - Toggle: *Notify the owner on every new booking* (defaults OFF).
+  - Recipient address: defaults to your `email_from_address` if empty — useful if you want bookings going to a phone-pinned alias (`ops@…`) instead of your main inbox.
+  - Subject + body templates with `{{placeholder}}` substitution. Owner-side ships with four extra placeholders the customer email doesn't expose: `{{customer_phone}}`, `{{customer_email}}`, `{{source_label}}` (which booking surface — Main SPA / Direct booking form / Project work-days), and `{{open_request_admin_link}}` (deep-link to the admin booking-detail page).
+  - Owner-side gets its own *Send owner test email to me* button on the same Notifications tab so you can preview your template edits before going live, exactly like the customer-side test in 14a. Bypasses the toggle.
+* **One combined idempotency stamp covers both sides.** The Sprint 14a `confirmation_email_sent_at` column is unchanged — owner + customer dispatches share it, so a Cal-webhook retry can't fire either email twice. If the customer-side send succeeds but the owner-side fails (e.g. SMTP throttle), the stamp rolls back and a manual retry re-fires both. Tradeoff: in that rare case the customer would receive a second copy. We accept it because (a) the rollback path only happens on `wp_mail` failure, which is itself rare, and (b) avoiding duplicate emails to the owner is more important than the edge-case duplicate to the customer.
+* **`LAST_EMAIL_ERROR_OPTION` callout on the System info page.** Mirrors the Sprint 7 `LAST_ERROR_OPTION` migration callout — when `wp_mail` returns false on either side (customer or owner), the failure surfaces in a red callout above the migration callout with the side, source, recipient, and timestamp. Cleared automatically on the next successful customer-side send.
+* **Build-placeholder pipeline grew four owner-only tokens** (listed above). They're harmless if accidentally used in a customer template (substituted out as the literal string). The Send-Test sample-data context now also populates them so the preview email renders identically to a real one.
+* **Out-of-scope (still v2 work — see plan §12):** Cancellation / reschedule notices. Per-form-type subject overrides (one template per source for v1, owner edits globally). Action Scheduler-backed N-hour reminders. Admin "Resend confirmation" button on the booking-detail page (the System info callout + manual idempotency-stamp release covers manual retry for now). SPF / DKIM deliverability documentation — flagged as a follow-up in the readme.
 
 = 2.1.21.0 =
 * **Sprint 14a — branded customer booking-confirmation emails.** Plugin now ships its own confirmation email (HTML + plain-text alternative, with a `.ics` calendar attachment) directly to the customer after every new booking — main SPA Cal flow, Additional Forms direct preset, and Additional Forms project work-days flow. Owner-controlled subject + HTML body + plain-text body templates with `{{placeholder}}` substitution. Reply-To is configurable (defaults to the existing `email_from_address`). Master toggle defaults OFF on upgrade; nothing changes until the owner enables it.

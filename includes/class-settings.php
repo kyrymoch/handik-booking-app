@@ -184,6 +184,17 @@ class Handik_Booking_App_Settings {
 			'customer_confirmation_body_html'   => self::default_customer_body_html(),
 			'customer_confirmation_body_text'   => self::default_customer_body_text(),
 			'customer_confirmation_reply_to'    => '',
+
+			// Sprint 14b — owner-notification email keys. Independent
+			// toggle (owner can enable owner-side without flipping
+			// customer-side, and vice versa). Recipient empty → falls
+			// back to `email_from_address` so a fresh install works
+			// without configuration. Owner email is plain-text only —
+			// HTML is overkill for "we're emailing ourselves".
+			'owner_notification_enabled'        => 0,
+			'owner_notification_address'        => '',
+			'owner_notification_subject'        => 'New booking — {{customer_name}} on {{booking_when}}',
+			'owner_notification_body'           => self::default_owner_body_text(),
 		);
 	}
 
@@ -198,6 +209,20 @@ class Handik_Booking_App_Settings {
 			. "{{tasks_list_html}}\n"
 			. "<p>A calendar invite is attached. If you need to reschedule or cancel, just reply to this email — {{operator_first_name}} reads them.</p>\n"
 			. '<p>— {{from_name}}</p>';
+	}
+
+	/**
+	 * @return string
+	 */
+	protected static function default_owner_body_text() {
+		return "{{customer_name}} just booked.\n\n"
+			. "When:    {{booking_when_long}}\n"
+			. "Phone:   {{customer_phone}}\n"
+			. "Email:   {{customer_email}}\n"
+			. "Address: {{address}}\n"
+			. "Tasks:   {{tasks_list_text}}\n"
+			. "Source:  {{source_label}}\n\n"
+			. 'Open in admin: {{open_request_admin_link}}';
 	}
 
 	/**
@@ -302,12 +327,14 @@ class Handik_Booking_App_Settings {
 					break;
 				case 'email_from_address':
 				case 'customer_confirmation_reply_to':
+				case 'owner_notification_address':
 					$output[ $key ] = sanitize_email( $value );
 					break;
 				case 'service_area_zips':
 				case 'cal_confirmation_note':
 				case 'magic_link_email_body':
 				case 'customer_confirmation_body_text':
+				case 'owner_notification_body':
 					$output[ $key ] = trim( str_replace( "\0", '', (string) $value ) );
 					break;
 				case 'customer_confirmation_body_html':
@@ -317,6 +344,7 @@ class Handik_Booking_App_Settings {
 					$output[ $key ] = wp_kses_post( (string) $value );
 					break;
 				case 'customer_confirmations_enabled':
+				case 'owner_notification_enabled':
 					$output[ $key ] = empty( $value ) ? 0 : 1;
 					break;
 				case 'log_max_entries_info':
