@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.1.21.3
+Stable tag: 2.1.21.4
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, silent returning-client recognition, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,11 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.1.21.4 =
+* **Branded customer-confirmation default template + Brand logo URL setting.** New `brand_logo_url` setting on the Notifications tab → drops a public HTTPS URL (e.g. your logo on the site's media library) and the default HTML template renders it centered above the booking details. Empty → no logo block, just the text-first email. Two new placeholders: `{{brand_logo_html}}` (full `<img>` block, or empty string when no URL is set; safe to drop into any HTML template) and `{{brand_logo_url}}` (raw URL, esc_url'd at render time so `javascript:` schemes can't slip through).
+* **The default `customer_confirmation_body_html` is now a polished table-based layout** with system fonts, a 560px max-width, an off-white card on a light background, and a footer linking back to the site. Existing installs keep whatever they had saved — only fresh activations land the new default. To adopt it on an existing install, clear the HTML body field and save (the default repopulates).
+* No DB change, no behaviour change for production sends. URL setting sanitizes via `esc_url_raw` on save, `esc_url` at render time, and the `<img>` block is allow-listed past `placeholders_for_html`'s escape pass so the markup survives.
 
 = 2.1.21.3 =
 * **Test recipient field on the Notifications tab.** Owner request: route "Send test email" previews to a shared inbox (e.g. `hello@handik.pro`) without changing the WordPress profile email of whoever's logged in. New top section on App Setup → Customer notifications with a single field that both Send Test buttons honor. Resolution order: unsaved form value → saved setting → fallback to current admin's WP user email. Caption next to each Send Test button now shows the actual address that's about to receive the preview.

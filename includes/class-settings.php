@@ -202,20 +202,54 @@ class Handik_Booking_App_Settings {
 			// `hello@handik.pro` to ship test previews to a shared
 			// inbox without changing the admin user's profile email.
 			'notification_test_recipient'       => '',
+
+			// 2.1.21.4 — brand logo for the customer-confirmation HTML
+			// email. Empty → no logo block in the default template; just
+			// the {{from_name}} text in the footer. Set to a public
+			// HTTPS URL (e.g. https://handik.pro/wp-content/uploads/handik-logo.png)
+			// and the default template renders it as a centered <img>
+			// at the top. Stored as a raw URL; rendered through esc_url
+			// when substituted into HTML so script: schemes can't slip
+			// through.
+			'brand_logo_url'                    => '',
 		);
 	}
 
 	/**
+	 * 2.1.21.4 — branded default. Table-based layout (still the most
+	 * portable email construct: Outlook desktop and many mobile webmail
+	 * clients drop CSS-grid / flexbox), inline styles only (Gmail strips
+	 * `<style>` blocks), max-width 560px (works on both desktop and
+	 * mobile preview), system fonts (no webfont latency).
+	 *
+	 * `{{brand_logo_html}}` resolves to a centered `<img>` if
+	 * `brand_logo_url` is configured, otherwise to an empty string —
+	 * so an install without a logo just gets a clean text-first email.
+	 * The rest of the template sets HTML safely; user-controlled scalar
+	 * placeholders (customer_name, address, etc.) are HTML-escaped at
+	 * substitution time by Notifications_Service::placeholders_for_html().
+	 *
+	 * Existing installs keep whatever they had saved; only fresh
+	 * activations and explicit "reset to default" land this template.
+	 *
 	 * @return string
 	 */
 	protected static function default_customer_body_html() {
-		return "<p>Hi {{customer_name}},</p>\n"
-			. "<p>Your visit is confirmed for <strong>{{booking_when_long}}</strong>.</p>\n"
-			. "<p><strong>Where:</strong> {{address}}</p>\n"
-			. "<p><strong>What we'll be doing:</strong></p>\n"
-			. "{{tasks_list_html}}\n"
-			. "<p>A calendar invite is attached. If you need to reschedule or cancel, just reply to this email — {{operator_first_name}} reads them.</p>\n"
-			. '<p>— {{from_name}}</p>';
+		return '<table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="font-family: -apple-system, BlinkMacSystemFont, \'Segoe UI\', Roboto, sans-serif; max-width: 560px; margin: 0 auto; color: #0f172a;">' . "\n"
+			. '  <tr><td style="padding: 24px 0; text-align: center;">{{brand_logo_html}}</td></tr>' . "\n"
+			. '  <tr><td style="background: #f8fafc; padding: 28px 24px; border-radius: 12px;">' . "\n"
+			. '    <p style="margin: 0 0 16px;">Hi {{customer_name}},</p>' . "\n"
+			. '    <p style="margin: 0 0 16px;">Your visit is confirmed for <strong>{{booking_when_long}}</strong>.</p>' . "\n"
+			. '    <p style="margin: 0 0 8px;"><strong>Where:</strong> {{address}}</p>' . "\n"
+			. '    <p style="margin: 0 0 8px;"><strong>What we\'ll be doing:</strong></p>' . "\n"
+			. '    {{tasks_list_html}}' . "\n"
+			. '    <p style="margin: 24px 0 16px;">A calendar invite is attached. If you need to reschedule or cancel, just reply to this email — {{operator_first_name}} reads them.</p>' . "\n"
+			. '    <p style="margin: 0;">— {{from_name}}</p>' . "\n"
+			. '  </td></tr>' . "\n"
+			. '  <tr><td style="padding: 16px 0; text-align: center; color: #64748b; font-size: 12px;">' . "\n"
+			. '    {{site_name}} · <a href="{{site_url}}" style="color: #64748b; text-decoration: underline;">{{site_url}}</a>' . "\n"
+			. '  </td></tr>' . "\n"
+			. '</table>';
 	}
 
 	/**
@@ -330,6 +364,7 @@ class Handik_Booking_App_Settings {
 				case 'cal_large_event_url':
 				case 'cal_project_event_url':
 				case 'cal_fallback_url':
+				case 'brand_logo_url':
 					$output[ $key ] = esc_url_raw( (string) $value );
 					break;
 				case 'email_from_address':

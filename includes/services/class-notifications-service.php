@@ -692,6 +692,21 @@ class Handik_Booking_App_Notifications_Service {
 			: '<ul>' . implode( '', $tasks_html_parts ) . '</ul>';
 		$tasks_list_text = implode( "\n", $tasks_text_parts );
 
+		// 2.1.21.4 — pre-render the optional brand-logo block. We can't
+		// do conditional rendering inside the template (str_replace has
+		// no branching), so this resolves to a complete `<img>` block
+		// when a URL is configured and to an empty string otherwise.
+		// `placeholders_for_html()` will skip its esc_html pass on this
+		// key; the URL itself is already URL-escaped here so a forged
+		// `javascript:` setting can't slip through.
+		$brand_logo_url  = trim( (string) $this->settings->get( 'brand_logo_url', '' ) );
+		$brand_logo_html = '';
+		if ( '' !== $brand_logo_url ) {
+			$safe_url       = esc_url( $brand_logo_url );
+			$alt            = esc_attr( (string) get_bloginfo( 'name' ) );
+			$brand_logo_html = '<img src="' . $safe_url . '" alt="' . $alt . '" width="120" style="display: block; margin: 0 auto; max-width: 120px; height: auto;">';
+		}
+
 		return array(
 			'customer_name'        => $customer_name,
 			'booking_when'         => $booking_when,
@@ -708,6 +723,8 @@ class Handik_Booking_App_Notifications_Service {
 			'days_list_html'       => $days_list_html,
 			'days_list_text'       => $days_list_text,
 			'days_count'           => (string) $days_count,
+			'brand_logo_url'       => $brand_logo_url,
+			'brand_logo_html'      => $brand_logo_html,
 
 			// Sprint 14b — owner-notification-specific tokens. Harmless
 			// in customer templates (just unused), but only defined for
@@ -798,8 +815,8 @@ class Handik_Booking_App_Notifications_Service {
 	 */
 	protected function placeholders_for_html( array $base ) {
 		$out                  = array();
-		$pre_rendered_html    = array( 'tasks_list_html', 'days_list_html' );
-		$url_keys             = array( 'cal_url', 'restart_url', 'site_url', 'open_request_admin_link' );
+		$pre_rendered_html    = array( 'tasks_list_html', 'days_list_html', 'brand_logo_html' );
+		$url_keys             = array( 'cal_url', 'restart_url', 'site_url', 'open_request_admin_link', 'brand_logo_url' );
 		foreach ( $base as $key => $value ) {
 			if ( in_array( $key, $pre_rendered_html, true ) ) {
 				$out[ $key ] = (string) $value;
