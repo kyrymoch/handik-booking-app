@@ -173,7 +173,43 @@ class Handik_Booking_App_Settings {
 			// Log retention (E1) — 0 means use defaults.
 			'log_max_entries_info'              => '2000',
 			'log_max_entries_debug'             => '500',
+
+			// Sprint 14a — customer-confirmation email keys. Master toggle
+			// defaults OFF so existing installs upgrade without behaviour
+			// change; the owner manually disables Cal.com's email AND
+			// flips this on at the same time (see readme Cal-disable
+			// instructions). Reply-To empty → falls back to email_from_address.
+			'customer_confirmations_enabled'    => 0,
+			'customer_confirmation_subject'     => 'Booking confirmed — {{booking_when_long}}',
+			'customer_confirmation_body_html'   => self::default_customer_body_html(),
+			'customer_confirmation_body_text'   => self::default_customer_body_text(),
+			'customer_confirmation_reply_to'    => '',
 		);
+	}
+
+	/**
+	 * @return string
+	 */
+	protected static function default_customer_body_html() {
+		return "<p>Hi {{customer_name}},</p>\n"
+			. "<p>Your visit is confirmed for <strong>{{booking_when_long}}</strong>.</p>\n"
+			. "<p><strong>Where:</strong> {{address}}</p>\n"
+			. "<p><strong>What we'll be doing:</strong></p>\n"
+			. "{{tasks_list_html}}\n"
+			. "<p>A calendar invite is attached. If you need to reschedule or cancel, just reply to this email — {{operator_first_name}} reads them.</p>\n"
+			. '<p>— {{from_name}}</p>';
+	}
+
+	/**
+	 * @return string
+	 */
+	protected static function default_customer_body_text() {
+		return "Hi {{customer_name}},\n\n"
+			. "Your visit is confirmed for {{booking_when_long}}.\n\n"
+			. "Where: {{address}}\n\n"
+			. "What we'll be doing:\n{{tasks_list_text}}\n\n"
+			. "A calendar invite is attached. If you need to reschedule or cancel, just reply to this email — {{operator_first_name}} reads them.\n\n"
+			. '— {{from_name}}';
 	}
 
 	/**
@@ -265,12 +301,23 @@ class Handik_Booking_App_Settings {
 					$output[ $key ] = esc_url_raw( (string) $value );
 					break;
 				case 'email_from_address':
+				case 'customer_confirmation_reply_to':
 					$output[ $key ] = sanitize_email( $value );
 					break;
 				case 'service_area_zips':
 				case 'cal_confirmation_note':
 				case 'magic_link_email_body':
+				case 'customer_confirmation_body_text':
 					$output[ $key ] = trim( str_replace( "\0", '', (string) $value ) );
+					break;
+				case 'customer_confirmation_body_html':
+					// Allow safe HTML — same allow-list as comments / post
+					// content so the owner can use <p>, <strong>, <a>, <ul>,
+					// <li>, etc. in the email body without surprise stripping.
+					$output[ $key ] = wp_kses_post( (string) $value );
+					break;
+				case 'customer_confirmations_enabled':
+					$output[ $key ] = empty( $value ) ? 0 : 1;
 					break;
 				case 'log_max_entries_info':
 				case 'log_max_entries_debug':

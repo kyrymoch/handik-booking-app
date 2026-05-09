@@ -131,6 +131,18 @@ class Handik_Booking_App_Admin {
 		}
 		check_admin_referer( 'handik_booking_app_save_settings', 'handik_booking_app_settings_nonce' );
 
+		// Sprint 14a — "Send test email" button on the Notifications tab
+		// shares the settings form (so unsaved template edits get included
+		// in the preview) but is its own action: we ship a sample-data
+		// email to the current admin and DON'T persist the form. Keeps
+		// "Save" and "Send test" mutually exclusive — one click, one
+		// outcome.
+		$action = isset( $_POST['handik_action'] ) ? sanitize_key( wp_unslash( $_POST['handik_action'] ) ) : '';
+		if ( 'send_test_email' === $action ) {
+			$this->handle_send_test_email( wp_unslash( $_POST ) );
+			return;
+		}
+
 		// Sprint 8 (hotfix 2.1.15.1): if the submission contains any
 		// integration-secret fields (API keys, auth tokens, Cal webhook
 		// shared secret, Cal.com API credentials), the user must also
@@ -174,6 +186,73 @@ class Handik_Booking_App_Admin {
 
 		$this->settings->update( $payload );
 		add_settings_error( 'handik-booking-app', 'settings_saved', __( 'Settings updated.', 'handik-booking-app' ), 'updated' );
+	}
+
+	/**
+	 * Sprint 14a — handle the Notifications tab "Send test email" submit.
+	 * Uses unsaved POST template values so the operator can preview edits
+	 * before clicking Save. Does not persist anything; bypasses the
+	 * master toggle (the whole point is preview before flipping it).
+	 *
+	 * @param array<string, mixed> $payload Unslashed POST data.
+	 * @return void
+	 */
+	protected function handle_send_test_email( array $payload ) {
+		$plugin = handik_booking_app();
+		if ( ! $plugin || empty( $plugin->notifications ) ) {
+			add_settings_error(
+				'handik-booking-app',
+				'test_email_failed',
+				__( 'Notifications service is not available.', 'handik-booking-app' )
+			);
+			return;
+		}
+
+		$user = wp_get_current_user();
+		$to   = sanitize_email( (string) $user->user_email );
+		if ( '' === $to ) {
+			add_settings_error(
+				'handik-booking-app',
+				'test_email_failed',
+				__( 'Your account has no email address — set one before sending a test.', 'handik-booking-app' )
+			);
+			return;
+		}
+
+		$overrides = array();
+		foreach ( array(
+			'customer_confirmation_subject',
+			'customer_confirmation_body_html',
+			'customer_confirmation_body_text',
+			'customer_confirmation_reply_to',
+		) as $key ) {
+			if ( array_key_exists( $key, $payload ) ) {
+				if ( 'customer_confirmation_body_html' === $key ) {
+					$overrides[ $key ] = wp_kses_post( (string) $payload[ $key ] );
+				} elseif ( 'customer_confirmation_reply_to' === $key ) {
+					$overrides[ $key ] = sanitize_email( (string) $payload[ $key ] );
+				} else {
+					$overrides[ $key ] = trim( str_replace( "\0", '', (string) $payload[ $key ] ) );
+				}
+			}
+		}
+
+		$result = $plugin->notifications->send_test( $to, $overrides );
+		if ( ! empty( $result['sent'] ) ) {
+			add_settings_error(
+				'handik-booking-app',
+				'test_email_sent',
+				/* translators: %s: recipient email address. */
+				sprintf( __( 'Test confirmation email sent — check %s.', 'handik-booking-app' ), $result['recipient'] ),
+				'updated'
+			);
+		} else {
+			add_settings_error(
+				'handik-booking-app',
+				'test_email_failed',
+				__( 'Test email failed to send. See Logs for details.', 'handik-booking-app' )
+			);
+		}
 	}
 
 	// =====================================================================

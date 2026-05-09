@@ -62,6 +62,15 @@ class Handik_Booking_App_Bookings_Service {
 		}
 
 		$this->job_requests->set_cal_booking( $job_request_id, $booking_id, $status );
+
+		// Sprint 14a — fire the booking-confirmed action ONLY on first
+		// transition into a confirmed state. Atomic UPDATE on the new
+		// `confirmation_email_sent_at` column inside Notifications_Service
+		// handles webhook-retry deduping; we only need to gate on status
+		// here so cancellations / reschedules don't trigger a new email.
+		if ( 'booked' === sanitize_key( $status ) && class_exists( 'Handik_Booking_App_Notifications_Service' ) ) {
+			Handik_Booking_App_Notifications_Service::dispatch_for_cal( (int) $job_request_id, $row_id, $payload );
+		}
 		return $row_id;
 	}
 
@@ -126,10 +135,23 @@ class Handik_Booking_App_Bookings_Service {
 		$existing = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$table} WHERE cal_booking_id = %s LIMIT 1", $booking_id ), ARRAY_A );
 		if ( $existing ) {
 			$wpdb->update( $table, $record, array( 'id' => (int) $existing['id'] ) );
-			return (int) $existing['id'];
+			$row_id = (int) $existing['id'];
+		} else {
+			$wpdb->insert( $table, $record );
+			$row_id = (int) $wpdb->insert_id;
 		}
-		$wpdb->insert( $table, $record );
-		return (int) $wpdb->insert_id;
+
+		// Sprint 14a — also fire from the trailing-edge webhook path so a
+		// customer who abandoned the Cal embed (no leading-edge capture)
+		// still gets the email when Cal eventually webhooks the booking.
+		// Direct flow's leading-edge path in `Direct_Booking_Service::
+		// capture_booking()` ALSO dispatches; idempotency on the
+		// `direct_booking_requests.confirmation_email_sent_at` column
+		// guarantees only one email goes out per real booking.
+		if ( 'booked' === sanitize_key( $status ) && class_exists( 'Handik_Booking_App_Notifications_Service' ) ) {
+			Handik_Booking_App_Notifications_Service::dispatch_for_direct( (int) $direct_request_id, $payload );
+		}
+		return $row_id;
 	}
 
 	/**

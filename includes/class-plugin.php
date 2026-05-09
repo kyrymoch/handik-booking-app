@@ -45,6 +45,7 @@ class Handik_Booking_App_Plugin {
 	public $forms_rest_api;
 	public $forms_router;
 	public $admin_additional_forms;
+	public $notifications;
 
 	/**
 	 * @return Handik_Booking_App_Plugin
@@ -99,6 +100,12 @@ class Handik_Booking_App_Plugin {
 		$this->admin_additional_forms = new Handik_Booking_App_Admin_Additional_Forms( $this->booking_presets, $this->direct_booking, $this->project_schedule, $this->contacts, $this->addresses );
 
 		$this->webhook        = new Handik_Booking_App_Webhook_Service( $this->settings, $this->logger, $this->job_requests, $this->bookings, $this->direct_booking, $this->project_schedule );
+
+		// Sprint 14a — Notifications_Service subscribes to the new
+		// `handik_booking_confirmed` action that the three booking-creation
+		// sites (Cal upsert, direct capture, project confirm_schedule) fire.
+		// Constructor registers the action listener; nothing else needs DI.
+		$this->notifications  = new Handik_Booking_App_Notifications_Service( $this->settings, $this->logger );
 		$this->service_catalog = new Handik_Booking_App_Service_Catalog_Service( $this->settings );
 		$this->changelog      = new Handik_Booking_App_Changelog_Service();
 		$this->app_state      = new Handik_Booking_App_State( $this->service_catalog );
