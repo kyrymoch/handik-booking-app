@@ -138,12 +138,20 @@ class Handik_Booking_App_Admin {
 		// "Save" and "Send test" mutually exclusive — one click, one
 		// outcome.
 		$action = isset( $_POST['handik_action'] ) ? sanitize_key( wp_unslash( $_POST['handik_action'] ) ) : '';
-		if ( 'send_test_email' === $action ) {
-			$this->handle_send_test_email( wp_unslash( $_POST ), 'customer' );
-			return;
-		}
-		if ( 'send_test_owner_email' === $action ) {
-			$this->handle_send_test_email( wp_unslash( $_POST ), 'owner' );
+		// Sprint 14a: send_test_email (customer booking confirmation).
+		// Sprint 14b: send_test_owner_email (owner booking notification).
+		// Sprint 14c: send_test_customer_cancellation, send_test_customer_reschedule,
+		//             send_test_owner_cancellation, send_test_owner_reschedule.
+		$test_action_map = array(
+			'send_test_email'                  => 'customer',
+			'send_test_owner_email'            => 'owner',
+			'send_test_customer_cancellation'  => 'customer_cancellation',
+			'send_test_customer_reschedule'    => 'customer_reschedule',
+			'send_test_owner_cancellation'     => 'owner_cancellation',
+			'send_test_owner_reschedule'       => 'owner_reschedule',
+		);
+		if ( isset( $test_action_map[ $action ] ) ) {
+			$this->handle_send_test_email( wp_unslash( $_POST ), $test_action_map[ $action ] );
 			return;
 		}
 
@@ -240,33 +248,51 @@ class Handik_Booking_App_Admin {
 			return;
 		}
 
-		$overrides = array();
-		if ( 'owner' === $which ) {
-			foreach ( array( 'owner_notification_subject', 'owner_notification_body' ) as $key ) {
-				if ( array_key_exists( $key, $payload ) ) {
-					$overrides[ $key ] = trim( str_replace( "\0", '', (string) $payload[ $key ] ) );
-				}
-			}
-		} else {
-			foreach ( array(
+		// Sprint 14c — extended to 6 sides (booked + cancellation +
+		// reschedule, customer + owner). Each side has its own slice of
+		// settings keys; we collect only the relevant ones from the
+		// POST so a stray submitted field can't end up in the wrong
+		// template's override.
+		$override_keys_by_side = array(
+			'customer'               => array(
 				'customer_confirmation_subject',
 				'customer_confirmation_body_html',
 				'customer_confirmation_body_text',
 				'customer_confirmation_reply_to',
-			) as $key ) {
-				if ( array_key_exists( $key, $payload ) ) {
-					if ( 'customer_confirmation_body_html' === $key ) {
-						$overrides[ $key ] = wp_kses_post( (string) $payload[ $key ] );
-					} elseif ( 'customer_confirmation_reply_to' === $key ) {
-						$overrides[ $key ] = sanitize_email( (string) $payload[ $key ] );
-					} else {
-						$overrides[ $key ] = trim( str_replace( "\0", '', (string) $payload[ $key ] ) );
-					}
-				}
+			),
+			'owner'                  => array( 'owner_notification_subject', 'owner_notification_body' ),
+			'customer_cancellation'  => array(
+				'customer_cancellation_subject',
+				'customer_cancellation_body_html',
+				'customer_cancellation_body_text',
+			),
+			'customer_reschedule'    => array(
+				'customer_reschedule_subject',
+				'customer_reschedule_body_html',
+				'customer_reschedule_body_text',
+			),
+			'owner_cancellation'     => array( 'owner_cancellation_subject', 'owner_cancellation_body' ),
+			'owner_reschedule'       => array( 'owner_reschedule_subject', 'owner_reschedule_body' ),
+		);
+		$keys_for_side = $override_keys_by_side[ $which ] ?? $override_keys_by_side['customer'];
+		$html_keys     = array( 'customer_confirmation_body_html', 'customer_cancellation_body_html', 'customer_reschedule_body_html' );
+		$email_keys    = array( 'customer_confirmation_reply_to' );
+
+		$overrides = array();
+		foreach ( $keys_for_side as $key ) {
+			if ( ! array_key_exists( $key, $payload ) ) {
+				continue;
+			}
+			if ( in_array( $key, $html_keys, true ) ) {
+				$overrides[ $key ] = wp_kses_post( (string) $payload[ $key ] );
+			} elseif ( in_array( $key, $email_keys, true ) ) {
+				$overrides[ $key ] = sanitize_email( (string) $payload[ $key ] );
+			} else {
+				$overrides[ $key ] = trim( str_replace( "\0", '', (string) $payload[ $key ] ) );
 			}
 		}
 
-		$result = $plugin->notifications->send_test( $to, $overrides, 'owner' === $which ? 'owner' : 'customer' );
+		$result = $plugin->notifications->send_test( $to, $overrides, $which );
 		if ( ! empty( $result['sent'] ) ) {
 			add_settings_error(
 				'handik-booking-app',

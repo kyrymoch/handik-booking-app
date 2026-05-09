@@ -33,8 +33,8 @@ class Handik_Booking_App_Ics_Builder {
 	 * @param array<string, mixed> $event Event shape — see build_multi() docblock.
 	 * @return string The .ics document.
 	 */
-	public static function build_single( array $event ) {
-		return self::build_multi( array( $event ) );
+	public static function build_single( array $event, $method = 'REQUEST' ) {
+		return self::build_multi( array( $event ), $method );
 	}
 
 	/**
@@ -55,12 +55,21 @@ class Handik_Booking_App_Ics_Builder {
 	 * @param array<int, array<string, mixed>> $events List of events.
 	 * @return string The .ics document. Empty string if no valid events.
 	 */
-	public static function build_multi( array $events ) {
+	public static function build_multi( array $events, $method = 'REQUEST' ) {
+		// Sprint 14c — METHOD:CANCEL is required for RFC 5546 cancellation
+		// .ics so calendar apps remove the existing event from the user's
+		// calendar instead of treating it as a separate invite. We pass
+		// 'CANCEL' from send_customer_cancellation; default 'REQUEST' for
+		// new + rescheduled bookings. Param is sanitized to a strict
+		// allow-list to prevent header injection if someone hooks the
+		// builder with arbitrary input.
+		$method   = strtoupper( trim( (string) $method ) );
+		$method   = in_array( $method, array( 'REQUEST', 'CANCEL', 'PUBLISH', 'REPLY' ), true ) ? $method : 'REQUEST';
 		$lines   = array();
 		$lines[] = 'BEGIN:VCALENDAR';
 		$lines[] = 'VERSION:2.0';
 		$lines[] = 'PRODID:' . self::PRODID;
-		$lines[] = 'METHOD:REQUEST';
+		$lines[] = 'METHOD:' . $method;
 		$lines[] = 'CALSCALE:GREGORIAN';
 
 		$any_valid = false;
@@ -150,9 +159,16 @@ class Handik_Booking_App_Ics_Builder {
 			$lines[]       = 'ATTENDEE' . $cn . ';ROLE=REQ-PARTICIPANT;PARTSTAT=ACCEPTED:mailto:' . $attendee_email;
 		}
 
-		$lines[] = 'STATUS:CONFIRMED';
+		// Sprint 14c — STATUS + SEQUENCE per-event overrides for cancellation
+		// (STATUS:CANCELLED) and reschedule (SEQUENCE:1+ so calendar apps
+		// recognise the event as an update of the existing one).
+		$status = strtoupper( trim( (string) ( $event['status'] ?? 'CONFIRMED' ) ) );
+		$status = in_array( $status, array( 'CONFIRMED', 'CANCELLED', 'TENTATIVE' ), true ) ? $status : 'CONFIRMED';
+		$sequence = max( 0, (int) ( $event['sequence'] ?? 0 ) );
+
+		$lines[] = 'STATUS:' . $status;
 		$lines[] = 'TRANSP:OPAQUE';
-		$lines[] = 'SEQUENCE:0';
+		$lines[] = 'SEQUENCE:' . $sequence;
 		$lines[] = 'END:VEVENT';
 
 		// Fold each VEVENT line individually then CRLF-join.

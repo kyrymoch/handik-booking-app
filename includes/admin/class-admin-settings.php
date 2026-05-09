@@ -502,6 +502,50 @@ class Handik_Booking_App_Admin_Settings {
 			</p>
 		<?php $this->section_close(); ?>
 
+		<?php $this->section_open( __( 'Customer cancellation email', 'handik-booking-app' ) ); ?>
+			<p class="handik-admin-muted">
+				<?php esc_html_e( 'Sent to the customer when Cal.com reports a booking as cancelled (BOOKING_CANCELLED webhook). Independent toggle — you can enable cancellation without enabling reschedule. Includes a METHOD:CANCEL .ics attachment so calendar apps remove the original event from the customer’s calendar on import. Placeholders: same as the booking-confirmation email plus', 'handik-booking-app' ); ?>
+				<code>{{cancellation_reason}}</code>.
+			</p>
+			<?php Handik_Booking_App_Admin_Helpers::checkbox_field( 'customer_cancellation_enabled', __( 'Send cancellation email to customer', 'handik-booking-app' ), ! empty( $s['customer_cancellation_enabled'] ) ); ?>
+			<?php Handik_Booking_App_Admin_Helpers::field( 'customer_cancellation_subject', __( 'Subject', 'handik-booking-app' ), $s['customer_cancellation_subject'] ); ?>
+			<?php Handik_Booking_App_Admin_Helpers::textarea_field( 'customer_cancellation_body_html', __( 'HTML body', 'handik-booking-app' ), $s['customer_cancellation_body_html'], '', 10 ); ?>
+			<?php Handik_Booking_App_Admin_Helpers::textarea_field( 'customer_cancellation_body_text', __( 'Plain-text body', 'handik-booking-app' ), $s['customer_cancellation_body_text'], '', 8 ); ?>
+			<p>
+				<button type="submit" class="button button-secondary" name="handik_action" value="send_test_customer_cancellation">
+					<?php esc_html_e( 'Send customer-cancellation test', 'handik-booking-app' ); ?>
+				</button>
+				<small class="handik-admin-muted" style="margin-left:8px;">
+					<?php
+					/* translators: %s: effective test recipient. */
+					echo esc_html( sprintf( __( 'Ships sample-data preview to %s.', 'handik-booking-app' ), $test_recipient_effective ) );
+					?>
+				</small>
+			</p>
+		<?php $this->section_close(); ?>
+
+		<?php $this->section_open( __( 'Customer reschedule email', 'handik-booking-app' ) ); ?>
+			<p class="handik-admin-muted">
+				<?php esc_html_e( 'Sent to the customer when Cal.com reports a booking time change (BOOKING_RESCHEDULED webhook). Includes an updated .ics attachment with SEQUENCE bumped so calendar apps move the original event to the new time instead of duplicating it. Reschedule-specific placeholders:', 'handik-booking-app' ); ?>
+				<code>{{old_booking_when_long}}</code> · <code>{{old_booking_when}}</code>
+			</p>
+			<?php Handik_Booking_App_Admin_Helpers::checkbox_field( 'customer_reschedule_enabled', __( 'Send reschedule email to customer', 'handik-booking-app' ), ! empty( $s['customer_reschedule_enabled'] ) ); ?>
+			<?php Handik_Booking_App_Admin_Helpers::field( 'customer_reschedule_subject', __( 'Subject', 'handik-booking-app' ), $s['customer_reschedule_subject'] ); ?>
+			<?php Handik_Booking_App_Admin_Helpers::textarea_field( 'customer_reschedule_body_html', __( 'HTML body', 'handik-booking-app' ), $s['customer_reschedule_body_html'], '', 10 ); ?>
+			<?php Handik_Booking_App_Admin_Helpers::textarea_field( 'customer_reschedule_body_text', __( 'Plain-text body', 'handik-booking-app' ), $s['customer_reschedule_body_text'], '', 8 ); ?>
+			<p>
+				<button type="submit" class="button button-secondary" name="handik_action" value="send_test_customer_reschedule">
+					<?php esc_html_e( 'Send customer-reschedule test', 'handik-booking-app' ); ?>
+				</button>
+				<small class="handik-admin-muted" style="margin-left:8px;">
+					<?php
+					/* translators: %s: effective test recipient. */
+					echo esc_html( sprintf( __( 'Ships sample-data preview to %s.', 'handik-booking-app' ), $test_recipient_effective ) );
+					?>
+				</small>
+			</p>
+		<?php $this->section_close(); ?>
+
 		<?php $this->section_open( __( 'Owner booking notification', 'handik-booking-app' ) ); ?>
 			<p class="handik-admin-muted">
 				<?php esc_html_e( 'When enabled, the plugin sends a plain-text notification to the owner address every time a new booking lands — main flow, direct preset, and project work-days. Independent of the customer-side toggle. The owner email’s Reply-To is set to the customer’s email so a quick "got it" reply lands directly with them. Placeholders:', 'handik-booking-app' ); ?>
@@ -510,6 +554,7 @@ class Handik_Booking_App_Admin_Settings {
 			<?php Handik_Booking_App_Admin_Helpers::checkbox_field( 'owner_notification_enabled', __( 'Notify the owner on every new booking', 'handik-booking-app' ), ! empty( $s['owner_notification_enabled'] ) ); ?>
 			<?php Handik_Booking_App_Admin_Helpers::field( 'owner_notification_address', __( 'Recipient address', 'handik-booking-app' ), $s['owner_notification_address'], 'email' ); ?>
 			<p class="handik-admin-muted"><?php esc_html_e( 'Leave empty to fall back to the From address below. Useful if you want bookings to go to a phone-pinned alias (e.g. ops@) instead of your main inbox.', 'handik-booking-app' ); ?></p>
+			<h4 style="margin: 16px 0 8px;"><?php esc_html_e( 'New booking', 'handik-booking-app' ); ?></h4>
 			<?php Handik_Booking_App_Admin_Helpers::field( 'owner_notification_subject', __( 'Subject', 'handik-booking-app' ), $s['owner_notification_subject'] ); ?>
 			<?php Handik_Booking_App_Admin_Helpers::textarea_field( 'owner_notification_body', __( 'Body', 'handik-booking-app' ), $s['owner_notification_body'], __( 'Plain-text only. No HTML. Use {{open_request_admin_link}} to drop a deep-link to the admin booking detail.', 'handik-booking-app' ), 10 ); ?>
 			<p>
@@ -522,6 +567,32 @@ class Handik_Booking_App_Admin_Settings {
 					echo esc_html( sprintf( __( 'Renders the owner template with sample data and ships to %s. Bypasses the toggle so you can preview before going live.', 'handik-booking-app' ), $test_recipient_effective ) );
 					?>
 				</small>
+			</p>
+
+			<h4 style="margin: 24px 0 8px;"><?php esc_html_e( 'Cancellation', 'handik-booking-app' ); ?></h4>
+			<p class="handik-admin-muted">
+				<?php esc_html_e( 'Sent to the owner when Cal.com reports a cancellation. Reuses the toggle above. Reschedule-specific placeholder available:', 'handik-booking-app' ); ?>
+				<code>{{cancellation_reason}}</code>
+			</p>
+			<?php Handik_Booking_App_Admin_Helpers::field( 'owner_cancellation_subject', __( 'Subject', 'handik-booking-app' ), $s['owner_cancellation_subject'] ); ?>
+			<?php Handik_Booking_App_Admin_Helpers::textarea_field( 'owner_cancellation_body', __( 'Body', 'handik-booking-app' ), $s['owner_cancellation_body'], '', 9 ); ?>
+			<p>
+				<button type="submit" class="button button-secondary" name="handik_action" value="send_test_owner_cancellation">
+					<?php esc_html_e( 'Send owner-cancellation test', 'handik-booking-app' ); ?>
+				</button>
+			</p>
+
+			<h4 style="margin: 24px 0 8px;"><?php esc_html_e( 'Reschedule', 'handik-booking-app' ); ?></h4>
+			<p class="handik-admin-muted">
+				<?php esc_html_e( 'Sent to the owner when Cal.com reports a time change. Reschedule-specific placeholders available:', 'handik-booking-app' ); ?>
+				<code>{{old_booking_when_long}}</code> · <code>{{old_booking_when}}</code>
+			</p>
+			<?php Handik_Booking_App_Admin_Helpers::field( 'owner_reschedule_subject', __( 'Subject', 'handik-booking-app' ), $s['owner_reschedule_subject'] ); ?>
+			<?php Handik_Booking_App_Admin_Helpers::textarea_field( 'owner_reschedule_body', __( 'Body', 'handik-booking-app' ), $s['owner_reschedule_body'], '', 9 ); ?>
+			<p>
+				<button type="submit" class="button button-secondary" name="handik_action" value="send_test_owner_reschedule">
+					<?php esc_html_e( 'Send owner-reschedule test', 'handik-booking-app' ); ?>
+				</button>
 			</p>
 		<?php $this->section_close(); ?>
 

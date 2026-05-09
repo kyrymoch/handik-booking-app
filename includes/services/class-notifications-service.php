@@ -32,7 +32,18 @@ if ( ! defined( 'ABSPATH' ) ) {
  * Day 3 surfaces the admin settings tab + Send Test button.
  */
 class Handik_Booking_App_Notifications_Service {
-	const ACTION_BOOKING_CONFIRMED = 'handik_booking_confirmed';
+	const ACTION_BOOKING_CONFIRMED   = 'handik_booking_confirmed';
+	const ACTION_BOOKING_CANCELLED   = 'handik_booking_cancelled';
+	const ACTION_BOOKING_RESCHEDULED = 'handik_booking_rescheduled';
+
+	/**
+	 * Sprint 14c — short event-type code persisted in the new
+	 * `last_status_emailed` column. Used as both the idempotency key
+	 * and the human-facing label in admin logs.
+	 */
+	const EVENT_BOOKED      = 'booked';
+	const EVENT_CANCELLED   = 'cancelled';
+	const EVENT_RESCHEDULED = 'rescheduled';
 
 	/**
 	 * Allow-list of short table names we accept for idempotency. Defends
@@ -65,6 +76,15 @@ class Handik_Booking_App_Notifications_Service {
 		$this->logger   = $logger;
 
 		add_action( self::ACTION_BOOKING_CONFIRMED, array( $this, 'handle_booking_confirmed' ), 10, 1 );
+
+		// Sprint 14c — cancellation + reschedule listeners. Each event is
+		// dispatched separately because the templates differ (cancel has
+		// no .ics; reschedule needs an updated .ics with SEQUENCE bumped
+		// + METHOD:REQUEST so calendar apps update the existing event
+		// rather than creating a duplicate). Idempotency uses the new
+		// `last_status_emailed` column from Migration 1.5.2.
+		add_action( self::ACTION_BOOKING_CANCELLED, array( $this, 'handle_booking_cancelled' ), 10, 1 );
+		add_action( self::ACTION_BOOKING_RESCHEDULED, array( $this, 'handle_booking_rescheduled' ), 10, 1 );
 	}
 
 	/**
@@ -161,6 +181,158 @@ class Handik_Booking_App_Notifications_Service {
 	}
 
 	/**
+	 * Sprint 14c — handle_booking_cancelled action callback.
+	 * Fires when a Cal `BOOKING_CANCELLED` webhook lands. Idempotent
+	 * via the new `last_status_emailed` column: webhook retries with
+	 * the same status are no-ops, real state changes (booked →
+	 * cancelled, or repeat cancellations after a re-book) each get one
+	 * email.
+	 *
+	 * @param array<string, mixed> $context See dispatch_for_cal_cancel /
+	 *                                       dispatch_for_direct_cancel.
+	 * @return void
+	 */
+	public function handle_booking_cancelled( $context ) {
+		$this->handle_status_event( $context, self::EVENT_CANCELLED );
+	}
+
+	/**
+	 * Sprint 14c — handle_booking_rescheduled action callback.
+	 *
+	 * @param array<string, mixed> $context See dispatch_for_cal_reschedule /
+	 *                                       dispatch_for_direct_reschedule.
+	 * @return void
+	 */
+	public function handle_booking_rescheduled( $context ) {
+		$this->handle_status_event( $context, self::EVENT_RESCHEDULED );
+	}
+
+	/**
+	 * Shared body for cancelled + rescheduled handlers.
+	 *
+	 * @param mixed  $context Booking context (raw — validated here).
+	 * @param string $event   self::EVENT_CANCELLED | self::EVENT_RESCHEDULED.
+	 * @return void
+	 */
+	protected function handle_status_event( $context, $event ) {
+		if ( ! is_array( $context ) ) {
+			return;
+		}
+
+		// Toggle-gating: each side has its own enable flag. If both
+		// are off, bail before consuming the idempotency stamp.
+		$want_customer = self::EVENT_CANCELLED === $event
+			? $this->customer_cancellation_enabled()
+			: $this->customer_reschedule_enabled();
+		$want_owner = $this->owner_notifications_enabled();
+		if ( ! $want_customer && ! $want_owner ) {
+			return;
+		}
+
+		$idempotency = isset( $context['idempotency'] ) && is_array( $context['idempotency'] )
+			? $context['idempotency']
+			: array();
+		$table_short = isset( $idempotency['table'] ) ? (string) $idempotency['table'] : '';
+		$row_id      = isset( $idempotency['row_id'] ) ? (int) $idempotency['row_id'] : 0;
+
+		// Allow only the two tables that actually have last_status_emailed
+		// (project schedules don't ship with cancel/reschedule support
+		// in 14c — Migration 1.5.2 didn't add the column there).
+		$status_idempotency_tables = array( 'bookings', 'direct_booking_requests' );
+		if ( ! $row_id || ! in_array( $table_short, $status_idempotency_tables, true ) ) {
+			if ( $this->logger ) {
+				$this->logger->warning(
+					'Notifications: status event fired with invalid idempotency context.',
+					array( 'event' => $event, 'table_short' => $table_short, 'row_id' => $row_id )
+				);
+			}
+			return;
+		}
+
+		$contact        = isset( $context['contact'] ) && is_array( $context['contact'] ) ? $context['contact'] : array();
+		$customer_email = isset( $contact['email'] ) ? sanitize_email( (string) $contact['email'] ) : '';
+		$owner_email    = $want_owner ? $this->resolve_owner_address() : '';
+
+		$do_customer = $want_customer && '' !== $customer_email;
+		$do_owner    = $want_owner && '' !== $owner_email;
+		if ( ! $do_customer && ! $do_owner ) {
+			return;
+		}
+
+		if ( ! $this->claim_status_idempotency( $table_short, $row_id, $event ) ) {
+			return; // duplicate event for this booking; already emailed.
+		}
+
+		// Customer first, owner second — same ordering as the booked
+		// dispatch so LAST_EMAIL_ERROR_OPTION semantics match.
+		$customer_ok = true;
+		$owner_ok    = true;
+		if ( $do_customer ) {
+			$customer_ok = self::EVENT_CANCELLED === $event
+				? $this->send_customer_cancellation( $context, $customer_email )
+				: $this->send_customer_reschedule( $context, $customer_email );
+		}
+		if ( $do_owner ) {
+			$owner_ok = self::EVENT_CANCELLED === $event
+				? $this->send_owner_cancellation( $context, $owner_email )
+				: $this->send_owner_reschedule( $context, $owner_email );
+		}
+
+		if ( ! ( $customer_ok && $owner_ok ) ) {
+			$this->release_status_idempotency( $table_short, $row_id );
+		}
+	}
+
+	/**
+	 * Sprint 14c — atomic check-and-set on the `last_status_emailed`
+	 * column. Returns true iff THIS caller is the one whose UPDATE
+	 * succeeded (i.e. the column was either NULL or held a different
+	 * status). Cal webhook retries with the same status get false here
+	 * and bail.
+	 *
+	 * @param string $table_short Short table name.
+	 * @param int    $row_id      Row ID.
+	 * @param string $event       self::EVENT_* constant.
+	 * @return bool
+	 */
+	protected function claim_status_idempotency( $table_short, $row_id, $event ) {
+		global $wpdb;
+		$table   = Handik_Booking_App_DB::table( $table_short );
+		$updated = $wpdb->query( $wpdb->prepare( // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+			"UPDATE {$table} SET last_status_emailed = %s
+			 WHERE id = %d AND ( last_status_emailed IS NULL OR last_status_emailed != %s )",
+			$event,
+			$row_id,
+			$event
+		) );
+		return ( (int) $updated ) > 0;
+	}
+
+	/**
+	 * Roll back the last_status_emailed value when a status email
+	 * fails. Sets to NULL so a manual retry can re-fire.
+	 *
+	 * @param string $table_short Short table name.
+	 * @param int    $row_id      Row ID.
+	 * @return void
+	 */
+	protected function release_status_idempotency( $table_short, $row_id ) {
+		global $wpdb;
+		$table  = Handik_Booking_App_DB::table( $table_short );
+		$result = $wpdb->update(
+			$table,
+			array( 'last_status_emailed' => null ),
+			array( 'id' => (int) $row_id )
+		);
+		if ( false === $result && $this->logger ) {
+			$this->logger->error(
+				'Notifications: status idempotency rollback failed.',
+				array( 'table_short' => $table_short, 'row_id' => (int) $row_id, 'wpdb_error' => $wpdb->last_error )
+			);
+		}
+	}
+
+	/**
 	 * Atomic check-and-set. Returns true iff this caller is the one that
 	 * just stamped `confirmation_email_sent_at` from NULL → now. Anyone
 	 * else racing the same row gets false (zero affected_rows).
@@ -239,16 +411,48 @@ class Handik_Booking_App_Notifications_Service {
 		$overrides = is_array( $template_overrides ) ? $template_overrides : array();
 		$context   = $this->build_sample_context();
 
-		if ( 'owner' === $which ) {
-			$sent = $this->send_owner_notification( $context, $recipient, $overrides );
-		} else {
-			$sent = $this->send_customer_confirmation( $context, $recipient, $overrides );
+		// Sprint 14c — sample context needs cancel/reschedule extras
+		// for the cancel/reschedule preview emails. Pre-populated here
+		// so the rendered placeholders ({{old_booking_when_long}},
+		// {{cancellation_reason}}) show realistic sample data instead
+		// of empty strings.
+		if ( 'customer_reschedule' === $which || 'owner_reschedule' === $which ) {
+			$context['old_when'] = array(
+				'start_iso' => ( new DateTimeImmutable( '-2 days 14:00', wp_timezone() ) )->format( DATE_ATOM ),
+				'end_iso'   => ( new DateTimeImmutable( '-2 days 16:00', wp_timezone() ) )->format( DATE_ATOM ),
+				'timezone'  => (string) wp_timezone_string(),
+			);
+		}
+		if ( 'customer_cancellation' === $which || 'owner_cancellation' === $which ) {
+			$context['cancellation_reason'] = 'Customer asked to cancel — schedule conflict';
+		}
+
+		switch ( $which ) {
+			case 'owner':
+				$sent = $this->send_owner_notification( $context, $recipient, $overrides );
+				break;
+			case 'customer_cancellation':
+				$sent = $this->send_customer_cancellation( $context, $recipient, $overrides );
+				break;
+			case 'customer_reschedule':
+				$sent = $this->send_customer_reschedule( $context, $recipient, $overrides );
+				break;
+			case 'owner_cancellation':
+				$sent = $this->send_owner_cancellation( $context, $recipient, $overrides );
+				break;
+			case 'owner_reschedule':
+				$sent = $this->send_owner_reschedule( $context, $recipient, $overrides );
+				break;
+			case 'customer':
+			default:
+				$sent = $this->send_customer_confirmation( $context, $recipient, $overrides );
+				break;
 		}
 
 		return array(
 			'sent'      => $sent,
 			'recipient' => $recipient,
-			'which'     => 'owner' === $which ? 'owner' : 'customer',
+			'which'     => $which,
 		);
 	}
 
@@ -628,6 +832,395 @@ class Handik_Booking_App_Notifications_Service {
 		return true;
 	}
 
+	/* ------------------------------------------------------------------ *
+	 * Sprint 14c — cancellation + reschedule send paths.                 *
+	 * ------------------------------------------------------------------ *
+	 * Each `send_*` mirrors the structure of send_customer_confirmation
+	 * (HTML + plain-text customer side) or send_owner_notification
+	 * (plain-text owner side). The customer-side methods build a
+	 * customised .ics:
+	 *   - cancellation: METHOD:CANCEL + STATUS:CANCELLED + SEQUENCE:1
+	 *     so calendar apps DELETE the original invite from the user's
+	 *     calendar on import.
+	 *   - reschedule: METHOD:REQUEST + STATUS:CONFIRMED + SEQUENCE:1
+	 *     so calendar apps UPDATE the original invite with the new
+	 *     time. (RFC 5546 — incrementing SEQUENCE is what makes
+	 *     calendars recognise the .ics as an update vs. a duplicate.)
+	 * Owner-side emails are plain-text only with no .ics attachment
+	 * (the owner already has booking visibility via the admin list).
+	 */
+
+	/**
+	 * @param array<string, mixed>    $context        Booking context.
+	 * @param string                  $customer_email Sanitized recipient.
+	 * @param array<string, string>   $template_overrides Unsaved POST values
+	 *                                                     for Send-Test.
+	 * @return bool
+	 */
+	protected function send_customer_cancellation( array $context, $customer_email, array $template_overrides = array() ) {
+		return $this->send_customer_status_email(
+			$context,
+			$customer_email,
+			$template_overrides,
+			array(
+				'subject_key' => 'customer_cancellation_subject',
+				'html_key'    => 'customer_cancellation_body_html',
+				'text_key'    => 'customer_cancellation_body_text',
+				'event'       => self::EVENT_CANCELLED,
+				'ics_method'  => 'CANCEL',
+				'ics_status'  => 'CANCELLED',
+				'log_label'   => 'cancellation',
+			)
+		);
+	}
+
+	/**
+	 * @param array<string, mixed>    $context        Booking context.
+	 * @param string                  $customer_email Sanitized recipient.
+	 * @param array<string, string>   $template_overrides Unsaved POST values.
+	 * @return bool
+	 */
+	protected function send_customer_reschedule( array $context, $customer_email, array $template_overrides = array() ) {
+		return $this->send_customer_status_email(
+			$context,
+			$customer_email,
+			$template_overrides,
+			array(
+				'subject_key' => 'customer_reschedule_subject',
+				'html_key'    => 'customer_reschedule_body_html',
+				'text_key'    => 'customer_reschedule_body_text',
+				'event'       => self::EVENT_RESCHEDULED,
+				'ics_method'  => 'REQUEST',
+				'ics_status'  => 'CONFIRMED',
+				'log_label'   => 'reschedule',
+			)
+		);
+	}
+
+	/**
+	 * Shared send pipeline for cancel / reschedule customer emails. Same
+	 * shape as send_customer_confirmation but parameterised on the
+	 * settings keys + .ics METHOD/STATUS/SEQUENCE.
+	 *
+	 * @param array<string, mixed>    $context           Booking context.
+	 * @param string                  $customer_email    Recipient.
+	 * @param array<string, string>   $template_overrides POST overrides.
+	 * @param array<string, string>   $config            Per-event config.
+	 * @return bool
+	 */
+	protected function send_customer_status_email( array $context, $customer_email, array $template_overrides, array $config ) {
+		$placeholders = $this->build_placeholders( $context );
+		$resolve = function ( $key ) use ( $template_overrides ) {
+			if ( array_key_exists( $key, $template_overrides ) ) {
+				return (string) $template_overrides[ $key ];
+			}
+			return (string) $this->settings->get( $key, '' );
+		};
+
+		$subject = Handik_Booking_App_Admin_Helpers::render_template( $resolve( $config['subject_key'] ), $this->placeholders_for_subject( $placeholders ) );
+		$html    = Handik_Booking_App_Admin_Helpers::render_template( $resolve( $config['html_key'] ), $this->placeholders_for_html( $placeholders ) );
+		$text    = Handik_Booking_App_Admin_Helpers::render_template( $resolve( $config['text_key'] ), $placeholders );
+		$text    = wordwrap( $text, 78, "\n", false );
+
+		$ics_path = $this->write_ics_temp_file_for_status( $context, $config['ics_method'], $config['ics_status'] );
+
+		$from_name    = self::strip_header_breaks( (string) $this->settings->get( 'email_from_name', '' ) );
+		$from_address = sanitize_email( (string) $this->settings->get( 'email_from_address', '' ) );
+		$reply_to     = sanitize_email( (string) $this->settings->get( 'customer_confirmation_reply_to', '' ) );
+		if ( '' === $reply_to ) {
+			$reply_to = $from_address;
+		}
+
+		$headers = array( 'Content-Type: text/html; charset=UTF-8' );
+		if ( '' !== $from_address ) {
+			$from_label = '' !== $from_name ? sprintf( '%s <%s>', $from_name, $from_address ) : $from_address;
+			$headers[]  = 'From: ' . $from_label;
+		}
+		if ( '' !== $reply_to ) {
+			$headers[] = 'Reply-To: ' . $reply_to;
+		}
+
+		$attachments = ( '' !== $ics_path && file_exists( $ics_path ) ) ? array( $ics_path ) : array();
+
+		$content_type_cb = static function () { return 'text/html'; };
+		$altbody_cb      = static function ( $phpmailer ) use ( $text ) {
+			$phpmailer->AltBody = $text; // phpcs:ignore WordPress.NamingConventions.ValidVariableName.UsedPropertyNotSnakeCase
+		};
+		$ics_filename = '' !== $ics_path ? basename( $ics_path ) : '';
+		// .ics method matters for cancellation: must be application/ics
+		// with method=CANCEL so calendar apps DELETE the event.
+		$ics_method      = $config['ics_method'];
+		$attachment_cb   = static function ( $phpmailer ) use ( $ics_filename, $ics_method ) {
+			if ( '' === $ics_filename ) {
+				return;
+			}
+			$attachments = $phpmailer->getAttachments();
+			$phpmailer->clearAttachments();
+			foreach ( $attachments as $att ) {
+				if ( $att[2] === $ics_filename ) {
+					$phpmailer->addAttachment(
+						$att[0],
+						$att[2],
+						'base64',
+						'text/calendar; charset=UTF-8; method=' . $ics_method,
+						'attachment'
+					);
+				} else {
+					$phpmailer->addAttachment( $att[0], $att[2], $att[3], $att[4], $att[6] );
+				}
+			}
+		};
+
+		add_filter( 'wp_mail_content_type', $content_type_cb, PHP_INT_MAX );
+		add_action( 'phpmailer_init', $altbody_cb, PHP_INT_MAX );
+		if ( '' !== $ics_filename ) {
+			add_action( 'phpmailer_init', $attachment_cb, PHP_INT_MAX );
+		}
+
+		$sent = false;
+		try {
+			$sent = (bool) wp_mail( $customer_email, $subject, $html, $headers, $attachments );
+		} catch ( \Throwable $e ) {
+			$sent = false;
+			if ( $this->logger ) {
+				$this->logger->error(
+					sprintf( 'Notifications: customer-%s wp_mail threw.', $config['log_label'] ),
+					array( 'source' => $context['source'] ?? '', 'recipient' => $customer_email, 'message' => $e->getMessage() )
+				);
+			}
+		} finally {
+			remove_filter( 'wp_mail_content_type', $content_type_cb, PHP_INT_MAX );
+			remove_action( 'phpmailer_init', $altbody_cb, PHP_INT_MAX );
+			if ( '' !== $ics_filename ) {
+				remove_action( 'phpmailer_init', $attachment_cb, PHP_INT_MAX );
+			}
+			if ( '' !== $ics_path && file_exists( $ics_path ) ) {
+				@unlink( $ics_path ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
+			}
+		}
+
+		if ( ! $sent ) {
+			update_option(
+				'handik_booking_app_last_email_error',
+				array(
+					'time'    => time(),
+					'message' => sprintf( 'wp_mail (customer %s) returned false', $config['log_label'] ),
+					'context' => array(
+						'request_id' => (int) ( $context['request_id'] ?? 0 ),
+						'source'     => (string) ( $context['source'] ?? '' ),
+						'to'         => $customer_email,
+						'side'       => 'customer',
+						'event'      => $config['event'],
+					),
+				),
+				false
+			);
+			return false;
+		}
+
+		delete_option( 'handik_booking_app_last_email_error' );
+
+		if ( $this->logger ) {
+			$this->logger->info(
+				sprintf( 'Notifications: customer %s sent.', $config['log_label'] ),
+				array(
+					'source'     => $context['source'] ?? '',
+					'request_id' => $context['request_id'] ?? 0,
+					'recipient'  => $customer_email,
+				)
+			);
+		}
+		return true;
+	}
+
+	/**
+	 * @param array<string, mixed>    $context     Booking context.
+	 * @param string                  $owner_email Recipient.
+	 * @param array<string, string>   $template_overrides POST overrides.
+	 * @return bool
+	 */
+	protected function send_owner_cancellation( array $context, $owner_email, array $template_overrides = array() ) {
+		return $this->send_owner_status_email( $context, $owner_email, $template_overrides, 'owner_cancellation_subject', 'owner_cancellation_body', self::EVENT_CANCELLED, 'cancellation' );
+	}
+
+	/**
+	 * @param array<string, mixed>    $context     Booking context.
+	 * @param string                  $owner_email Recipient.
+	 * @param array<string, string>   $template_overrides POST overrides.
+	 * @return bool
+	 */
+	protected function send_owner_reschedule( array $context, $owner_email, array $template_overrides = array() ) {
+		return $this->send_owner_status_email( $context, $owner_email, $template_overrides, 'owner_reschedule_subject', 'owner_reschedule_body', self::EVENT_RESCHEDULED, 'reschedule' );
+	}
+
+	/**
+	 * Shared owner-side plain-text send. Mirrors send_owner_notification
+	 * but parameterised on the subject/body keys + event tag for logs.
+	 *
+	 * @param array<string, mixed>  $context             Booking context.
+	 * @param string                $owner_email         Recipient.
+	 * @param array<string, string> $template_overrides  POST overrides.
+	 * @param string                $subject_key         Settings key.
+	 * @param string                $body_key            Settings key.
+	 * @param string                $event               EVENT_* constant.
+	 * @param string                $log_label           Log tag.
+	 * @return bool
+	 */
+	protected function send_owner_status_email( array $context, $owner_email, array $template_overrides, $subject_key, $body_key, $event, $log_label ) {
+		$placeholders = $this->build_placeholders( $context );
+		$resolve = function ( $key ) use ( $template_overrides ) {
+			if ( array_key_exists( $key, $template_overrides ) ) {
+				return (string) $template_overrides[ $key ];
+			}
+			return (string) $this->settings->get( $key, '' );
+		};
+
+		$subject = Handik_Booking_App_Admin_Helpers::render_template( $resolve( $subject_key ), $this->placeholders_for_subject( $placeholders ) );
+		$body    = Handik_Booking_App_Admin_Helpers::render_template( $resolve( $body_key ), $placeholders );
+		$body    = wordwrap( $body, 78, "\n", false );
+
+		$from_name    = self::strip_header_breaks( (string) $this->settings->get( 'email_from_name', '' ) );
+		$from_address = sanitize_email( (string) $this->settings->get( 'email_from_address', '' ) );
+
+		$headers = array( 'Content-Type: text/plain; charset=UTF-8' );
+		if ( '' !== $from_address ) {
+			$from_label = '' !== $from_name ? sprintf( '%s <%s>', $from_name, $from_address ) : $from_address;
+			$headers[]  = 'From: ' . $from_label;
+		}
+		$contact        = isset( $context['contact'] ) && is_array( $context['contact'] ) ? $context['contact'] : array();
+		$customer_email = sanitize_email( (string) ( $contact['email'] ?? '' ) );
+		if ( '' !== $customer_email ) {
+			$headers[] = 'Reply-To: ' . $customer_email;
+		}
+
+		$content_type_cb = static function () { return 'text/plain'; };
+		add_filter( 'wp_mail_content_type', $content_type_cb, PHP_INT_MAX );
+
+		$sent = false;
+		try {
+			$sent = (bool) wp_mail( $owner_email, $subject, $body, $headers );
+		} catch ( \Throwable $e ) {
+			$sent = false;
+			if ( $this->logger ) {
+				$this->logger->error(
+					sprintf( 'Notifications: owner-%s wp_mail threw.', $log_label ),
+					array( 'source' => $context['source'] ?? '', 'recipient' => $owner_email, 'message' => $e->getMessage() )
+				);
+			}
+		} finally {
+			remove_filter( 'wp_mail_content_type', $content_type_cb, PHP_INT_MAX );
+		}
+
+		if ( ! $sent ) {
+			update_option(
+				'handik_booking_app_last_email_error',
+				array(
+					'time'    => time(),
+					'message' => sprintf( 'wp_mail (owner %s) returned false', $log_label ),
+					'context' => array(
+						'request_id' => (int) ( $context['request_id'] ?? 0 ),
+						'source'     => (string) ( $context['source'] ?? '' ),
+						'to'         => $owner_email,
+						'side'       => 'owner',
+						'event'      => $event,
+					),
+				),
+				false
+			);
+			return false;
+		}
+
+		if ( $this->logger ) {
+			$this->logger->info(
+				sprintf( 'Notifications: owner %s sent.', $log_label ),
+				array( 'source' => $context['source'] ?? '', 'request_id' => $context['request_id'] ?? 0, 'recipient' => $owner_email )
+			);
+		}
+		return true;
+	}
+
+	/**
+	 * Sprint 14c variant of write_ics_temp_file that builds the .ics
+	 * with caller-provided METHOD + STATUS + SEQUENCE (cancellation:
+	 * CANCEL/CANCELLED/1, reschedule: REQUEST/CONFIRMED/1). Returns
+	 * the temp-file path or '' on failure.
+	 *
+	 * @param array<string, mixed> $context     Booking context.
+	 * @param string               $ics_method  RFC 5545 METHOD value.
+	 * @param string               $ics_status  RFC 5545 STATUS value.
+	 * @return string Absolute path or ''.
+	 */
+	protected function write_ics_temp_file_for_status( array $context, $ics_method, $ics_status ) {
+		if ( ! class_exists( 'Handik_Booking_App_Ics_Builder' ) ) {
+			return '';
+		}
+		$contact      = isset( $context['contact'] ) && is_array( $context['contact'] ) ? $context['contact'] : array();
+		$address_line = $this->format_address( isset( $context['address'] ) && is_array( $context['address'] ) ? $context['address'] : array() );
+		$site_host    = (string) wp_parse_url( home_url(), PHP_URL_HOST );
+		if ( '' === $site_host ) {
+			$site_host = 'handik.local';
+		}
+
+		$organizer_email = sanitize_email( (string) $this->settings->get( 'email_from_address', '' ) );
+		$organizer_name  = trim( (string) $this->settings->get( 'email_from_name', '' ) );
+		$attendee_email  = sanitize_email( (string) ( $contact['email'] ?? '' ) );
+		$attendee_name   = (string) ( $contact['full_name'] ?? '' );
+
+		$tasks       = isset( $context['tasks'] ) && is_array( $context['tasks'] ) ? $context['tasks'] : array();
+		$task_labels = array();
+		foreach ( $tasks as $task ) {
+			$label = (string) ( $task['label'] ?? '' );
+			if ( '' !== $label ) {
+				$task_labels[] = $label;
+			}
+		}
+		$summary_suffix = ! empty( $task_labels ) ? ' · ' . implode( ', ', $task_labels ) : '';
+
+		$when    = isset( $context['when'] ) && is_array( $context['when'] ) ? $context['when'] : array();
+		$cal_uid = (string) ( $context['cal_booking_uid'] ?? '' );
+		// CRITICAL: the UID must match the original booking's UID so calendar
+		// apps know to UPDATE / CANCEL the existing event vs creating a new
+		// one. Same UID-derivation as write_ics_temp_file (booked path).
+		$uid = '' !== $cal_uid
+			? 'handik-booking-' . $cal_uid . '@' . $site_host
+			: 'handik-booking-' . (int) ( $context['request_id'] ?? 0 ) . '@' . $site_host;
+
+		$event_data = array(
+			'uid'             => $uid,
+			'summary'         => 'Handik visit' . $summary_suffix,
+			'description'     => $this->build_ics_description( $context ),
+			'location'        => $address_line,
+			'dtstart_iso'     => (string) ( $when['start_iso'] ?? '' ),
+			'dtend_iso'       => (string) ( $when['end_iso'] ?? '' ),
+			'organizer_name'  => $organizer_name,
+			'organizer_email' => $organizer_email,
+			'attendee_name'   => $attendee_name,
+			'attendee_email'  => $attendee_email,
+			'sequence'        => 1, // bumped from 0 so calendar apps treat as update.
+			'status'          => $ics_status,
+		);
+
+		$ics = Handik_Booking_App_Ics_Builder::build_single( $event_data, $ics_method );
+		if ( '' === $ics ) {
+			return '';
+		}
+
+		$tmp_dir  = sys_get_temp_dir();
+		$path     = wp_tempnam( 'handik-booking-' . wp_generate_uuid4() . '.ics', $tmp_dir );
+		if ( ! $path ) {
+			return '';
+		}
+		$ics_path = $path . '.ics';
+		if ( ! rename( $path, $ics_path ) ) {
+			$ics_path = $path;
+		}
+		if ( false === file_put_contents( $ics_path, $ics ) ) { // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents
+			@unlink( $ics_path ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
+			return '';
+		}
+		return $ics_path;
+	}
+
 	/**
 	 * @param array<string, mixed> $context Booking context.
 	 * @return array<string, string>
@@ -734,6 +1327,17 @@ class Handik_Booking_App_Notifications_Service {
 			'customer_email'           => (string) ( $contact['email'] ?? '' ),
 			'source_label'             => $this->source_label( $source ),
 			'open_request_admin_link'  => $this->open_request_admin_link( $context ),
+
+			// Sprint 14c — cancel + reschedule extras. Empty for booked
+			// dispatches; populated by the cancel/reschedule send paths
+			// from `$context['cancellation_reason']` / `$context['old_when']`
+			// which the dispatch helpers attach.
+			'cancellation_reason'      => (string) ( $context['cancellation_reason'] ?? '' ),
+			'old_booking_when'         => $this->format_when_short( (string) ( $context['old_when']['start_iso'] ?? '' ) ),
+			'old_booking_when_long'    => $this->format_when_long(
+				(string) ( $context['old_when']['start_iso'] ?? '' ),
+				(string) ( $context['old_when']['end_iso'] ?? '' )
+			),
 		);
 	}
 
@@ -1085,6 +1689,24 @@ class Handik_Booking_App_Notifications_Service {
 	}
 
 	/**
+	 * Sprint 14c — independent customer-side cancel/reschedule toggles.
+	 * Both default OFF on upgrade; an owner can enable cancel without
+	 * reschedule and vice versa.
+	 *
+	 * @return bool
+	 */
+	protected function customer_cancellation_enabled() {
+		return ! empty( $this->settings->get( 'customer_cancellation_enabled', '' ) );
+	}
+
+	/**
+	 * @return bool
+	 */
+	protected function customer_reschedule_enabled() {
+		return ! empty( $this->settings->get( 'customer_reschedule_enabled', '' ) );
+	}
+
+	/**
 	 * Resolve the owner-notification recipient. Picker setting wins; falls
 	 * back to `email_from_address` so a fresh install works without
 	 * extra configuration. Empty return means no usable recipient — the
@@ -1289,6 +1911,213 @@ class Handik_Booking_App_Notifications_Service {
 		);
 
 		do_action( self::ACTION_BOOKING_CONFIRMED, $context );
+	}
+
+	/* ------------------------------------------------------------------ *
+	 * Sprint 14c — cancellation + reschedule dispatch helpers.            *
+	 * ------------------------------------------------------------------ *
+	 * Each helper mirrors the corresponding `dispatch_for_*` but fires
+	 * a different action constant and adds event-specific extras to the
+	 * context (e.g. reschedule includes `old_when` from the persisted
+	 * `start_time` we had before the webhook arrived).
+	 */
+
+	/**
+	 * @param int                  $job_request_id   Job request ID.
+	 * @param int                  $bookings_row_id  Row ID in handik_bookings.
+	 * @param array<string, mixed> $cal_payload      Cal webhook payload.
+	 * @return void
+	 */
+	public static function dispatch_for_cal_cancel( $job_request_id, $bookings_row_id, array $cal_payload ) {
+		$context = self::build_cal_context( $job_request_id, $bookings_row_id, $cal_payload );
+		if ( null === $context ) {
+			return;
+		}
+		$context['event']              = self::EVENT_CANCELLED;
+		$context['cancellation_reason'] = self::extract_cancellation_reason( $cal_payload );
+		do_action( self::ACTION_BOOKING_CANCELLED, $context );
+	}
+
+	/**
+	 * @param int                  $job_request_id   Job request ID.
+	 * @param int                  $bookings_row_id  Row ID in handik_bookings.
+	 * @param array<string, mixed> $cal_payload      Cal webhook payload.
+	 * @return void
+	 */
+	public static function dispatch_for_cal_reschedule( $job_request_id, $bookings_row_id, array $cal_payload ) {
+		$context = self::build_cal_context( $job_request_id, $bookings_row_id, $cal_payload );
+		if ( null === $context ) {
+			return;
+		}
+		// The stored `start_time` was the time BEFORE this reschedule
+		// webhook arrived (because upsert_from_cal calls dispatch_for_*
+		// AFTER the upsert). Reading it back would give the new time.
+		// Cal's BOOKING_RESCHEDULED payload typically carries the old
+		// time in `rescheduledFrom` / `previousStartTime` / metadata —
+		// pull from there. Plain-text fallback is just empty.
+		$context['event']     = self::EVENT_RESCHEDULED;
+		$context['old_when']  = self::extract_old_when( $cal_payload );
+		do_action( self::ACTION_BOOKING_RESCHEDULED, $context );
+	}
+
+	/**
+	 * @param int                  $direct_request_id Direct request row ID.
+	 * @param array<string, mixed> $cal_payload       Cal payload.
+	 * @return void
+	 */
+	public static function dispatch_for_direct_cancel( $direct_request_id, array $cal_payload ) {
+		$context = self::build_direct_context( $direct_request_id, $cal_payload );
+		if ( null === $context ) {
+			return;
+		}
+		$context['event']               = self::EVENT_CANCELLED;
+		$context['cancellation_reason'] = self::extract_cancellation_reason( $cal_payload );
+		do_action( self::ACTION_BOOKING_CANCELLED, $context );
+	}
+
+	/**
+	 * @param int                  $direct_request_id Direct request row ID.
+	 * @param array<string, mixed> $cal_payload       Cal payload.
+	 * @return void
+	 */
+	public static function dispatch_for_direct_reschedule( $direct_request_id, array $cal_payload ) {
+		$context = self::build_direct_context( $direct_request_id, $cal_payload );
+		if ( null === $context ) {
+			return;
+		}
+		$context['event']    = self::EVENT_RESCHEDULED;
+		$context['old_when'] = self::extract_old_when( $cal_payload );
+		do_action( self::ACTION_BOOKING_RESCHEDULED, $context );
+	}
+
+	/**
+	 * Shared context builder for the Cal flow (main SPA). Returns null
+	 * if the job request can't be hydrated (deleted contact, etc.).
+	 *
+	 * @param int                  $job_request_id  Request ID.
+	 * @param int                  $bookings_row_id Row ID.
+	 * @param array<string, mixed> $cal_payload     Payload.
+	 * @return array<string, mixed>|null
+	 */
+	protected static function build_cal_context( $job_request_id, $bookings_row_id, array $cal_payload ) {
+		$plugin = function_exists( 'handik_booking_app' ) ? handik_booking_app() : null;
+		if ( ! $plugin || ! $plugin->job_requests || ! $plugin->contacts || ! $plugin->addresses ) {
+			return null;
+		}
+		$request = $plugin->job_requests->get( (int) $job_request_id );
+		if ( ! $request ) {
+			return null;
+		}
+		$contact = $plugin->contacts->get( (int) ( $request['contact_id'] ?? 0 ) );
+		$address = isset( $request['address_id'] ) ? $plugin->addresses->get( (int) $request['address_id'] ) : null;
+
+		return array(
+			'source'          => 'cal',
+			'idempotency'     => array(
+				'table'  => 'bookings',
+				'row_id' => (int) $bookings_row_id,
+			),
+			'contact'         => self::flatten_contact( $contact ),
+			'address'         => self::flatten_address( $address ),
+			'tasks'           => self::flatten_tasks( $request['selected_tasks'] ?? array() ),
+			'when'            => self::flatten_when_single( $cal_payload ),
+			'booking_url'     => self::extract_cal_url( $cal_payload ),
+			'restart_url'     => self::extract_restart_url( $cal_payload ),
+			'request_id'      => (int) $job_request_id,
+			'booking_id'      => (int) $bookings_row_id,
+			'cal_booking_uid' => self::extract_cal_uid( $cal_payload ),
+		);
+	}
+
+	/**
+	 * Shared context builder for the direct flow.
+	 *
+	 * @param int                  $direct_request_id Direct request ID.
+	 * @param array<string, mixed> $cal_payload       Payload.
+	 * @return array<string, mixed>|null
+	 */
+	protected static function build_direct_context( $direct_request_id, array $cal_payload ) {
+		$plugin = function_exists( 'handik_booking_app' ) ? handik_booking_app() : null;
+		if ( ! $plugin || ! $plugin->direct_booking || ! $plugin->contacts || ! $plugin->addresses ) {
+			return null;
+		}
+		$row = $plugin->direct_booking->get( (int) $direct_request_id );
+		if ( ! $row ) {
+			return null;
+		}
+		$contact = $plugin->contacts->get( (int) ( $row['contact_id'] ?? 0 ) );
+		$address = isset( $row['address_id'] ) ? $plugin->addresses->get( (int) $row['address_id'] ) : null;
+
+		$tasks = array();
+		$preset = ( $plugin->booking_presets && ! empty( $row['preset_slug'] ) )
+			? $plugin->booking_presets->find_by_slug( (string) $row['preset_slug'] )
+			: null;
+		if ( $preset && ! empty( $preset['label'] ) ) {
+			$tasks[] = array(
+				'label'      => (string) $preset['label'],
+				'rate_label' => '',
+			);
+		}
+
+		return array(
+			'source'          => 'direct',
+			'idempotency'     => array(
+				'table'  => 'direct_booking_requests',
+				'row_id' => (int) $direct_request_id,
+			),
+			'contact'         => self::flatten_contact( $contact ),
+			'address'         => self::flatten_address( $address ),
+			'tasks'           => $tasks,
+			'when'            => self::flatten_when_single( $cal_payload ),
+			'booking_url'     => self::extract_cal_url( $cal_payload ),
+			'restart_url'     => self::extract_restart_url( $cal_payload ),
+			'request_id'      => (int) $direct_request_id,
+			'booking_id'      => null,
+			'cal_booking_uid' => self::extract_cal_uid( $cal_payload ),
+		);
+	}
+
+	/**
+	 * Pull the original (pre-reschedule) time from a Cal payload. Cal's
+	 * BOOKING_RESCHEDULED webhook may include this in several
+	 * field names depending on Cal version; we check the common ones.
+	 *
+	 * @param array<string, mixed> $payload Cal payload.
+	 * @return array<string, string> { start_iso, end_iso, timezone }
+	 */
+	protected static function extract_old_when( array $payload ) {
+		$start = '';
+		$end   = '';
+		foreach ( array( 'rescheduledFrom', 'previousStartTime', 'oldStartTime', 'fromTime' ) as $key ) {
+			if ( ! empty( $payload[ $key ] ) ) {
+				$start = (string) $payload[ $key ];
+				break;
+			}
+		}
+		foreach ( array( 'previousEndTime', 'oldEndTime', 'rescheduledFromEnd' ) as $key ) {
+			if ( ! empty( $payload[ $key ] ) ) {
+				$end = (string) $payload[ $key ];
+				break;
+			}
+		}
+		return array(
+			'start_iso' => $start,
+			'end_iso'   => $end,
+			'timezone'  => (string) ( $payload['organizer']['timeZone'] ?? wp_timezone_string() ),
+		);
+	}
+
+	/**
+	 * @param array<string, mixed> $payload Cal payload.
+	 * @return string
+	 */
+	protected static function extract_cancellation_reason( array $payload ) {
+		foreach ( array( 'cancellationReason', 'cancellation_reason', 'reason' ) as $key ) {
+			if ( ! empty( $payload[ $key ] ) ) {
+				return (string) $payload[ $key ];
+			}
+		}
+		return '';
 	}
 
 	/* ------------------------------------------------------------------ *
