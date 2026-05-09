@@ -1338,7 +1338,105 @@ class Handik_Booking_App_Notifications_Service {
 				(string) ( $context['old_when']['start_iso'] ?? '' ),
 				(string) ( $context['old_when']['end_iso'] ?? '' )
 			),
+
+			// Hotfix 2.1.22.1 — pre-rendered conditional blocks. The
+			// `_html` suffix means they bypass placeholders_for_html()'s
+			// esc_html pass (allow-listed), so the markup survives. The
+			// blocks are EMPTY STRINGS when their data is missing —
+			// dropping them into a template gracefully hides the
+			// section instead of leaving a dangling label like
+			// "Where: " (the bug from the user's first test send).
+			'checkmark_block_html'     => $this->render_checkmark_block(),
+			'booking_summary_block_html' => $this->render_booking_summary_block(
+				$booking_when_long,
+				$address_line,
+				$tasks_list_html
+			),
+			'cal_links_block_html'     => $this->render_cal_links_block(
+				(string) ( $context['booking_url'] ?? '' )
+			),
 		);
+	}
+
+	/**
+	 * Hotfix 2.1.22.1 — fixed green-checkmark badge for the customer
+	 * email. Pure HTML (no images), so it renders identically in
+	 * Gmail / Apple Mail / Outlook web. Uses `display: inline-block`
+	 * + `border-radius: 50%` for the circle, Unicode ✓ inside.
+	 *
+	 * @return string Self-contained HTML block.
+	 */
+	protected function render_checkmark_block() {
+		return '<div style="text-align: center; margin: 0 0 16px;">'
+			. '<div style="display: inline-block; width: 56px; height: 56px; background: #dcfce7; border-radius: 50%; line-height: 56px; font-size: 28px; color: #16a34a; font-weight: 700;">&#10003;</div>'
+			. '</div>';
+	}
+
+	/**
+	 * Hotfix 2.1.22.1 — Cal-style structured "What / When / Where"
+	 * table. Each row is included ONLY if its data is non-empty so a
+	 * customer email never shows an empty "Where: " line. All values
+	 * are esc_html'd individually here (we're inside build_placeholders
+	 * which runs BEFORE placeholders_for_html's escape pass).
+	 *
+	 * @param string $booking_when_long Pre-formatted "Mon Jan 15 · 2:00–4:00 PM ET".
+	 * @param string $address_line      Pre-formatted single-line address.
+	 * @param string $tasks_list_html   Pre-built `<ul>` with esc_html'd items, or ''.
+	 * @return string HTML block or '' when no rows would render.
+	 */
+	protected function render_booking_summary_block( $booking_when_long, $address_line, $tasks_list_html ) {
+		$rows = '';
+		$row_style    = 'padding: 14px 0; vertical-align: top;';
+		$label_style  = 'color: #64748b; font-size: 13px; font-weight: 500; width: 80px; padding-right: 12px;';
+		$value_style  = 'color: #0f172a; font-size: 15px;';
+		$border_style = 'border-top: 1px solid #e2e8f0;';
+
+		if ( '' !== $booking_when_long ) {
+			$rows .= '<tr>'
+				. '<td style="' . $row_style . $label_style . '">' . esc_html__( 'When', 'handik-booking-app' ) . '</td>'
+				. '<td style="' . $row_style . $value_style . '"><strong>' . esc_html( $booking_when_long ) . '</strong></td>'
+				. '</tr>';
+		}
+		if ( '' !== $tasks_list_html ) {
+			$rows .= '<tr>'
+				. '<td style="' . $row_style . $label_style . $border_style . '">' . esc_html__( 'What', 'handik-booking-app' ) . '</td>'
+				. '<td style="' . $row_style . $value_style . $border_style . '">' . $tasks_list_html . '</td>'
+				. '</tr>';
+		}
+		if ( '' !== $address_line ) {
+			$rows .= '<tr>'
+				. '<td style="' . $row_style . $label_style . $border_style . '">' . esc_html__( 'Where', 'handik-booking-app' ) . '</td>'
+				. '<td style="' . $row_style . $value_style . $border_style . '">' . esc_html( $address_line ) . '</td>'
+				. '</tr>';
+		}
+		if ( '' === $rows ) {
+			return '';
+		}
+		return '<table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="margin: 16px 0;">' . $rows . '</table>';
+	}
+
+	/**
+	 * Hotfix 2.1.22.1 — Reschedule / Cancel button row. Renders only
+	 * if a Cal URL is present. Cal exposes one URL that handles BOTH
+	 * reschedule + cancel (Cal's confirmation page); we link to it as
+	 * "Reschedule or cancel" — single button, low ambiguity.
+	 *
+	 * @param string $cal_url Reschedule/cancel URL from the Cal payload.
+	 * @return string HTML block or '' when no URL is available.
+	 */
+	protected function render_cal_links_block( $cal_url ) {
+		$cal_url = trim( (string) $cal_url );
+		if ( '' === $cal_url ) {
+			return '';
+		}
+		$safe_url = esc_url( $cal_url );
+		return '<table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="margin: 24px 0 0;">'
+			. '<tr><td style="text-align: center;">'
+			. '<a href="' . $safe_url . '" style="display: inline-block; padding: 12px 28px; background: #283618; color: #ffffff; border-radius: 8px; text-decoration: none; font-weight: 500; font-size: 15px;">'
+			. esc_html__( 'Reschedule or cancel', 'handik-booking-app' )
+			. '</a>'
+			. '</td></tr>'
+			. '</table>';
 	}
 
 	/**
@@ -1419,7 +1517,16 @@ class Handik_Booking_App_Notifications_Service {
 	 */
 	protected function placeholders_for_html( array $base ) {
 		$out                  = array();
-		$pre_rendered_html    = array( 'tasks_list_html', 'days_list_html', 'brand_logo_html' );
+		$pre_rendered_html    = array(
+			'tasks_list_html',
+			'days_list_html',
+			'brand_logo_html',
+			// Hotfix 2.1.22.1 — conditional pre-rendered blocks. Each
+			// is built with internal escape passes inside build_placeholders.
+			'checkmark_block_html',
+			'booking_summary_block_html',
+			'cal_links_block_html',
+		);
 		$url_keys             = array( 'cal_url', 'restart_url', 'site_url', 'open_request_admin_link', 'brand_logo_url' );
 		foreach ( $base as $key => $value ) {
 			if ( in_array( $key, $pre_rendered_html, true ) ) {
@@ -1760,6 +1867,19 @@ class Handik_Booking_App_Notifications_Service {
 		$contact = $plugin->contacts->get( (int) ( $request['contact_id'] ?? 0 ) );
 		$address = isset( $request['address_id'] ) ? $plugin->addresses->get( (int) $request['address_id'] ) : null;
 
+		$tasks = self::flatten_tasks( $request['selected_tasks'] ?? array() );
+		// Hotfix 2.1.22.1 — same Cal-payload fallback as direct flow.
+		// Empty selected_tasks happens when the customer skipped task
+		// selection (just opened the booking page directly) or when an
+		// admin-created request hasn't been hydrated. Use Cal's
+		// eventType.title so the email body isn't empty.
+		if ( empty( $tasks ) ) {
+			$fallback_label = self::extract_event_label( $cal_payload );
+			if ( '' !== $fallback_label ) {
+				$tasks[] = array( 'label' => $fallback_label, 'rate_label' => '' );
+			}
+		}
+
 		$context = array(
 			'source'          => 'cal',
 			'idempotency'     => array(
@@ -1768,7 +1888,7 @@ class Handik_Booking_App_Notifications_Service {
 			),
 			'contact'         => self::flatten_contact( $contact ),
 			'address'         => self::flatten_address( $address ),
-			'tasks'           => self::flatten_tasks( $request['selected_tasks'] ?? array() ),
+			'tasks'           => $tasks,
 			'when'            => self::flatten_when_single( $cal_payload ),
 			'booking_url'     => self::extract_cal_url( $cal_payload ),
 			'restart_url'     => self::extract_restart_url( $cal_payload ),
@@ -1810,9 +1930,17 @@ class Handik_Booking_App_Notifications_Service {
 		$preset = ( $plugin->booking_presets && ! empty( $row['preset_slug'] ) )
 			? $plugin->booking_presets->find_by_slug( (string) $row['preset_slug'] )
 			: null;
-		if ( $preset && ! empty( $preset['label'] ) ) {
+		$preset_label = $preset ? trim( (string) ( $preset['label'] ?? '' ) ) : '';
+		if ( '' === $preset_label ) {
+			// Hotfix 2.1.22.1 — fall back to Cal payload's eventType.title
+			// (e.g. "Standard Visit") when the preset has no human label.
+			// Otherwise the customer email shows "What we'll be doing:"
+			// followed by an empty list.
+			$preset_label = self::extract_event_label( $cal_payload );
+		}
+		if ( '' !== $preset_label ) {
 			$tasks[] = array(
-				'label'      => (string) $preset['label'],
+				'label'      => $preset_label,
 				'rate_label' => '',
 			);
 		}
@@ -2052,9 +2180,17 @@ class Handik_Booking_App_Notifications_Service {
 		$preset = ( $plugin->booking_presets && ! empty( $row['preset_slug'] ) )
 			? $plugin->booking_presets->find_by_slug( (string) $row['preset_slug'] )
 			: null;
-		if ( $preset && ! empty( $preset['label'] ) ) {
+		$preset_label = $preset ? trim( (string) ( $preset['label'] ?? '' ) ) : '';
+		if ( '' === $preset_label ) {
+			// Hotfix 2.1.22.1 — fall back to Cal payload's eventType.title
+			// (e.g. "Standard Visit") when the preset has no human label.
+			// Otherwise the customer email shows "What we'll be doing:"
+			// followed by an empty list.
+			$preset_label = self::extract_event_label( $cal_payload );
+		}
+		if ( '' !== $preset_label ) {
 			$tasks[] = array(
-				'label'      => (string) $preset['label'],
+				'label'      => $preset_label,
 				'rate_label' => '',
 			);
 		}
@@ -2185,11 +2321,112 @@ class Handik_Booking_App_Notifications_Service {
 	 * @param array<string, mixed> $payload Cal payload.
 	 * @return array<string, string>
 	 */
+	/**
+	 * Pull start/end times from a Cal payload, handling all the shapes
+	 * Cal embed + webhook ship.
+	 *
+	 * Hotfix 2.1.22.1 — earlier versions only checked top-level
+	 * `startTime` / `start`. Cal v2 embed's `bookingSuccessful` event
+	 * detail.data uses `date` at top level OR nests `startTime` /
+	 * `endTime` inside a `booking` sub-object, so the prior code got
+	 * an empty string back, which made `{{booking_when_long}}` render
+	 * empty in the customer email AND made `Ics_Builder::build_single`
+	 * bail (no DTSTART → returns ''), so no .ics was attached. Both
+	 * customer-visible bugs.
+	 *
+	 * Probe order (first non-empty wins):
+	 *   1. Top-level: startTime, start, date
+	 *   2. Nested in booking: booking.startTime, booking.start, booking.date
+	 *   3. Webhook payload: payload.startTime (handled by Cal webhook)
+	 *
+	 * If end_iso is missing but start_iso + duration are present, derive
+	 * end_iso = start_iso + duration minutes.
+	 *
+	 * @param array<string, mixed> $payload Cal payload (any shape).
+	 * @return array<string, string>
+	 */
 	protected static function flatten_when_single( array $payload ) {
+		$booking = ( isset( $payload['booking'] ) && is_array( $payload['booking'] ) ) ? $payload['booking'] : array();
+
+		$start = '';
+		foreach ( array(
+			$payload['startTime'] ?? null,
+			$payload['start']     ?? null,
+			$payload['date']      ?? null,
+			$booking['startTime'] ?? null,
+			$booking['start']     ?? null,
+			$booking['date']      ?? null,
+		) as $candidate ) {
+			if ( ! empty( $candidate ) ) {
+				$start = (string) $candidate;
+				break;
+			}
+		}
+
+		$end = '';
+		foreach ( array(
+			$payload['endTime'] ?? null,
+			$payload['end']     ?? null,
+			$booking['endTime'] ?? null,
+			$booking['end']     ?? null,
+		) as $candidate ) {
+			if ( ! empty( $candidate ) ) {
+				$end = (string) $candidate;
+				break;
+			}
+		}
+
+		// Derive end from start + duration. Cal often ships duration in
+		// minutes at top-level; sometimes inside eventType.length or
+		// booking.duration. Best-effort.
+		if ( '' === $end && '' !== $start ) {
+			$duration_minutes = 0;
+			foreach ( array(
+				$payload['duration']                            ?? null,
+				$payload['lengthInMinutes']                     ?? null,
+				$booking['duration']                            ?? null,
+				$booking['lengthInMinutes']                     ?? null,
+				$payload['eventType']['length']                 ?? null,
+				$payload['eventType']['lengthInMinutes']        ?? null,
+			) as $candidate ) {
+				if ( null !== $candidate && '' !== $candidate ) {
+					$duration_minutes = (int) $candidate;
+					if ( $duration_minutes > 0 ) {
+						break;
+					}
+				}
+			}
+			if ( $duration_minutes > 0 ) {
+				try {
+					$start_dt = new DateTimeImmutable( $start );
+					$end      = $start_dt->modify( '+' . $duration_minutes . ' minutes' )->format( DATE_ATOM );
+				} catch ( \Exception $e ) {
+					// Leave $end empty; downstream rendering will hide it.
+					$end = '';
+				}
+			}
+		}
+
+		$timezone = '';
+		foreach ( array(
+			$payload['organizer']['timeZone']  ?? null,
+			$payload['organizer']['timezone']  ?? null,
+			$booking['organizer']['timeZone']  ?? null,
+			$payload['eventType']['timeZone']  ?? null,
+		) as $candidate ) {
+			if ( ! empty( $candidate ) ) {
+				$timezone = (string) $candidate;
+				break;
+			}
+		}
+		if ( '' === $timezone ) {
+			$timezone = (string) wp_timezone_string();
+		}
+
 		return array(
-			'start_iso' => (string) ( $payload['startTime'] ?? $payload['start'] ?? '' ),
-			'end_iso'   => (string) ( $payload['endTime'] ?? $payload['end'] ?? '' ),
-			'timezone'  => (string) ( $payload['organizer']['timeZone'] ?? wp_timezone_string() ),
+			'start_iso' => $start,
+			'end_iso'   => $end,
+			'timezone'  => $timezone,
 		);
 	}
 
@@ -2198,11 +2435,25 @@ class Handik_Booking_App_Notifications_Service {
 	 * @return string
 	 */
 	protected static function extract_cal_url( array $payload ) {
-		// Cal's payload may include rescheduleUrl / cancelUrl / bookingUrl.
-		// Customer-facing reschedule is the most useful single link.
-		foreach ( array( 'rescheduleUrl', 'reschedule_url', 'bookingUrl', 'booking_url', 'url' ) as $key ) {
-			if ( ! empty( $payload[ $key ] ) ) {
-				return esc_url_raw( (string) $payload[ $key ] );
+		// Hotfix 2.1.22.1 — Cal v2 nests rescheduleUrl/cancelUrl inside
+		// `booking`. Prior code only checked top-level keys → empty
+		// {{cal_url}} → no Reschedule/Cancel link in the customer email.
+		$booking = ( isset( $payload['booking'] ) && is_array( $payload['booking'] ) ) ? $payload['booking'] : array();
+		$probes  = array(
+			$payload['rescheduleUrl']  ?? null,
+			$payload['reschedule_url'] ?? null,
+			$payload['bookingUrl']     ?? null,
+			$payload['booking_url']    ?? null,
+			$payload['url']            ?? null,
+			$booking['rescheduleUrl']  ?? null,
+			$booking['reschedule_url'] ?? null,
+			$booking['bookingUrl']     ?? null,
+			$booking['booking_url']    ?? null,
+			$booking['url']            ?? null,
+		);
+		foreach ( $probes as $candidate ) {
+			if ( ! empty( $candidate ) ) {
+				return esc_url_raw( (string) $candidate );
 			}
 		}
 		return '';
@@ -2224,9 +2475,46 @@ class Handik_Booking_App_Notifications_Service {
 	 * @return string
 	 */
 	protected static function extract_cal_uid( array $payload ) {
-		foreach ( array( 'uid', 'bookingUid', 'id', 'bookingId' ) as $key ) {
-			if ( ! empty( $payload[ $key ] ) ) {
-				return (string) $payload[ $key ];
+		// Hotfix 2.1.22.1 — same nested-payload issue as extract_cal_url.
+		$booking = ( isset( $payload['booking'] ) && is_array( $payload['booking'] ) ) ? $payload['booking'] : array();
+		$probes  = array(
+			$payload['uid']        ?? null,
+			$payload['bookingUid'] ?? null,
+			$payload['id']         ?? null,
+			$payload['bookingId']  ?? null,
+			$booking['uid']        ?? null,
+			$booking['id']         ?? null,
+		);
+		foreach ( $probes as $candidate ) {
+			if ( ! empty( $candidate ) ) {
+				return (string) $candidate;
+			}
+		}
+		return '';
+	}
+
+	/**
+	 * Hotfix 2.1.22.1 — derive a customer-facing "task" label from a Cal
+	 * payload when our local preset/job_request data didn't supply one.
+	 * Cal payload typically carries `eventType.title` (e.g. "Standard
+	 * Visit") and sometimes `type` at the top level. Used by
+	 * dispatch_for_cal / dispatch_for_direct as a graceful fallback so
+	 * the "What we'll be doing:" line in the email body isn't empty.
+	 *
+	 * @param array<string, mixed> $payload Cal payload.
+	 * @return string Label or '' when nothing usable.
+	 */
+	protected static function extract_event_label( array $payload ) {
+		$probes = array(
+			$payload['eventType']['title']    ?? null,
+			$payload['eventType']['name']     ?? null,
+			$payload['type']                  ?? null,
+			$payload['title']                 ?? null,
+			$payload['booking']['title']      ?? null,
+		);
+		foreach ( $probes as $candidate ) {
+			if ( ! empty( $candidate ) ) {
+				return trim( (string) $candidate );
 			}
 		}
 		return '';

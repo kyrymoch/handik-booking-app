@@ -155,6 +155,16 @@ class Handik_Booking_App_Admin {
 			return;
 		}
 
+		// 2.1.22.1 — Reset-to-default for a single email-template field.
+		// Each Reset button posts `handik_action=reset_template_<key>`;
+		// the key portion is parsed out and allow-listed against the
+		// resettable-keys map inside handle_reset_template so a forged
+		// action value can't reset arbitrary settings.
+		if ( 0 === strpos( $action, 'reset_template_' ) ) {
+			$this->handle_reset_template( substr( $action, strlen( 'reset_template_' ) ) );
+			return;
+		}
+
 		// Sprint 8 (hotfix 2.1.15.1): if the submission contains any
 		// integration-secret fields (API keys, auth tokens, Cal webhook
 		// shared secret, Cal.com API credentials), the user must also
@@ -310,6 +320,69 @@ class Handik_Booking_App_Admin {
 				'handik-booking-app',
 				'test_email_failed',
 				__( 'Test email failed to send. See Logs for details.', 'handik-booking-app' )
+			);
+		}
+	}
+
+	/**
+	 * 2.1.22.1 — handle the "Reset to default" button on the
+	 * Notifications tab. The user reports their saved
+	 * customer_confirmation_body_html is the OLD pre-2.1.21.4 default
+	 * (just `<p>Hi …` paragraphs); since defaults only land on fresh
+	 * activation, the cleanest path is a button that explicitly
+	 * overwrites the saved value with the new default.
+	 *
+	 * Allow-list of resettable keys defends against a forged form
+	 * resetting e.g. `cal_webhook_secret` to its empty default.
+	 *
+	 * @param string $key Setting-key suffix from `handik_action=reset_template_<key>`.
+	 * @return void
+	 */
+	protected function handle_reset_template( $key ) {
+		$resettable = array(
+			'customer_confirmation_subject',
+			'customer_confirmation_body_html',
+			'customer_confirmation_body_text',
+			'customer_cancellation_subject',
+			'customer_cancellation_body_html',
+			'customer_cancellation_body_text',
+			'customer_reschedule_subject',
+			'customer_reschedule_body_html',
+			'customer_reschedule_body_text',
+			'owner_notification_subject',
+			'owner_notification_body',
+			'owner_cancellation_subject',
+			'owner_cancellation_body',
+			'owner_reschedule_subject',
+			'owner_reschedule_body',
+			'magic_link_email_subject',
+			'magic_link_email_body',
+		);
+
+		$key = sanitize_key( (string) $key );
+		if ( ! in_array( $key, $resettable, true ) ) {
+			add_settings_error(
+				'handik-booking-app',
+				'reset_template_invalid',
+				__( 'Cannot reset that field — unknown key.', 'handik-booking-app' )
+			);
+			return;
+		}
+
+		$ok = $this->settings->reset_to_default( $key );
+		if ( $ok ) {
+			add_settings_error(
+				'handik-booking-app',
+				'reset_template_ok',
+				/* translators: %s: setting key (e.g. customer_confirmation_body_html). */
+				sprintf( __( 'Reset %s to the bundled default.', 'handik-booking-app' ), $key ),
+				'updated'
+			);
+		} else {
+			add_settings_error(
+				'handik-booking-app',
+				'reset_template_failed',
+				__( 'Reset failed — see Logs for details.', 'handik-booking-app' )
 			);
 		}
 	}

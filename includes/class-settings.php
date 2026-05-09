@@ -325,38 +325,43 @@ class Handik_Booking_App_Settings {
 	}
 
 	/**
-	 * 2.1.21.4 — branded default. Table-based layout (still the most
-	 * portable email construct: Outlook desktop and many mobile webmail
-	 * clients drop CSS-grid / flexbox), inline styles only (Gmail strips
-	 * `<style>` blocks), max-width 560px (works on both desktop and
-	 * mobile preview), system fonts (no webfont latency).
+	 * 2.1.22.1 — Cal-style branded default. Centered card on a light
+	 * background, with the green checkmark badge, structured
+	 * "What / When / Where" table and a Reschedule/Cancel button. The
+	 * conditional content lives in pre-rendered placeholders built by
+	 * Notifications_Service::build_placeholders() so each section
+	 * cleanly disappears when its data is missing instead of leaving
+	 * a dangling label. Inline styles only (Gmail strips `<style>`).
 	 *
-	 * `{{brand_logo_html}}` resolves to a centered `<img>` if
-	 * `brand_logo_url` is configured, otherwise to an empty string —
-	 * so an install without a logo just gets a clean text-first email.
-	 * The rest of the template sets HTML safely; user-controlled scalar
-	 * placeholders (customer_name, address, etc.) are HTML-escaped at
-	 * substitution time by Notifications_Service::placeholders_for_html().
+	 * Empty-data behaviour:
+	 *   - `{{brand_logo_html}}` empty when `brand_logo_url` is not set.
+	 *   - `{{booking_summary_block_html}}` empty when there's no when /
+	 *     no address / no tasks (all three) — rare but graceful.
+	 *   - `{{cal_links_block_html}}` empty when Cal didn't ship a
+	 *     reschedule URL in the bookingSuccessful payload.
 	 *
 	 * Existing installs keep whatever they had saved; only fresh
-	 * activations and explicit "reset to default" land this template.
+	 * activations and explicit "Reset to default" land this template.
 	 *
 	 * @return string
 	 */
 	protected static function default_customer_body_html() {
-		return '<table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="font-family: -apple-system, BlinkMacSystemFont, \'Segoe UI\', Roboto, sans-serif; max-width: 560px; margin: 0 auto; color: #0f172a;">' . "\n"
-			. '  <tr><td style="padding: 24px 0; text-align: center;">{{brand_logo_html}}</td></tr>' . "\n"
-			. '  <tr><td style="background: #f8fafc; padding: 28px 24px; border-radius: 12px;">' . "\n"
-			. '    <p style="margin: 0 0 16px;">Hi {{customer_name}},</p>' . "\n"
-			. '    <p style="margin: 0 0 16px;">Your visit is confirmed for <strong>{{booking_when_long}}</strong>.</p>' . "\n"
-			. '    <p style="margin: 0 0 8px;"><strong>Where:</strong> {{address}}</p>' . "\n"
-			. '    <p style="margin: 0 0 8px;"><strong>What we\'ll be doing:</strong></p>' . "\n"
-			. '    {{tasks_list_html}}' . "\n"
-			. '    <p style="margin: 24px 0 16px;">A calendar invite is attached. If you need to reschedule or cancel, just reply to this email — {{operator_first_name}} reads them.</p>' . "\n"
-			. '    <p style="margin: 0;">— {{from_name}}</p>' . "\n"
+		return '<table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="font-family: -apple-system, BlinkMacSystemFont, \'Segoe UI\', Roboto, sans-serif; max-width: 560px; margin: 0 auto; color: #0f172a; background: #f8fafc;">' . "\n"
+			. '  <tr><td style="padding: 16px 16px 8px; text-align: center;">{{brand_logo_html}}</td></tr>' . "\n"
+			. '  <tr><td style="padding: 8px 16px;">' . "\n"
+			. '    <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="background: #ffffff; border-radius: 12px; box-shadow: 0 1px 3px rgba(15,23,42,0.06);">' . "\n"
+			. '      <tr><td style="padding: 32px 28px 24px;">' . "\n"
+			. '        {{checkmark_block_html}}' . "\n"
+			. '        <h1 style="margin: 0 0 4px; font-size: 22px; font-weight: 600; text-align: center;">Booking confirmed</h1>' . "\n"
+			. '        <p style="margin: 0 0 24px; text-align: center; color: #64748b; font-size: 14px;">Hi {{customer_name}}, see you soon.</p>' . "\n"
+			. '        {{booking_summary_block_html}}' . "\n"
+			. '        {{cal_links_block_html}}' . "\n"
+			. '        <p style="margin: 24px 0 0; text-align: center; color: #64748b; font-size: 13px;">A calendar invite is attached. Reply to this email if anything changes — {{operator_first_name}} reads them.</p>' . "\n"
+			. '      </td></tr>' . "\n"
+			. '    </table>' . "\n"
 			. '  </td></tr>' . "\n"
-			. '  <tr><td style="padding: 16px 0; text-align: center; color: #64748b; font-size: 12px;">' . "\n"
-			. '    {{site_name}} · <a href="{{site_url}}" style="color: #64748b; text-decoration: underline;">{{site_url}}</a>' . "\n"
+			. '  <tr><td style="padding: 16px; text-align: center; color: #94a3b8; font-size: 12px;">' . "\n"
+			. '    {{site_name}} · <a href="{{site_url}}" style="color: #94a3b8; text-decoration: underline;">{{site_url}}</a>' . "\n"
 			. '  </td></tr>' . "\n"
 			. '</table>';
 	}
@@ -431,6 +436,32 @@ class Handik_Booking_App_Settings {
 		 * @param array<string, mixed> $sanitized The sanitized fields that were applied.
 		 */
 		do_action( 'handik_booking_app_settings_updated', $sanitized );
+	}
+
+	/**
+	 * 2.1.22.1 — reset a single setting to its baked-in default. Used
+	 * by the admin "Reset to default" buttons on the Notifications tab
+	 * so an install that's still on an older saved template can refresh
+	 * it without copy-pasting the new default into the textarea.
+	 *
+	 * Bypasses sanitize_settings() because the default value is already
+	 * trusted (it's a hard-coded PHP string we just compiled). Returns
+	 * true iff the key is real (allow-listed against defaults()).
+	 *
+	 * @param string $key Setting key.
+	 * @return bool
+	 */
+	public function reset_to_default( $key ) {
+		$defaults = $this->defaults();
+		if ( ! array_key_exists( $key, $defaults ) ) {
+			return false;
+		}
+		$current = wp_parse_args( get_option( HANDIK_BOOKING_APP_OPTION, array() ), $defaults );
+		$current[ $key ] = $defaults[ $key ];
+		update_option( HANDIK_BOOKING_APP_OPTION, $current, false );
+		$this->settings = $current;
+		do_action( 'handik_booking_app_settings_updated', array( $key => $defaults[ $key ] ) );
+		return true;
 	}
 
 	/**
