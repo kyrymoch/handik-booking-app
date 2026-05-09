@@ -1306,6 +1306,21 @@
 			} );
 			if ( paneExisting ) { paneExisting.hidden = ( next !== 'existing' ); }
 			if ( paneNew )      { paneNew.hidden      = ( next !== 'new' );      }
+			// Sprint 13 hotfix (F9): clear the inactive pane so a
+			// half-filled walk-in form doesn't get submitted with an
+			// existing-customer pick (or vice versa). Switching modes
+			// is a deliberate "throw the previous attempt away" gesture.
+			if ( 'existing' === next ) {
+				root.querySelectorAll( '[data-handik-pane="new"] input' ).forEach( function ( i ) { i.value = ''; } );
+			} else {
+				if ( chosenIdInput ) { chosenIdInput.value = ''; }
+				if ( searchInput )   { searchInput.value = ''; }
+				if ( chosenName )    { chosenName.textContent = ''; }
+				if ( chosenPhone )   { chosenPhone.textContent = ''; }
+				if ( chosenBox )     { chosenBox.hidden = true; }
+				if ( resultsList )   { resultsList.hidden = true; resultsList.innerHTML = ''; }
+				if ( newAddressPane ){ newAddressPane.hidden = true; }
+			}
 			updateSubmitState();
 		}
 		modeBtns.forEach( function ( b ) {
@@ -1382,6 +1397,17 @@
 				newOpt.textContent = i18n.newAddress || '+ New address';
 				addressPicker.appendChild( newOpt );
 			}
+			// Sprint 13 hotfix (F8): clear stale "+ New address" inputs +
+			// re-hide the sub-pane when switching contacts. Otherwise:
+			// pick A → "+ New address" → type "123 Main" → pick B → the
+			// stale "123 Main" stays visible (and would be sent if the
+			// operator forgets and submits while the picker is on
+			// `__new`).
+			if ( newAddressPane ) { newAddressPane.hidden = true; }
+			const newAddrFull = root.querySelector( '[data-handik-address-full]' );
+			const newAddrUnit = root.querySelector( '[data-handik-address-unit]' );
+			if ( newAddrFull ) { newAddrFull.value = ''; }
+			if ( newAddrUnit ) { newAddrUnit.value = ''; }
 			if ( chosenBox ) { chosenBox.hidden = false; }
 			updateSubmitState();
 		}
@@ -1425,7 +1451,14 @@
 
 		// ----- Submit -----
 		if ( submitBtn ) {
+			let draftCreated = false;
 			submitBtn.addEventListener( 'click', async function () {
+				// Sprint 13 hotfix (F4): once a draft + Cal embed mount
+				// successfully, freeze the submit so a stray click doesn't
+				// POST a second admin/booking/new and create a duplicate
+				// `direct_booking_requests` row. Re-enable only on hard
+				// reload of the page.
+				if ( draftCreated ) { return; }
 				const body = collectPayload();
 				if ( ! body ) { return; }
 				if ( statusEl ) { statusEl.textContent = i18n.creatingDraft || '· Creating draft…'; }
@@ -1445,6 +1478,13 @@
 							throw new Error( i18n.noCalUrl || 'Cal.com URL missing — check the preset configuration.' );
 						}
 						mountCalEmbed( payload );
+						draftCreated = true;
+						submitBtn.disabled = true;
+						submitBtn.textContent = i18n.draftCreated || 'Draft created · pick a slot below';
+						// Visually freeze the form so the operator
+						// doesn't keep editing fields that no longer
+						// affect the embed.
+						root.classList.add( 'is-frozen' );
 					} );
 				} catch ( err ) {
 					if ( statusEl ) {
@@ -1529,14 +1569,29 @@
 				} );
 		}
 
+		// Sprint 13 hotfix (F6): client-side guard against Cal.com firing
+		// `bookingSuccessful` twice for the same booking. Server is
+		// idempotent (capture_booking short-circuits on STATUS_BOOKED),
+		// but a duplicate fetch still races the toast + redirect. Mirror
+		// the public form's `state._captureSent` flag.
+		let captureSent = false;
+
 		function captureBooking( submission, detail ) {
+			if ( captureSent ) { return; }
+			captureSent = true;
+			// Sprint 13 hotfix (F1+F2): the server reads `booking_payload`,
+			// not `booking`. The previous shape made capture_booking()
+			// receive the entire envelope (token + booking) as the payload,
+			// so cal_booking_id / cal_booking_uid were saved as empty
+			// strings — local row had no Cal handle until the webhook
+			// arrived. Now matches `booking-forms.js`'s shape exactly.
 			window.fetch( restBase + 'forms/direct/' + submission.request_id + '/capture', {
 				method: 'POST',
 				credentials: 'same-origin',
 				headers: { 'Content-Type': 'application/json', 'X-WP-Nonce': restNonce },
 				body: JSON.stringify( {
-					capture_token: submission.capture_token,
-					booking: detail || {},
+					capture_token:  submission.capture_token,
+					booking_payload: detail || {},
 				} ),
 			} )
 				.then( function () {
@@ -1550,14 +1605,39 @@
 				} );
 		}
 
-		// ----- Cal embed helpers (mirror booking-forms.js) -----
+		// ----- Cal embed helpers (mirror booking-forms.js parseCalEmbedConfig) -----
+		// Sprint 13 hotfix (F5): keep parity with `booking-forms.js`.
+		// Drop Cal-side deep-link params that would force the embed
+		// into a specific date/slot (which then renders "no slots
+		// available"), and re-prefix the phone with `+` if it lost
+		// the literal during URL encoding.
+		const CAL_EMBED_DROP_PARAMS = {
+			overlayCalendar: true,
+			month:           true,
+			date:            true,
+			slot:            true,
+			embed:           true,
+			embed_origin:    true,
+			layout:          true,
+		};
+
 		function parseCalEmbedUrl( raw ) {
 			try {
 				const url = new URL( raw );
-				const calLink = url.pathname.replace( /^\//, '' );
+				const pathParts = url.pathname.split( '/' ).filter( Boolean );
+				if ( ! pathParts.length ) { return null; }
+				const calLink = pathParts.join( '/' );
 				const config = {};
-				url.searchParams.forEach( function ( v, k ) { config[ k ] = v; } );
-				return { origin: url.origin, calLink: calLink, config: config };
+				url.searchParams.forEach( function ( v, k ) {
+					if ( CAL_EMBED_DROP_PARAMS[ k ] ) { return; }
+					if ( 'phone' === k ) {
+						const stripped = String( v || '' ).replace( /[\s()-]+/g, '' );
+						config[ k ] = stripped && '+' !== stripped.charAt( 0 ) ? '+' + stripped : stripped;
+						return;
+					}
+					config[ k ] = v;
+				} );
+				return { origin: url.origin || 'https://cal.com', calLink: calLink, config: config };
 			} catch ( e ) {
 				return null;
 			}

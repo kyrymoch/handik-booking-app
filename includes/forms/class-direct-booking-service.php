@@ -18,6 +18,14 @@ class Handik_Booking_App_Direct_Booking_Service {
 	const STATUS_BOOKED    = 'booked';
 	const STATUS_CANCELLED = 'cancelled';
 
+	// Sprint 13 hotfix (F3): mirror Project_Schedule_Service's GC.
+	// `booking_opened` rows accumulate when a customer (or admin)
+	// abandons the Cal embed mid-flow. The row has a Cal URL but no
+	// cal_booking_id, so it can't be auto-recovered — drop them
+	// after a 24h grace window so the table doesn't grow forever.
+	const CRON_HOOK_GC    = 'handik_booking_app_direct_gc_abandoned';
+	const GC_ABANDON_HOURS = 24;
+
 	/** @var Handik_Booking_App_Booking_Presets_Service */
 	protected $presets;
 	/** @var Handik_Booking_App_Contacts_Service */
@@ -35,6 +43,42 @@ class Handik_Booking_App_Direct_Booking_Service {
 		$this->addresses = $addresses;
 		$this->settings  = $settings;
 		$this->logger    = $logger;
+		// Sprint 13 hotfix (F3): GC for orphan OPENED rows.
+		add_action( self::CRON_HOOK_GC, array( $this, 'gc_abandoned' ) );
+		add_action( 'init', array( $this, 'maybe_schedule_gc' ) );
+	}
+
+	public function maybe_schedule_gc() {
+		if ( ! wp_next_scheduled( self::CRON_HOOK_GC ) ) {
+			wp_schedule_event( time() + HOUR_IN_SECONDS, 'daily', self::CRON_HOOK_GC );
+		}
+	}
+
+	/**
+	 * Drop direct_booking_requests rows still in OPENED status after
+	 * the grace window (24h by default) with no cal_booking_id — they
+	 * represent abandonments where the customer/admin opened the Cal
+	 * embed but never picked a slot. Idempotent and bounded.
+	 */
+	public function gc_abandoned() {
+		global $wpdb;
+		$table     = Handik_Booking_App_DB::table( 'direct_booking_requests' );
+		$cutoff    = gmdate( 'Y-m-d H:i:s', time() - ( self::GC_ABANDON_HOURS * HOUR_IN_SECONDS ) );
+		$deleted   = (int) $wpdb->query( $wpdb->prepare(
+			"DELETE FROM {$table}
+			 WHERE status = %s
+			   AND ( cal_booking_id IS NULL OR cal_booking_id = '' )
+			   AND updated_at < %s
+			 LIMIT 500",
+			self::STATUS_OPENED,
+			$cutoff
+		) );
+		if ( $deleted > 0 && $this->logger ) {
+			$this->logger->info( 'GC: dropped abandoned direct_booking_requests rows.', array(
+				'count'  => $deleted,
+				'cutoff' => $cutoff,
+			) );
+		}
 	}
 
 	/**
@@ -236,6 +280,19 @@ class Handik_Booking_App_Direct_Booking_Service {
 			if ( '' === $contact_payload['phone'] ) {
 				return array( 'error' => __( 'Please enter the customer\'s phone number.', 'handik-booking-app' ), 'status' => 400 );
 			}
+			// Sprint 13 hotfix (F10): require at least 10 digits before
+			// the upsert. Contacts_Service::normalize_phone is forgiving
+			// — "abc" becomes empty + saves NULL, "hi 4" becomes "+4".
+			// A short phone is almost always a typo on a phone-call
+			// admin booking; reject it explicitly so the operator
+			// retries instead of saving a row with a useless phone.
+			$digits = preg_replace( '/\D/', '', (string) $contact_payload['phone'] );
+			if ( strlen( (string) $digits ) < 10 ) {
+				return array(
+					'error'  => __( "Phone number looks too short. Please double-check (we expect at least 10 digits, e.g. +1 617 555 0123).", 'handik-booking-app' ),
+					'status' => 400,
+				);
+			}
 			$contact_id = (int) $this->contacts->upsert( $contact_payload );
 			if ( ! $contact_id ) {
 				return array( 'error' => __( 'Could not save contact details.', 'handik-booking-app' ), 'status' => 500 );
@@ -302,13 +359,29 @@ class Handik_Booking_App_Direct_Booking_Service {
 
 		$contact = $this->contacts->get( $contact_id );
 		$cal_url = $this->build_cal_url( $request_id, $preset, $contact, $address_full, $address_unit );
-		if ( '' !== $cal_url ) {
-			$wpdb->update(
-				$table,
-				array( 'cal_booking_url' => $cal_url, 'status' => self::STATUS_OPENED ),
-				array( 'id' => $request_id )
+		if ( '' === $cal_url ) {
+			// Sprint 13 hotfix (F7): if we can't build a Cal URL the
+			// preset is misconfigured (no event url + no fallback per
+			// booking_type setting). The half-baked READY-status row we
+			// just inserted is not navigable from any UI and would just
+			// pile up — drop it and surface a clear error instead.
+			$wpdb->delete( $table, array( 'id' => $request_id ), array( '%d' ) );
+			if ( $this->logger ) {
+				$this->logger->warning( 'Admin direct booking aborted: empty cal_url.', array(
+					'preset_slug' => $preset['preset_slug'],
+					'booking_type' => $preset['booking_type'] ?? '',
+				) );
+			}
+			return array(
+				'error'  => __( "Could not build a Cal.com URL for this preset. Check that the preset has a Cal event URL configured (App Setup → Additional Forms → Edit preset).", 'handik-booking-app' ),
+				'status' => 500,
 			);
 		}
+		$wpdb->update(
+			$table,
+			array( 'cal_booking_url' => $cal_url, 'status' => self::STATUS_OPENED ),
+			array( 'id' => $request_id )
+		);
 
 		if ( $this->logger ) {
 			$this->logger->info( 'Admin direct booking form submitted.', array(
@@ -473,8 +546,31 @@ class Handik_Booking_App_Direct_Booking_Service {
 
 	public function update_status_by_uid( $uid, $status ) {
 		global $wpdb;
-		$table = Handik_Booking_App_DB::table( 'direct_booking_requests' );
-		$wpdb->update( $table, array( 'status' => sanitize_key( $status ) ), array( 'cal_booking_uid' => (string) $uid ) );
+		$table  = Handik_Booking_App_DB::table( 'direct_booking_requests' );
+		$status = sanitize_key( $status );
+		// Sprint 13 hotfix (F11): refuse to re-flip a cancelled row back
+		// to booked from the webhook fallback path. dispatch_direct
+		// hits this when metadata.handik_direct_request_id is missing
+		// and we're left matching by cal_booking_id alone — a Cal-side
+		// cancel-then-rebook sequence would otherwise resurrect the
+		// dead row without us seeing the new booking's metadata. The
+		// id-keyed primary path stays untouched; only this fallback is
+		// guarded.
+		if ( 'booked' === $status ) {
+			$current = $wpdb->get_var( $wpdb->prepare(
+				"SELECT status FROM {$table} WHERE cal_booking_uid = %s LIMIT 1",
+				(string) $uid
+			) );
+			if ( 'cancelled' === $current ) {
+				if ( $this->logger ) {
+					$this->logger->warning( 'Refusing webhook re-flip cancelled→booked for direct row.', array(
+						'cal_booking_uid' => (string) $uid,
+					) );
+				}
+				return;
+			}
+		}
+		$wpdb->update( $table, array( 'status' => $status ), array( 'cal_booking_uid' => (string) $uid ) );
 	}
 
 	// ---------- helpers --------------------------------------------------

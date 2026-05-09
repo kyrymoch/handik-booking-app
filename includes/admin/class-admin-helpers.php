@@ -146,6 +146,11 @@ class Handik_Booking_App_Admin_Helpers {
 				return __( 'Returning Client', 'handik-booking-app' );
 			case 'new_client':
 				return __( 'New Client', 'handik-booking-app' );
+			// Sprint 13 hotfix (F12): admin-initiated rows have a new
+			// client_type set by Direct_Booking_Service::admin_submit;
+			// give them a friendly label instead of leaking the slug.
+			case 'admin_initiated':
+				return __( 'Admin booking', 'handik-booking-app' );
 		}
 		return (string) $client_type;
 	}

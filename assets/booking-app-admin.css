@@ -1457,6 +1457,15 @@ a.handik-admin-today-card-link:focus-visible .handik-admin-today-card {
 	border-color: #2563eb;
 }
 
+/* Sprint 13 hotfix (F4): visually freeze the Add-Booking form's
+ * customer + preset sections after the draft is committed. The Cal
+ * embed below stays interactive — only the inputs that no longer
+ * affect the in-flight booking are dimmed and pointer-locked. */
+.handik-admin-new-booking.is-frozen {
+	opacity: 0.55;
+	pointer-events: none;
+}
+
 /* --------- Lightbox --------------------------------------------------- */
 
 .handik-admin-lightbox-backdrop {
