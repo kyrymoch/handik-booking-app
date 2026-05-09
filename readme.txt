@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.1.19.0
+Stable tag: 2.1.20.0
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, silent returning-client recognition, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,21 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.1.20.0 =
+* **Admin can now book on behalf of a customer.** New "+ Add booking" CTA on the Bookings list page and "📅 Book a visit" button on every Person detail page. The flow uses the same Cal.com inline embed the public Additional Forms direct-booking preset uses — no parallel infrastructure.
+* **Admin booking page (`?page=handik-booking-app-bookings&action=new`).** Three-step form, all on one page:
+  1. *Customer & address.* Toggle between "Existing customer" (search-as-you-type by name / phone / email; results carry the customer's saved addresses so the address picker populates without a second round trip) and "+ New customer" (full name, phone, email, address inputs).
+  2. *Booking type.* Preset dropdown listing every enabled `direct_cal_booking` form preset. Project work-day presets are intentionally excluded from this MVP — admin scheduling for project flows is a follow-up.
+  3. *Pick a slot.* Cal.com inline embed. On `bookingSuccessful` the embed's payload is POST'd to the existing public capture endpoint with the issued capture_token; the row flips from `OPENED` → `BOOKED` and the operator is redirected back to the bookings list.
+* **The webhook flow is untouched.** When Cal fires the BOOKING_CREATED event, `Webhook_Service::dispatch_direct()` matches the row by the existing `metadata.handik_direct_request_id` exactly the same way as a public submission. Admin-created rows are tagged `source_url='admin:bookings'` and `client_type='admin_initiated'` so they can be filtered out of public stats / abandoned-cart cron later if needed.
+* **REST surface added:**
+  - `POST /handik-booking-app/v1/admin/booking/new` — accepts `{preset_slug, contact_id?, address_id?, full_name?, phone?, email?, address_full?, address_unit?}`, returns `{success, request_id, cal_booking_url, capture_token}`. Gated on the existing `handik_manage_bookings` cap.
+  - `GET /handik-booking-app/v1/admin/contact/search?q=…` — name / phone-digits / email autocomplete; up to 10 hits with the customer's saved addresses pre-attached.
+* **Service-layer addition.** New `Direct_Booking_Service::admin_submit($slug, $payload)` — sister of `submit()`. Difference: accepts `contact_id` / `address_id` shortcuts so a phone-call repeat customer doesn't get their saved details overwritten by the upsert path. Same Cal URL, same metadata, same capture_token semantics.
+* **Drop programmatic `<h2>` focus on step transitions in the main public SPA.** Owner-reported: the focus outline on the step heading was distracting on every step change (the ring stayed until the user clicked anywhere). Sprint 10's a11y fix added `tabindex="-1"` + `heading.focus()` plus a polite live-region announcer; the announcer is enough for screen readers and the forms SPA never moved focus for parity reasons (mobile keyboard dismissal, screen-magnifier confusion). Main SPA now matches.
+
+**Email surface (FYI, not a code change in this release).** The plugin sends exactly one email — the returning-client magic-link/OTP fired from `Auth_Service::send_message()` (the only `wp_mail()` call site in the codebase). Booking confirmation emails come from Cal.com itself, not us; we influence their content via the `cal_confirmation_note` setting which Cal.com includes in metadata + its own confirmation email. To send our own confirmation (branded, photos, total estimate, etc.), wire a `Notifications_Service` into `Bookings_Service::upsert_from_cal()` — not done in this release.
 
 = 2.1.19.0 =
 * **Hard-delete for People / Requests / Bookings (admin).** New "Danger zone" block at the bottom of each detail page lets the operator permanently wipe a record and every dependent row. Owner-requested for spam cleanup and right-to-be-forgotten requests — there is **no soft-delete**, **no audit-trail copy of the customer's data**, **no restore**.

@@ -39,6 +39,8 @@ class Handik_Booking_App_Admin {
 	protected $messages;
 	/** @var Handik_Booking_App_Admin_Additional_Forms|null */
 	protected $page_additional_forms;
+	/** @var Handik_Booking_App_Booking_Presets_Service|null */
+	protected $booking_presets;
 
 	// Page renderers (lazy-instantiated in render_*).
 	/** @var Handik_Booking_App_Admin_Dashboard|null */
@@ -56,7 +58,7 @@ class Handik_Booking_App_Admin {
 	/** @var Handik_Booking_App_Admin_Logs|null */
 	protected $page_logs;
 
-	public function __construct( $settings, $assets, $contacts, $addresses, $job_requests, $bookings, $logger, $changelog, $service_catalog, $messages = null, $additional_forms = null ) {
+	public function __construct( $settings, $assets, $contacts, $addresses, $job_requests, $bookings, $logger, $changelog, $service_catalog, $messages = null, $additional_forms = null, $booking_presets = null ) {
 		$this->settings        = $settings;
 		$this->assets          = $assets;
 		$this->contacts        = $contacts;
@@ -68,6 +70,10 @@ class Handik_Booking_App_Admin {
 		$this->service_catalog = $service_catalog;
 		$this->messages        = $messages;
 		$this->page_additional_forms = $additional_forms;
+		// Sprint 13 — passed through to Admin_Bookings so the Add
+		// Booking page can populate the preset picker with currently-
+		// enabled direct-cal-booking presets.
+		$this->booking_presets = $booking_presets;
 
 		add_action( 'admin_menu', array( $this, 'register_menu' ) );
 		add_action( 'admin_init', array( $this, 'maybe_save_settings' ) );
@@ -243,7 +249,8 @@ class Handik_Booking_App_Admin {
 			$this->addresses,
 			$this->service_catalog,
 			$this->logger,
-			$this->messages
+			$this->messages,
+			$this->booking_presets
 		) );
 		$page->render();
 	}

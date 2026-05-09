@@ -1252,6 +1252,360 @@
 		} catch ( e ) { /* private mode, ignore */ }
 	}
 
+	/**
+	 * Sprint 13 — admin-initiated direct booking page handler.
+	 *
+	 * Wires up the [data-handik-new-booking] container that
+	 * Admin_Bookings::render_new_booking emits:
+	 *
+	 *   - Customer mode toggle (existing vs new walk-in).
+	 *   - Existing-customer search (debounced REST call to
+	 *     /admin/contact/search; result list populates the address
+	 *     dropdown so the operator never has to retype).
+	 *   - New-address sub-form revealed when the address picker
+	 *     selects "+ New address".
+	 *   - Submit: POST /admin/booking/new → on success, swaps the Cal
+	 *     embed into [data-handik-cal-frame] using the same
+	 *     parseCalEmbedConfig pattern booking-forms.js uses.
+	 *   - Cal embed `bookingSuccessful` → POST /forms/direct/{id}/capture
+	 *     with the issued capture_token to flip the row to BOOKED.
+	 *     Redirect to Bookings list afterwards (the cal-webhook will
+	 *     also keep doing its dispatch — we don't need to wait for it).
+	 */
+	function initNewBookingFlow() {
+		const root = document.querySelector( '[data-handik-new-booking]' );
+		if ( ! root ) { return; }
+
+		const restBase  = root.dataset.handikRestBase || config.restBase;
+		const restNonce = root.dataset.handikRestNonce || config.restNonce;
+		const redirectBase = root.dataset.handikRedirectBase || '';
+
+		const modeBtns       = root.querySelectorAll( '[data-handik-mode]' );
+		const paneExisting   = root.querySelector( '[data-handik-pane="existing"]' );
+		const paneNew        = root.querySelector( '[data-handik-pane="new"]' );
+		const searchInput    = root.querySelector( '[data-handik-contact-search]' );
+		const resultsList    = root.querySelector( '[data-handik-results]' );
+		const chosenBox      = root.querySelector( '[data-handik-chosen]' );
+		const chosenIdInput  = root.querySelector( '[data-handik-contact-id]' );
+		const chosenName     = root.querySelector( '[data-handik-chosen-name]' );
+		const chosenPhone    = root.querySelector( '[data-handik-chosen-phone]' );
+		const addressPicker  = root.querySelector( '[data-handik-address-picker]' );
+		const newAddressPane = root.querySelector( '[data-handik-new-address]' );
+		const presetPicker   = root.querySelector( '[data-handik-preset-picker]' );
+		const submitBtn      = root.querySelector( '[data-handik-new-booking-submit]' );
+		const statusEl       = root.querySelector( '[data-handik-new-booking-status]' );
+		const calSection     = document.querySelector( '[data-handik-cal-section]' );
+		const calFrameSlot   = document.querySelector( '[data-handik-cal-frame]' );
+
+		let mode = paneExisting && ! paneExisting.hidden ? 'existing' : 'existing';
+
+		function setMode( next ) {
+			mode = next;
+			modeBtns.forEach( function ( b ) {
+				b.setAttribute( 'aria-pressed', b.dataset.handikMode === next ? 'true' : 'false' );
+			} );
+			if ( paneExisting ) { paneExisting.hidden = ( next !== 'existing' ); }
+			if ( paneNew )      { paneNew.hidden      = ( next !== 'new' );      }
+			updateSubmitState();
+		}
+		modeBtns.forEach( function ( b ) {
+			b.addEventListener( 'click', function () { setMode( b.dataset.handikMode ); } );
+		} );
+
+		// ----- Existing-customer search -----
+		let searchTimer = null;
+		if ( searchInput ) {
+			searchInput.addEventListener( 'input', function () {
+				if ( searchTimer ) { window.clearTimeout( searchTimer ); }
+				const q = searchInput.value.trim();
+				if ( q.length < 2 ) {
+					if ( resultsList ) { resultsList.hidden = true; resultsList.innerHTML = ''; }
+					return;
+				}
+				searchTimer = window.setTimeout( function () {
+					window.fetch( restBase + 'admin/contact/search?q=' + encodeURIComponent( q ), {
+						credentials: 'same-origin',
+						headers: { 'X-WP-Nonce': restNonce },
+					} )
+						.then( function ( r ) { return r.json(); } )
+						.then( function ( payload ) { renderResults( payload && payload.results ? payload.results : [] ); } )
+						.catch( function () { /* ignore */ } );
+				}, 300 );
+			} );
+		}
+
+		function renderResults( results ) {
+			if ( ! resultsList ) { return; }
+			resultsList.innerHTML = '';
+			if ( ! results.length ) {
+				resultsList.hidden = true;
+				return;
+			}
+			results.forEach( function ( r ) {
+				const li = document.createElement( 'li' );
+				li.className = 'handik-admin-new-booking__result';
+				li.tabIndex = 0;
+				li.innerHTML = '<strong>' + escapeHtml( r.full_name ) + '</strong>'
+					+ ' <span class="handik-admin-muted">· ' + escapeHtml( r.phone ) + '</span>'
+					+ ( r.email ? ' <span class="handik-admin-muted">· ' + escapeHtml( r.email ) + '</span>' : '' );
+				li.addEventListener( 'click', function () { chooseContact( r ); } );
+				li.addEventListener( 'keydown', function ( e ) {
+					if ( 'Enter' === e.key || ' ' === e.key ) { e.preventDefault(); chooseContact( r ); }
+				} );
+				resultsList.appendChild( li );
+			} );
+			resultsList.hidden = false;
+		}
+
+		function chooseContact( r ) {
+			if ( chosenIdInput ) { chosenIdInput.value = String( r.id ); }
+			if ( chosenName )    { chosenName.textContent = r.full_name; }
+			if ( chosenPhone )   { chosenPhone.textContent = '· ' + r.phone; }
+			if ( resultsList )   { resultsList.hidden = true; resultsList.innerHTML = ''; }
+			if ( searchInput )   { searchInput.value = r.full_name; }
+			if ( addressPicker ) {
+				addressPicker.innerHTML = '';
+				const placeholder = document.createElement( 'option' );
+				placeholder.value = '';
+				placeholder.textContent = i18n.pickAddress || '— Pick an address —';
+				addressPicker.appendChild( placeholder );
+				( r.addresses || [] ).forEach( function ( a ) {
+					const opt = document.createElement( 'option' );
+					opt.value = String( a.id );
+					opt.dataset.full = a.address_full || '';
+					opt.dataset.unit = a.address_unit || '';
+					opt.textContent = ( a.address_full || '' ) + ( a.address_unit ? ' · ' + a.address_unit : '' );
+					addressPicker.appendChild( opt );
+				} );
+				const newOpt = document.createElement( 'option' );
+				newOpt.value = '__new';
+				newOpt.textContent = i18n.newAddress || '+ New address';
+				addressPicker.appendChild( newOpt );
+			}
+			if ( chosenBox ) { chosenBox.hidden = false; }
+			updateSubmitState();
+		}
+
+		// ----- New-address toggle on the address picker -----
+		if ( addressPicker ) {
+			addressPicker.addEventListener( 'change', function () {
+				if ( newAddressPane ) {
+					newAddressPane.hidden = ( '__new' !== addressPicker.value );
+				}
+				updateSubmitState();
+			} );
+		}
+
+		// ----- Submit-button gating -----
+		root.addEventListener( 'input', updateSubmitState );
+
+		function updateSubmitState() {
+			if ( ! submitBtn ) { return; }
+			const presetOk = presetPicker && presetPicker.value;
+			let payloadOk = false;
+			if ( 'existing' === mode ) {
+				const cid = chosenIdInput && chosenIdInput.value ? parseInt( chosenIdInput.value, 10 ) : 0;
+				if ( cid > 0 && addressPicker ) {
+					const addr = addressPicker.value;
+					if ( '__new' === addr ) {
+						const af = root.querySelector( '[data-handik-address-full]' );
+						payloadOk = !! ( af && af.value.trim() );
+					} else if ( addr ) {
+						payloadOk = true;
+					}
+				}
+			} else {
+				const n  = root.querySelector( '[data-handik-new-name]' );
+				const p  = root.querySelector( '[data-handik-new-phone]' );
+				const af = root.querySelector( '[data-handik-new-address-full]' );
+				payloadOk = !! ( n && n.value.trim() && p && p.value.trim() && af && af.value.trim() );
+			}
+			submitBtn.disabled = ! ( presetOk && payloadOk );
+		}
+
+		// ----- Submit -----
+		if ( submitBtn ) {
+			submitBtn.addEventListener( 'click', async function () {
+				const body = collectPayload();
+				if ( ! body ) { return; }
+				if ( statusEl ) { statusEl.textContent = i18n.creatingDraft || '· Creating draft…'; }
+				try {
+					await withButtonLoading( submitBtn, async function () {
+						const r = await window.fetch( restBase + 'admin/booking/new', {
+							method: 'POST',
+							credentials: 'same-origin',
+							headers: { 'Content-Type': 'application/json', 'X-WP-Nonce': restNonce },
+							body: JSON.stringify( body ),
+						} );
+						const payload = await r.json().catch( function () { return {}; } );
+						if ( ! r.ok ) {
+							throw new Error( payload.message || payload.code || 'Failed' );
+						}
+						if ( ! payload.cal_booking_url ) {
+							throw new Error( i18n.noCalUrl || 'Cal.com URL missing — check the preset configuration.' );
+						}
+						mountCalEmbed( payload );
+					} );
+				} catch ( err ) {
+					if ( statusEl ) {
+						statusEl.textContent = '';
+					}
+					toast( ( err && err.message ) || i18n.saveFailed || 'Failed', 'error' );
+				}
+			} );
+		}
+
+		function collectPayload() {
+			const body = {
+				preset_slug: presetPicker ? presetPicker.value : '',
+			};
+			if ( 'existing' === mode ) {
+				body.contact_id = chosenIdInput && chosenIdInput.value ? parseInt( chosenIdInput.value, 10 ) : 0;
+				const addr = addressPicker ? addressPicker.value : '';
+				if ( '__new' === addr ) {
+					const af = root.querySelector( '[data-handik-address-full]' );
+					const au = root.querySelector( '[data-handik-address-unit]' );
+					body.address_full = af ? af.value.trim() : '';
+					body.address_unit = au ? au.value.trim() : '';
+				} else if ( addr ) {
+					body.address_id = parseInt( addr, 10 );
+				}
+			} else {
+				const n  = root.querySelector( '[data-handik-new-name]' );
+				const p  = root.querySelector( '[data-handik-new-phone]' );
+				const e  = root.querySelector( '[data-handik-new-email]' );
+				const af = root.querySelector( '[data-handik-new-address-full]' );
+				const au = root.querySelector( '[data-handik-new-address-unit]' );
+				body.full_name    = n  ? n.value.trim()  : '';
+				body.phone        = p  ? p.value.trim()  : '';
+				body.email        = e  ? e.value.trim()  : '';
+				body.address_full = af ? af.value.trim() : '';
+				body.address_unit = au ? au.value.trim() : '';
+			}
+			return body;
+		}
+
+		// ----- Cal embed mount -----
+		// Deliberately mirrors booking-forms.js mountCalEmbed so the
+		// embed behaves identically. Captures the bookingSuccessful
+		// event to flip the row to BOOKED via the existing public
+		// /forms/direct/{id}/capture endpoint.
+		function mountCalEmbed( submission ) {
+			if ( ! calSection || ! calFrameSlot ) { return; }
+			const parsed = parseCalEmbedUrl( submission.cal_booking_url );
+			if ( ! parsed ) {
+				toast( i18n.noCalUrl || 'Could not parse Cal.com URL.', 'error' );
+				return;
+			}
+			calSection.hidden = false;
+			calSection.scrollIntoView( { behavior: 'smooth', block: 'start' } );
+
+			loadCalScript( parsed.origin )
+				.then( function () {
+					const namespace = 'handik_admin_new_booking';
+					window.__handikCalNamespaces = window.__handikCalNamespaces || {};
+					if ( ! window.__handikCalNamespaces[ namespace ] ) {
+						window.Cal( 'init', namespace, { origin: parsed.origin } );
+						window.__handikCalNamespaces[ namespace ] = true;
+					}
+					const ns = ( window.Cal.ns && window.Cal.ns[ namespace ] ) ? window.Cal.ns[ namespace ] : window.Cal;
+					ns( 'inline', {
+						elementOrSelector: calFrameSlot,
+						calLink: parsed.calLink,
+						config:  parsed.config,
+					} );
+					ns( 'on', {
+						action: 'bookingSuccessful',
+						callback: function ( e ) {
+							captureBooking( submission, e && e.detail && e.detail.data ? e.detail.data : {} );
+						},
+					} );
+					if ( statusEl ) { statusEl.textContent = i18n.calLoaded || '· Cal.com calendar loaded — pick a slot below.'; }
+				} )
+				.catch( function () {
+					calFrameSlot.innerHTML = '<a class="button button-primary" target="_blank" rel="noopener" href="'
+						+ String( submission.cal_booking_url ).replace( /"/g, '&quot;' ) + '">'
+						+ ( i18n.openInNewTab || 'Open Cal.com in a new tab' ) + '</a>';
+				} );
+		}
+
+		function captureBooking( submission, detail ) {
+			window.fetch( restBase + 'forms/direct/' + submission.request_id + '/capture', {
+				method: 'POST',
+				credentials: 'same-origin',
+				headers: { 'Content-Type': 'application/json', 'X-WP-Nonce': restNonce },
+				body: JSON.stringify( {
+					capture_token: submission.capture_token,
+					booking: detail || {},
+				} ),
+			} )
+				.then( function () {
+					toast( i18n.bookingRecorded || 'Booking recorded.', 'success' );
+					if ( redirectBase ) {
+						window.setTimeout( function () { window.location.href = redirectBase; }, 1200 );
+					}
+				} )
+				.catch( function () {
+					toast( i18n.bookingRecordedWebhook || 'Booking recorded; the webhook will reconcile it shortly.', 'info' );
+				} );
+		}
+
+		// ----- Cal embed helpers (mirror booking-forms.js) -----
+		function parseCalEmbedUrl( raw ) {
+			try {
+				const url = new URL( raw );
+				const calLink = url.pathname.replace( /^\//, '' );
+				const config = {};
+				url.searchParams.forEach( function ( v, k ) { config[ k ] = v; } );
+				return { origin: url.origin, calLink: calLink, config: config };
+			} catch ( e ) {
+				return null;
+			}
+		}
+		function loadCalScript( origin ) {
+			return new Promise( function ( resolve, reject ) {
+				if ( window.Cal && 'function' === typeof window.Cal ) { resolve(); return; }
+				const existing = document.getElementById( 'handik-admin-cal-script' );
+				if ( existing ) {
+					existing.addEventListener( 'load', resolve, { once: true } );
+					existing.addEventListener( 'error', reject, { once: true } );
+					return;
+				}
+				// Same Cal queue stub as the public form.
+				( function ( C, A, L ) {
+					const p = function ( a, ar ) { a.q.push( ar ); };
+					const d = C.document;
+					C.Cal = C.Cal || function () {
+						const cal = C.Cal; const ar = arguments;
+						if ( ! cal.loaded ) { cal.ns = {}; cal.q = cal.q || []; d.head.appendChild( d.createElement( 'script' ) ).src = A; cal.loaded = true; }
+						if ( ar[ 0 ] === L ) {
+							const api = function () { p( api, arguments ); };
+							const namespace = ar[ 1 ];
+							api.q = api.q || [];
+							if ( typeof namespace === 'string' ) { cal.ns[ namespace ] = cal.ns[ namespace ] || api; p( cal.ns[ namespace ], ar ); p( cal, [ 'initNamespace', namespace ] ); } else { p( cal, ar ); }
+							return;
+						}
+						p( cal, ar );
+					};
+				} )( window, origin + '/embed/embed.js', 'init' );
+				const tag = document.querySelector( 'script[src="' + origin + '/embed/embed.js"]' );
+				if ( tag ) {
+					tag.id = 'handik-admin-cal-script';
+					tag.addEventListener( 'load', resolve, { once: true } );
+					tag.addEventListener( 'error', reject, { once: true } );
+				} else {
+					resolve();
+				}
+			} );
+		}
+	}
+
+	function escapeHtml( s ) {
+		return String( s == null ? '' : s ).replace( /[&"<>]/g, function ( c ) {
+			return ( { '&': '&amp;', '"': '&quot;', '<': '&lt;', '>': '&gt;' } )[ c ];
+		} );
+	}
+
 	document.addEventListener( 'DOMContentLoaded', function() {
 		initRowLinks();
 		initBookingActions();
@@ -1265,6 +1619,7 @@
 		initDetailsMemory();
 		initRestoreScroll();
 		initDangerZone();
+		initNewBookingFlow();
 	} );
 
 }( window, document ) );

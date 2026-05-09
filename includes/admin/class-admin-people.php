@@ -375,6 +375,16 @@ class Handik_Booking_App_Admin_People {
 			<div class="handik-admin-person-header__contacts">
 				<?php if ( $tel ) : ?><a class="button" href="<?php echo esc_url( $tel ); ?>">📞 <?php echo esc_html( (string) $contact['phone'] ); ?></a><?php endif; ?>
 				<?php if ( $mail ) : ?><a class="button" href="<?php echo esc_url( $mail ); ?>">✉️ <?php echo esc_html( (string) $contact['email'] ); ?></a><?php endif; ?>
+				<?php
+				// Sprint 13 — book a visit for this customer. Routes to
+				// the Bookings → Add page with contact_id pre-filled so
+				// the operator skips the search step.
+				$book_url = Handik_Booking_App_Admin_Helpers::admin_url_for(
+					'handik-booking-app-bookings',
+					array( 'action' => 'new', 'contact_id' => (int) ( $contact['id'] ?? 0 ) )
+				);
+				?>
+				<a class="button button-primary" href="<?php echo esc_url( $book_url ); ?>">📅 <?php esc_html_e( 'Book a visit', 'handik-booking-app' ); ?></a>
 			</div>
 		</header>
 		<?php
