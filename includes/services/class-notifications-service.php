@@ -191,12 +191,26 @@ class Handik_Booking_App_Notifications_Service {
 	 */
 	protected function release_idempotency( $table_short, $row_id ) {
 		global $wpdb;
-		$table = Handik_Booking_App_DB::table( $table_short );
-		$wpdb->update(
+		$table   = Handik_Booking_App_DB::table( $table_short );
+		$result  = $wpdb->update(
 			$table,
 			array( 'confirmation_email_sent_at' => null ),
 			array( 'id' => (int) $row_id )
 		);
+		// Hotfix 2.1.21.2 — surface a transient DB-error rollback failure
+		// in the log. Plan §4.6 promised "manual retry can re-fire";
+		// silently failing here would leave the stamp set forever and
+		// block all subsequent retries on this booking.
+		if ( false === $result && $this->logger ) {
+			$this->logger->error(
+				'Notifications: idempotency rollback failed; manual retry will be blocked.',
+				array(
+					'table_short' => $table_short,
+					'row_id'      => (int) $row_id,
+					'wpdb_error'  => $wpdb->last_error,
+				)
+			);
+		}
 	}
 
 	/**
@@ -315,8 +329,15 @@ class Handik_Booking_App_Notifications_Service {
 		$html_template    = $resolve( 'customer_confirmation_body_html' );
 		$text_template    = $resolve( 'customer_confirmation_body_text' );
 
-		$subject = Handik_Booking_App_Admin_Helpers::render_template( $subject_template, $placeholders );
-		$html    = Handik_Booking_App_Admin_Helpers::render_template( $html_template, $placeholders );
+		// Hotfix 2.1.21.2 — render context-aware. Subject + HTML body
+		// inherit user-controlled scalar placeholders (customer name,
+		// address, from-name) which previously rendered raw; an
+		// attacker controlling a CRM contact's full_name could land
+		// `<img onerror>` in the email body. The pre-rendered list
+		// tokens (`tasks_list_html`, `days_list_html`) stay raw because
+		// they're already built with esc_html() inside build_placeholders().
+		$subject = Handik_Booking_App_Admin_Helpers::render_template( $subject_template, $this->placeholders_for_subject( $placeholders ) );
+		$html    = Handik_Booking_App_Admin_Helpers::render_template( $html_template, $this->placeholders_for_html( $placeholders ) );
 		$text    = Handik_Booking_App_Admin_Helpers::render_template( $text_template, $placeholders );
 
 		// Plain-text bodies should wrap at 78 octets (RFC 5322) — long
@@ -325,7 +346,11 @@ class Handik_Booking_App_Notifications_Service {
 
 		$ics_path = $this->write_ics_temp_file( $context );
 
-		$from_name    = trim( (string) $this->settings->get( 'email_from_name', '' ) );
+		// Hotfix 2.1.21.2 — strip CR/LF from From-name to defend against
+		// header injection if a future settings-save path stops sanitizing.
+		// `sanitize_email` already rejects CR/LF in addresses; this hardens
+		// the display-name half of the From: header.
+		$from_name    = self::strip_header_breaks( (string) $this->settings->get( 'email_from_name', '' ) );
 		$from_address = sanitize_email( (string) $this->settings->get( 'email_from_address', '' ) );
 		$reply_to     = sanitize_email( $resolve( 'customer_confirmation_reply_to' ) );
 		if ( '' === $reply_to ) {
@@ -501,11 +526,15 @@ class Handik_Booking_App_Notifications_Service {
 		$subject_template = $resolve( 'owner_notification_subject' );
 		$body_template    = $resolve( 'owner_notification_body' );
 
-		$subject = Handik_Booking_App_Admin_Helpers::render_template( $subject_template, $placeholders );
+		// Hotfix 2.1.21.2 — same subject sanitization as customer side
+		// (CR/LF + tag stripping defends against header injection via a
+		// CRM contact name). Body stays raw — it's plain-text only,
+		// HTML escaping would render literally.
+		$subject = Handik_Booking_App_Admin_Helpers::render_template( $subject_template, $this->placeholders_for_subject( $placeholders ) );
 		$body    = Handik_Booking_App_Admin_Helpers::render_template( $body_template, $placeholders );
 		$body    = wordwrap( $body, 78, "\n", false );
 
-		$from_name    = trim( (string) $this->settings->get( 'email_from_name', '' ) );
+		$from_name    = self::strip_header_breaks( (string) $this->settings->get( 'email_from_name', '' ) );
 		$from_address = sanitize_email( (string) $this->settings->get( 'email_from_address', '' ) );
 
 		// Plain-text headers; owner-side never uses HTML. Reply-To is
@@ -745,6 +774,74 @@ class Handik_Booking_App_Notifications_Service {
 			default:
 				return admin_url( 'admin.php?page=handik-booking-app' );
 		}
+	}
+
+	/**
+	 * Hotfix 2.1.21.2 — return a copy of the placeholder map suitable for
+	 * substitution into an HTML context. User-controlled scalar tokens
+	 * (customer name, address, from-name, etc.) are HTML-escaped so a
+	 * CRM contact whose full_name is `<img onerror=…>` can't land
+	 * working markup in the customer's inbox.
+	 *
+	 * Two categories are NOT escaped:
+	 *   - Pre-rendered HTML lists (`tasks_list_html`, `days_list_html`)
+	 *     which `build_placeholders` already constructs with esc_html()
+	 *     on each item — escaping again would render the `<ul>` tags
+	 *     literally.
+	 *   - URLs (`cal_url`, `restart_url`, `site_url`,
+	 *     `open_request_admin_link`) which go through `esc_url()`
+	 *     instead — strips dangerous schemes (`javascript:`, `data:`)
+	 *     that would otherwise render as a clickable link.
+	 *
+	 * @param array<string, mixed> $base Placeholder map from build_placeholders().
+	 * @return array<string, string>
+	 */
+	protected function placeholders_for_html( array $base ) {
+		$out                  = array();
+		$pre_rendered_html    = array( 'tasks_list_html', 'days_list_html' );
+		$url_keys             = array( 'cal_url', 'restart_url', 'site_url', 'open_request_admin_link' );
+		foreach ( $base as $key => $value ) {
+			if ( in_array( $key, $pre_rendered_html, true ) ) {
+				$out[ $key ] = (string) $value;
+				continue;
+			}
+			if ( in_array( $key, $url_keys, true ) ) {
+				$out[ $key ] = esc_url( (string) $value );
+				continue;
+			}
+			$out[ $key ] = esc_html( (string) $value );
+		}
+		return $out;
+	}
+
+	/**
+	 * Hotfix 2.1.21.2 — sanitize placeholders for substitution into the
+	 * Subject header. Email subjects are plain text but a CR/LF in the
+	 * value would let an attacker inject additional headers (Bcc, etc.).
+	 * `sanitize_text_field` collapses whitespace + strips tags — both
+	 * desirable for a one-line subject.
+	 *
+	 * @param array<string, mixed> $base Placeholder map from build_placeholders().
+	 * @return array<string, string>
+	 */
+	protected function placeholders_for_subject( array $base ) {
+		$out = array();
+		foreach ( $base as $key => $value ) {
+			$out[ $key ] = sanitize_text_field( (string) $value );
+		}
+		return $out;
+	}
+
+	/**
+	 * Hotfix 2.1.21.2 — strip CR/LF (and NUL) from a string destined for
+	 * a single-line email header value. Defends against From-name header
+	 * injection if a future settings code path stops sanitizing.
+	 *
+	 * @param string $value Raw header-component value.
+	 * @return string
+	 */
+	protected static function strip_header_breaks( $value ) {
+		return trim( str_replace( array( "\r", "\n", "\0" ), '', (string) $value ) );
 	}
 
 	/**
@@ -1141,6 +1238,17 @@ class Handik_Booking_App_Notifications_Service {
 				'end_iso'   => (string) ( $day['end_iso'] ?? '' ),
 				'day_index' => (int) ( $day['day_index'] ?? 0 ),
 			);
+		}
+
+		// Hotfix 2.1.21.2 — defensive skip: confirm_schedule() is the
+		// only caller and only fires after every day is persisted, so in
+		// practice $flat_days is always non-empty. But sending a "your
+		// visit is confirmed" email with zero days listed (e.g. a future
+		// rollback edge that empties list_days() between the trigger and
+		// our hydration) would produce a confusing customer email and an
+		// empty .ics. Skip silently.
+		if ( empty( $flat_days ) ) {
+			return;
 		}
 
 		$context = array(

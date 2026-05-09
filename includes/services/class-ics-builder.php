@@ -170,22 +170,58 @@ class Handik_Booking_App_Ics_Builder {
 	 */
 	protected static function fold_line( $line ) {
 		$line = (string) $line;
-		// Multibyte safety: count bytes, not characters. RFC 5545 says
-		// "octets" explicitly. PHP strlen() with no mbstring overload
-		// returns bytes; we don't override mbstring.func_overload here.
+		// RFC 5545 §3.1 says lines should be ≤75 *octets*, not characters,
+		// so we count and slice in bytes. But a naive byte-cut at offset 75
+		// can split a multi-byte UTF-8 codepoint mid-sequence — e.g. a
+		// summary containing `·` (U+00B7, 0xC2 0xB7) at the boundary
+		// produces two lines that both fail mb_check_encoding, and many
+		// calendar apps render the truncated codepoint as a replacement
+		// character. Hotfix 2.1.21.2 — back off the cut point to the last
+		// valid UTF-8 codepoint boundary before the limit.
 		if ( strlen( $line ) <= 75 ) {
 			return $line;
 		}
 		$out   = '';
 		$first = true;
 		while ( strlen( $line ) > 0 ) {
-			$chunk_len = $first ? 75 : 74; // continuation lines lose 1 octet to the leading space
+			$chunk_len = $first ? 75 : 74; // continuation lines lose 1 octet to the leading space.
+			if ( strlen( $line ) <= $chunk_len ) {
+				$out  .= ( $first ? '' : self::CRLF . ' ' ) . $line;
+				break;
+			}
+			$chunk_len = self::adjust_fold_to_utf8_boundary( $line, $chunk_len );
 			$chunk     = substr( $line, 0, $chunk_len );
 			$line      = substr( $line, $chunk_len );
 			$out      .= ( $first ? '' : self::CRLF . ' ' ) . $chunk;
 			$first     = false;
 		}
 		return $out;
+	}
+
+	/**
+	 * If the byte at `$line[$cut]` is a UTF-8 continuation byte
+	 * (0b10xxxxxx, i.e. `(byte & 0xC0) === 0x80`), back off until we land
+	 * either at a single-byte ASCII char (0xxxxxxx) or the start of a
+	 * multi-byte sequence (11xxxxxx). Worst case: backs off 3 bytes for
+	 * a 4-byte UTF-8 codepoint.
+	 *
+	 * Returns 1 if the entire prefix is continuation bytes (malformed
+	 * input — keep at least one byte of progress so the loop terminates).
+	 *
+	 * @param string $line Source string.
+	 * @param int    $cut  Tentative byte offset.
+	 * @return int Adjusted byte offset on or before $cut.
+	 */
+	protected static function adjust_fold_to_utf8_boundary( $line, $cut ) {
+		$max_backoff = 3;
+		for ( $i = 0; $i < $max_backoff && $cut > 1; $i++ ) {
+			$byte = ord( $line[ $cut ] );
+			if ( ( $byte & 0xC0 ) !== 0x80 ) {
+				return $cut;
+			}
+			$cut--;
+		}
+		return $cut;
 	}
 
 	/**

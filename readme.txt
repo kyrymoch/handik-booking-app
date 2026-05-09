@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.1.21.1
+Stable tag: 2.1.21.2
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, silent returning-client recognition, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,15 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.1.21.2 =
+* **Hotfix — independent audit on the Sprint 14a + 14b email work.** Six findings closed; no schema change, no settings change, no behaviour change for installs that haven't enabled the master toggles. Pure hardening of the send pipeline and the .ics builder.
+* **P1 — HTML injection via placeholder substitution.** `Admin_Helpers::render_template()` does raw `str_replace`; the customer HTML body inserted `{{customer_name}}` / `{{address}}` / `{{from_name}}` / `{{cal_url}}` verbatim. A contact whose `full_name` was `<img src=x onerror="alert(1)">` (saved through the CRM) landed working markup in the customer's inbox; a malicious address could break out of `<strong>` tags and inject spoofed paragraph content; `{{cal_url}}` accepted `javascript:` schemes (`esc_url_raw` doesn't strip them) and rendered as a clickable link. Fixed by routing user-controlled scalar placeholders through `esc_html()` for HTML body, `esc_url()` for URL placeholders, and `sanitize_text_field()` for subject placeholders. Pre-rendered list tokens (`tasks_list_html`, `days_list_html`) — already built with per-item `esc_html()` inside `build_placeholders` — bypass the second escaping pass so `<ul>` markup survives.
+* **P1 — UTF-8 corruption in `Ics_Builder::fold_line`.** RFC 5545's 75-octet line limit was implemented as a naive `substr($line, 0, 75)`, which can split a multi-byte UTF-8 codepoint mid-byte. Reproduction: a SUMMARY where `·` (U+00B7, `0xC2 0xB7`) lands at the boundary produced one line ending with `0xC2` and a continuation starting with `0xB7` — both lines failed `mb_check_encoding`. Fixed by backing off the cut point to the last valid UTF-8 codepoint boundary before the limit; defensive 3-byte max backoff handles 4-byte UTF-8 sequences.
+* **P2 — CR/LF stripping on the From-name display value.** Defends against header injection if a future settings code path stops sanitizing the `email_from_name` setting. Practical risk was already low (today's settings sanitize_text_field strips newlines), but the From-header build site now strips CR/LF/NUL at the use site too. Defence in depth.
+* **P2 — Idempotency rollback failure now logs.** `release_idempotency()` previously called `$wpdb->update()` and discarded the return value. A transient DB error during rollback would leave the `confirmation_email_sent_at` stamp set forever, blocking every subsequent retry on that booking — the exact thing plan §4.6 promised would NOT happen. Now the false return is caught and logged (with the table, row id, and `wpdb->last_error`) so the operator can see what went wrong.
+* **P2 — Defensive zero-days skip in the project-flow trigger.** `confirm_schedule()` only fires after every day is persisted, so in practice `dispatch_for_project` always sees a non-empty days array. But sending a "your visit is confirmed" email with zero days listed (e.g. a future rollback edge that empties `list_days()` between the trigger and our hydration) would produce a confusing customer email and an empty `.ics`. Now skipped silently if the days array hydrates empty.
+* **Audit-time triage that didn't need a code fix:** the customer-duplication-on-owner-fail rollback semantic is documented as an accepted tradeoff in the 14b changelog and matches plan §6. The TZID drift from plan §4.5 (we emit UTC `Z` instead of explicit VTIMEZONE blocks) is interoperable with Apple Calendar / Google Calendar / Outlook so no functional change. PHPStan: 12 errors in touched files, all pre-existing on the parent commit (verified by re-running on the parent SHA). PHPCS: at parity with the rest of the codebase per the project's documented "noisy baseline" policy.
 
 = 2.1.21.1 =
 * **Sprint 14b — owner-side booking notification + email-error surface.** Closes the second half of the email work that 14a started. No new files, no schema change; extends the existing `Notifications_Service` and adds one System info callout. Master toggle defaults OFF on upgrade so existing installs see no behavioural change.
