@@ -253,20 +253,21 @@
 		}
 
 		focusStepHeading() {
-			// Sprint 10 fix: was a no-op (only removed tabindex from a
-			// heading that never had one). Now we briefly set
-			// `tabindex="-1"`, focus the heading, and announce the step
-			// change to a polite live region so screen-reader users hear
-			// where they landed. The tabindex is removed after blur so
-			// the heading doesn't take Tab focus on subsequent keypresses.
+			// Sprint 10 (a11y) → 2.1.20 fix: announce step changes via the
+			// live region only; do NOT move keyboard focus to the <h2>.
+			// Owner-reported: the visible focus ring on the heading was
+			// distracting (the outline stayed until the user clicked
+			// anywhere), and the parity-decision in booking-forms.js
+			// already stopped focusing for the same reason — moving
+			// focus dismissed mobile keyboards mid-typing and confused
+			// screen magnifiers. The aria-live announcer below is enough
+			// for assistive tech; sighted users get the smooth-scroll +
+			// the rendered heading.
 			window.requestAnimationFrame( () => {
 				const heading = this.root.querySelector( '.handik-booking-app__screen-header h2' );
 				if ( ! heading ) {
 					return;
 				}
-				heading.setAttribute( 'tabindex', '-1' );
-				try { heading.focus( { preventScroll: true } ); } catch ( e ) { /* ignore */ }
-				heading.addEventListener( 'blur', () => heading.removeAttribute( 'tabindex' ), { once: true } );
 				this.announceStep( heading.textContent || '' );
 			} );
 		}
