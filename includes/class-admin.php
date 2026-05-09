@@ -213,13 +213,29 @@ class Handik_Booking_App_Admin {
 			return;
 		}
 
-		$user = wp_get_current_user();
-		$to   = sanitize_email( (string) $user->user_email );
+		// 2.1.21.3 — recipient resolution order:
+		//   1. unsaved POST value of `notification_test_recipient` from the
+		//      same form submission (so an operator can type a one-off
+		//      address and click Send Test without saving first);
+		//   2. saved `notification_test_recipient` setting;
+		//   3. WordPress account email of the logged-in user.
+		// Each step needs sanitize_email — empty/invalid falls through.
+		$to = '';
+		if ( array_key_exists( 'notification_test_recipient', $payload ) ) {
+			$to = sanitize_email( (string) $payload['notification_test_recipient'] );
+		}
+		if ( '' === $to ) {
+			$to = sanitize_email( (string) $this->settings->get( 'notification_test_recipient', '' ) );
+		}
+		if ( '' === $to ) {
+			$user = wp_get_current_user();
+			$to   = sanitize_email( (string) $user->user_email );
+		}
 		if ( '' === $to ) {
 			add_settings_error(
 				'handik-booking-app',
 				'test_email_failed',
-				__( 'Your account has no email address — set one before sending a test.', 'handik-booking-app' )
+				__( 'No valid test recipient — fill the "Send test emails to" field on the Notifications tab, or set an email on your WordPress profile.', 'handik-booking-app' )
 			);
 			return;
 		}

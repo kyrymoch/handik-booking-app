@@ -459,6 +459,23 @@ class Handik_Booking_App_Admin_Settings {
 			<?php Handik_Booking_App_Admin_Helpers::textarea_field( 'magic_link_email_body', __( 'Body', 'handik-booking-app' ), $s['magic_link_email_body'], '', 8 ); ?>
 		<?php $this->section_close(); ?>
 
+		<?php
+		$current_user_email = (string) wp_get_current_user()->user_email;
+		$test_recipient_effective = '' !== (string) $s['notification_test_recipient']
+			? (string) $s['notification_test_recipient']
+			: $current_user_email;
+		?>
+
+		<?php $this->section_open( __( 'Test recipient', 'handik-booking-app' ) ); ?>
+			<p class="handik-admin-muted">
+				<?php
+				/* translators: %s: email address that will receive test sends. */
+				echo esc_html( sprintf( __( 'Address that receives the "Send test email" previews from the sections below. Empty → falls back to the WordPress account email of whoever clicks the button (currently %s).', 'handik-booking-app' ), $current_user_email ) );
+				?>
+			</p>
+			<?php Handik_Booking_App_Admin_Helpers::field( 'notification_test_recipient', __( 'Send test emails to', 'handik-booking-app' ), $s['notification_test_recipient'], 'email' ); ?>
+		<?php $this->section_close(); ?>
+
 		<?php $this->section_open( __( 'Customer booking-confirmation email', 'handik-booking-app' ) ); ?>
 			<p class="handik-admin-muted">
 				<?php esc_html_e( 'When enabled, the plugin sends a branded confirmation email (HTML + plain-text alternative + .ics calendar attachment) to the customer after every new booking — main flow, direct preset, and project work-days. Disable Cal.com’s own confirmation email FIRST so customers don’t receive two messages. Placeholders:', 'handik-booking-app' ); ?>
@@ -476,8 +493,8 @@ class Handik_Booking_App_Admin_Settings {
 				</button>
 				<small class="handik-admin-muted" style="margin-left:8px;">
 					<?php
-					/* translators: %s: current admin email address. */
-					echo esc_html( sprintf( __( 'Renders the templates with sample data and ships to %s. Bypasses the master toggle so you can preview before going live.', 'handik-booking-app' ), wp_get_current_user()->user_email ) );
+					/* translators: %s: effective test recipient email address. */
+					echo esc_html( sprintf( __( 'Renders the templates with sample data and ships to %s. Bypasses the master toggle so you can preview before going live.', 'handik-booking-app' ), $test_recipient_effective ) );
 					?>
 				</small>
 			</p>
@@ -499,8 +516,8 @@ class Handik_Booking_App_Admin_Settings {
 				</button>
 				<small class="handik-admin-muted" style="margin-left:8px;">
 					<?php
-					/* translators: %s: current admin email address. */
-					echo esc_html( sprintf( __( 'Renders the owner template with sample data and ships to %s. Bypasses the toggle so you can preview before going live.', 'handik-booking-app' ), wp_get_current_user()->user_email ) );
+					/* translators: %s: effective test recipient email address. */
+					echo esc_html( sprintf( __( 'Renders the owner template with sample data and ships to %s. Bypasses the toggle so you can preview before going live.', 'handik-booking-app' ), $test_recipient_effective ) );
 					?>
 				</small>
 			</p>

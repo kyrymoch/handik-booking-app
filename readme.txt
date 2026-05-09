@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.1.21.2
+Stable tag: 2.1.21.3
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, silent returning-client recognition, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,10 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.1.21.3 =
+* **Test recipient field on the Notifications tab.** Owner request: route "Send test email" previews to a shared inbox (e.g. `hello@handik.pro`) without changing the WordPress profile email of whoever's logged in. New top section on App Setup → Customer notifications with a single field that both Send Test buttons honor. Resolution order: unsaved form value → saved setting → fallback to current admin's WP user email. Caption next to each Send Test button now shows the actual address that's about to receive the preview.
+* No DB change, no behaviour change for production sends. The `email_from_address`, `customer_confirmation_reply_to`, and `owner_notification_address` settings continue to drive real (non-test) sends as before.
 
 = 2.1.21.2 =
 * **Hotfix — independent audit on the Sprint 14a + 14b email work.** Six findings closed; no schema change, no settings change, no behaviour change for installs that haven't enabled the master toggles. Pure hardening of the send pipeline and the .ics builder.

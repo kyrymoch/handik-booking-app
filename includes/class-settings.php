@@ -195,6 +195,13 @@ class Handik_Booking_App_Settings {
 			'owner_notification_address'        => '',
 			'owner_notification_subject'        => 'New booking — {{customer_name}} on {{booking_when}}',
 			'owner_notification_body'           => self::default_owner_body_text(),
+
+			// 2.1.21.3 — recipient for the Notifications tab "Send test
+			// email" buttons. Empty → fallback to the currently logged-in
+			// WordPress admin's email (the prior behaviour). Set to e.g.
+			// `hello@handik.pro` to ship test previews to a shared
+			// inbox without changing the admin user's profile email.
+			'notification_test_recipient'       => '',
 		);
 	}
 
@@ -328,6 +335,7 @@ class Handik_Booking_App_Settings {
 				case 'email_from_address':
 				case 'customer_confirmation_reply_to':
 				case 'owner_notification_address':
+				case 'notification_test_recipient':
 					$output[ $key ] = sanitize_email( $value );
 					break;
 				case 'service_area_zips':
