@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.1.20.1
+Stable tag: 2.1.20.2
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, silent returning-client recognition, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,22 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.1.20.2 =
+* **P0 hotfix — admin-created bookings now appear in the Bookings list.** Owner reported: clicked "+ Add booking" in the admin (Sprint 13 / 2.1.20), filled the form, picked a Cal.com slot, but the booking never showed up at `?page=handik-booking-app-bookings`. Root cause was deeper than the admin flow alone — *every* direct-booking-form submission (admin-initiated since 2.1.20.0, public-form-initiated since 2.1.9.0) lived only in `handik_direct_booking_requests` and was never mirrored into `handik_bookings`, which is the only table the unified Bookings list reads.
+* **DB migration 1.5.0** (idempotent, safe to re-run):
+  - `handik_bookings.job_request_id` becomes NULL-able. Direct bookings have no `handik_job_requests` row to point at — the assistant flow is what produces those. Existing rows keep their non-NULL `job_request_id` value.
+  - New column `handik_bookings.direct_request_id BIGINT(20) UNSIGNED NULL` + index. Mirrors `handik_direct_booking_requests.id` for direct rows; stays NULL for main-SPA Cal bookings.
+* **New `Bookings_Service::upsert_from_direct_capture( $direct_request_id, $payload, $status )`.** Mirrors a direct row into `handik_bookings`. Idempotent on `cal_booking_id` UNIQUE — calling it from both the leading-edge path (Cal embed `bookingSuccessful` → `Direct_Booking_Service::capture_booking`) and the trailing-edge path (`Webhook_Service::dispatch_direct`) is safe; whichever fires first wins, the other is a no-op refresh.
+* **Wired in two places:**
+  - `Direct_Booking_Service::capture_booking()` calls the upsert immediately after flipping the `direct_booking_requests` row OPENED → BOOKED. The booking shows up in the unified list within milliseconds of Cal confirming the slot, even before Cal's webhook lands.
+  - `Webhook_Service::dispatch_direct()` calls the upsert after updating the `direct_booking_requests` row, so a booking that came in cold (without us holding an open Cal embed — e.g. customer used a public preset link) still gets mirrored.
+* **Admin Bookings list renderers** (`decorate_bookings`, `booking_card`, `bookings_table_markup`, `render_detail`) now branch on whichever id is set:
+  - `job_request_id IS NOT NULL` → main-SPA booking. Render: assistant transcript, photos, task summary from catalog ids, summary estimate.
+  - `direct_request_id IS NOT NULL` → direct booking. Render: preset title as the "task" line, no photos, no transcript, "Service" detail block listing form preset / booking type / duration / source (`admin:bookings` vs public form). The CSS class `is-direct` is added to the card so we can later style direct rows differently if needed.
+  - Customer + address are pulled from `handik_direct_booking_requests` (which carries `contact_id` + `address_id` directly).
+* **Cascade delete extension.** When a contact is hard-deleted via Sprint 12's "Delete this person" flow, the cascade now also drops mirrored `handik_bookings` rows that point at the contact's `direct_booking_requests` rows (via `direct_request_id` IN (...)). Otherwise those mirror rows would linger as orphans pointing at deleted parents.
+* **Backfill semantics.** Existing direct bookings completed BEFORE 2.1.20.2 stay invisible from the Bookings list — there's no retroactive mirror because we don't store enough Cal payload data to reconstruct one. They remain visible under Additional Forms admin as before. New bookings (and Cal status changes — reschedule, cancel — on existing direct bookings via webhook) start populating the mirror immediately. Owner can run the migration without losing or breaking any data.
 
 = 2.1.20.1 =
 * **Hotfix — independent audit on the 2.1.20.0 admin booking flow.** 11 fixes from a 20-finding QA pass. No new features; hardens the flow shipped yesterday.

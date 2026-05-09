@@ -92,7 +92,7 @@ class Handik_Booking_App_Plugin {
 		// the webhook can route Cal events by metadata.handik_booking_source.
 		$this->cal_api          = new Handik_Booking_App_Cal_Api_Service( $this->settings, $this->logger );
 		$this->booking_presets  = new Handik_Booking_App_Booking_Presets_Service( $this->logger );
-		$this->direct_booking   = new Handik_Booking_App_Direct_Booking_Service( $this->booking_presets, $this->contacts, $this->addresses, $this->settings, $this->logger );
+		$this->direct_booking   = new Handik_Booking_App_Direct_Booking_Service( $this->booking_presets, $this->contacts, $this->addresses, $this->settings, $this->logger, $this->bookings );
 		$this->project_schedule = new Handik_Booking_App_Project_Schedule_Service( $this->booking_presets, $this->cal_api, $this->contacts, $this->addresses, $this->logger );
 		$this->forms_rest_api   = new Handik_Booking_App_Forms_Rest_Api( $this->booking_presets, $this->direct_booking, $this->project_schedule, $this->logger );
 		$this->forms_router     = new Handik_Booking_App_Forms_Router( $this->booking_presets, $this->project_schedule, $this->settings, $this->appearance );

@@ -227,7 +227,17 @@ class Handik_Booking_App_Webhook_Service {
 			$row = $this->direct->find_by_cal_booking_id( $booking_id );
 			if ( $row ) {
 				$this->direct->update_status_by_uid( (string) ( $data['uid'] ?? $data['bookingUid'] ?? $row['cal_booking_uid'] ), $status );
+				$direct_id = (int) $row['id']; // For the bookings mirror below.
 			}
+		}
+
+		// Sprint 13.5 — mirror into handik_bookings so the unified
+		// admin Bookings list can surface this row alongside main-SPA
+		// Cal bookings. Idempotent on cal_booking_id UNIQUE; if the
+		// capture-side already inserted, this is a status / payload
+		// refresh.
+		if ( $direct_id && $this->bookings && method_exists( $this->bookings, 'upsert_from_direct_capture' ) ) {
+			$this->bookings->upsert_from_direct_capture( $direct_id, $data, $status );
 		}
 
 		$this->logger->info(

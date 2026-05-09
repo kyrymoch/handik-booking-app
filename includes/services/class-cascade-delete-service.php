@@ -228,7 +228,28 @@ class Handik_Booking_App_Cascade_Delete_Service {
 		);
 
 		// Additional Forms — direct booking + project scheduling.
+		// Sprint 13.5: pull direct ids first so we can clean up the
+		// handik_bookings mirror rows that reference them via
+		// direct_request_id (added in Migration 1.5.0). Otherwise the
+		// contact's bookings linger as orphans pointing at deleted
+		// direct_booking_requests.
 		$direct = Handik_Booking_App_DB::table( 'direct_booking_requests' );
+		$bookings_table = Handik_Booking_App_DB::table( 'bookings' );
+		$direct_ids = $wpdb->get_col( $wpdb->prepare(
+			"SELECT id FROM {$direct} WHERE contact_id = %d",
+			$contact_id
+		) );
+		if ( ! empty( $direct_ids ) ) {
+			$placeholders = implode( ',', array_fill( 0, count( $direct_ids ), '%d' ) );
+			// Wipe any mirror rows in handik_bookings BEFORE dropping
+			// their parents so the row count in `summary['bookings']`
+			// stays accurate.
+			$mirror_count = (int) $wpdb->query( $wpdb->prepare(
+				"DELETE FROM {$bookings_table} WHERE direct_request_id IN ({$placeholders})", // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+				$direct_ids
+			) );
+			$summary['bookings'] += $mirror_count;
+		}
 		$summary['direct_booking_requests'] = (int) $wpdb->delete(
 			$direct, array( 'contact_id' => $contact_id ), array( '%d' )
 		);
