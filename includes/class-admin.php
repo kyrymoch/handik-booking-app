@@ -139,7 +139,11 @@ class Handik_Booking_App_Admin {
 		// outcome.
 		$action = isset( $_POST['handik_action'] ) ? sanitize_key( wp_unslash( $_POST['handik_action'] ) ) : '';
 		if ( 'send_test_email' === $action ) {
-			$this->handle_send_test_email( wp_unslash( $_POST ) );
+			$this->handle_send_test_email( wp_unslash( $_POST ), 'customer' );
+			return;
+		}
+		if ( 'send_test_owner_email' === $action ) {
+			$this->handle_send_test_email( wp_unslash( $_POST ), 'owner' );
 			return;
 		}
 
@@ -189,15 +193,16 @@ class Handik_Booking_App_Admin {
 	}
 
 	/**
-	 * Sprint 14a — handle the Notifications tab "Send test email" submit.
+	 * Sprint 14a/14b — handle the Notifications tab "Send test email" submit.
 	 * Uses unsaved POST template values so the operator can preview edits
 	 * before clicking Save. Does not persist anything; bypasses the
 	 * master toggle (the whole point is preview before flipping it).
 	 *
 	 * @param array<string, mixed> $payload Unslashed POST data.
+	 * @param string               $which   'customer' or 'owner' — which side to preview.
 	 * @return void
 	 */
-	protected function handle_send_test_email( array $payload ) {
+	protected function handle_send_test_email( array $payload, $which = 'customer' ) {
 		$plugin = handik_booking_app();
 		if ( ! $plugin || empty( $plugin->notifications ) ) {
 			add_settings_error(
@@ -220,30 +225,42 @@ class Handik_Booking_App_Admin {
 		}
 
 		$overrides = array();
-		foreach ( array(
-			'customer_confirmation_subject',
-			'customer_confirmation_body_html',
-			'customer_confirmation_body_text',
-			'customer_confirmation_reply_to',
-		) as $key ) {
-			if ( array_key_exists( $key, $payload ) ) {
-				if ( 'customer_confirmation_body_html' === $key ) {
-					$overrides[ $key ] = wp_kses_post( (string) $payload[ $key ] );
-				} elseif ( 'customer_confirmation_reply_to' === $key ) {
-					$overrides[ $key ] = sanitize_email( (string) $payload[ $key ] );
-				} else {
+		if ( 'owner' === $which ) {
+			foreach ( array( 'owner_notification_subject', 'owner_notification_body' ) as $key ) {
+				if ( array_key_exists( $key, $payload ) ) {
 					$overrides[ $key ] = trim( str_replace( "\0", '', (string) $payload[ $key ] ) );
+				}
+			}
+		} else {
+			foreach ( array(
+				'customer_confirmation_subject',
+				'customer_confirmation_body_html',
+				'customer_confirmation_body_text',
+				'customer_confirmation_reply_to',
+			) as $key ) {
+				if ( array_key_exists( $key, $payload ) ) {
+					if ( 'customer_confirmation_body_html' === $key ) {
+						$overrides[ $key ] = wp_kses_post( (string) $payload[ $key ] );
+					} elseif ( 'customer_confirmation_reply_to' === $key ) {
+						$overrides[ $key ] = sanitize_email( (string) $payload[ $key ] );
+					} else {
+						$overrides[ $key ] = trim( str_replace( "\0", '', (string) $payload[ $key ] ) );
+					}
 				}
 			}
 		}
 
-		$result = $plugin->notifications->send_test( $to, $overrides );
+		$result = $plugin->notifications->send_test( $to, $overrides, 'owner' === $which ? 'owner' : 'customer' );
 		if ( ! empty( $result['sent'] ) ) {
 			add_settings_error(
 				'handik-booking-app',
 				'test_email_sent',
-				/* translators: %s: recipient email address. */
-				sprintf( __( 'Test confirmation email sent — check %s.', 'handik-booking-app' ), $result['recipient'] ),
+				/* translators: 1: which side ("customer"/"owner"), 2: recipient email address. */
+				sprintf(
+					__( 'Test %1$s email sent — check %2$s.', 'handik-booking-app' ),
+					'owner' === $which ? __( 'owner', 'handik-booking-app' ) : __( 'customer', 'handik-booking-app' ),
+					$result['recipient']
+				),
 				'updated'
 			);
 		} else {
