@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.1.21.2
+Stable tag: 2.1.22.0
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, silent returning-client recognition, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,32 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.1.22.0 =
+* **Sprint 14c — cancellation + reschedule emails.** When Cal.com webhooks a cancellation or time change, the plugin now sends customer + owner emails about it (separate toggles, both default OFF). Customer side gets a branded HTML email with proper RFC 5546 .ics attachment so the booking is removed from / updated in their calendar on import. Owner side gets a plain-text "Cancelled / Rescheduled — Jane on Tue" notification.
+* **DB migration 1.5.2** (idempotent, safe to re-run). Adds nullable `last_status_emailed VARCHAR(16)` column to `handik_bookings` and `handik_direct_booking_requests`. The new column tracks the last booking-status we emailed about (booked / cancelled / rescheduled) so webhook retries with the same status are no-ops AND legitimate state transitions (booked → cancelled, or cancelled → rebooked) each fire one email. Project work-days schedules are NOT included — per-day Cal bookings make per-schedule cancel/reschedule semantics ambiguous; project flow is deferred to v2.
+* **Two new actions for third-party listeners.** `do_action( 'handik_booking_cancelled', $context )` and `do_action( 'handik_booking_rescheduled', $context )` fire alongside the existing `handik_booking_confirmed` from Sprint 14a. Same context shape; reschedule events also include `$context['old_when']` (start_iso / end_iso of the previous time) and cancellations include `$context['cancellation_reason']`. Owners can hook these for Slack / SMS / etc. without forking — same extensibility pattern as the existing booking-confirmed action.
+* **`Ics_Builder` extended** with three new per-event params:
+  - `$method` (parameter on `build_single` / `build_multi`): RFC 5546 `METHOD:CANCEL` (cancellation) vs. `METHOD:REQUEST` (booked + reschedule). Allow-listed against `REQUEST` / `CANCEL` / `PUBLISH` / `REPLY` so a forged value can't header-inject.
+  - `event['status']`: per-event RFC 5545 `STATUS:CANCELLED` vs. `STATUS:CONFIRMED`. Allow-listed against `CONFIRMED` / `CANCELLED` / `TENTATIVE`.
+  - `event['sequence']`: bumped from `0` to `1` for reschedule + cancel events. RFC 5545 §3.8.7.4 — calendar apps update the existing event vs creating a duplicate when the SEQUENCE increments. The original `UID` is preserved across all three event types so calendars match.
+* **12 new settings on App Setup → Customer notifications:**
+  - Customer cancellation: `customer_cancellation_enabled` (toggle, default 0), `customer_cancellation_subject`, `customer_cancellation_body_html`, `customer_cancellation_body_text`. New section on the tab.
+  - Customer reschedule: `customer_reschedule_enabled`, `customer_reschedule_subject`, `customer_reschedule_body_html`, `customer_reschedule_body_text`. New section.
+  - Owner side reuses the existing `owner_notification_enabled` toggle from Sprint 14b but adds `owner_cancellation_subject` + `owner_cancellation_body` and `owner_reschedule_subject` + `owner_reschedule_body`. Existing "Owner booking notification" section now has three sub-blocks (New booking / Cancellation / Reschedule) each with its own Send-Test button.
+* **New placeholders** for the cancel/reschedule templates: `{{cancellation_reason}}` (Cal-payload-extracted; empty string when absent), `{{old_booking_when}}` and `{{old_booking_when_long}}` (the previous time before reschedule, formatted in the site timezone).
+* **Four new Send-Test buttons** (`send_test_customer_cancellation`, `send_test_customer_reschedule`, `send_test_owner_cancellation`, `send_test_owner_reschedule`) reuse the same `notification_test_recipient` field from 2.1.21.3 — set the field once, all 6 buttons honor it. Sample-data context for the cancel/reschedule previews populates `old_when` (a fictional 2-days-ago time) and `cancellation_reason` so the rendered placeholders look realistic instead of empty.
+* **Master toggle defaults OFF on upgrade.** Existing installs see no behavioural change. Cal.com keeps sending its own cancellation / reschedule emails (from the workflow side) until the owner manually disables them — same pattern as Sprint 14a's booking-confirmation Cal-disable instructions.
+* **Out-of-scope (still v2):** Project work-days cancellation / reschedule (semantically tricky), customer-initiated reschedule UI, N-hour reminders, admin "Resend cancellation/reschedule" buttons on the booking-detail page.
+
+= 2.1.21.4 =
+* **Branded customer-confirmation default template + Brand logo URL setting.** New `brand_logo_url` setting on the Notifications tab → drops a public HTTPS URL (e.g. your logo on the site's media library) and the default HTML template renders it centered above the booking details. Empty → no logo block, just the text-first email. Two new placeholders: `{{brand_logo_html}}` (full `<img>` block, or empty string when no URL is set; safe to drop into any HTML template) and `{{brand_logo_url}}` (raw URL, esc_url'd at render time so `javascript:` schemes can't slip through).
+* **The default `customer_confirmation_body_html` is now a polished table-based layout** with system fonts, a 560px max-width, an off-white card on a light background, and a footer linking back to the site. Existing installs keep whatever they had saved — only fresh activations land the new default. To adopt it on an existing install, clear the HTML body field and save (the default repopulates).
+* No DB change, no behaviour change for production sends. URL setting sanitizes via `esc_url_raw` on save, `esc_url` at render time, and the `<img>` block is allow-listed past `placeholders_for_html`'s escape pass so the markup survives.
+
+= 2.1.21.3 =
+* **Test recipient field on the Notifications tab.** Owner request: route "Send test email" previews to a shared inbox (e.g. `hello@handik.pro`) without changing the WordPress profile email of whoever's logged in. New top section on App Setup → Customer notifications with a single field that both Send Test buttons honor. Resolution order: unsaved form value → saved setting → fallback to current admin's WP user email. Caption next to each Send Test button now shows the actual address that's about to receive the preview.
+* No DB change, no behaviour change for production sends. The `email_from_address`, `customer_confirmation_reply_to`, and `owner_notification_address` settings continue to drive real (non-test) sends as before.
 
 = 2.1.21.2 =
 * **Hotfix — independent audit on the Sprint 14a + 14b email work.** Six findings closed; no schema change, no settings change, no behaviour change for installs that haven't enabled the master toggles. Pure hardening of the send pipeline and the .ics builder.

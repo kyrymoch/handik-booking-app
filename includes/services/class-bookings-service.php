@@ -68,8 +68,20 @@ class Handik_Booking_App_Bookings_Service {
 		// `confirmation_email_sent_at` column inside Notifications_Service
 		// handles webhook-retry deduping; we only need to gate on status
 		// here so cancellations / reschedules don't trigger a new email.
-		if ( 'booked' === sanitize_key( $status ) && class_exists( 'Handik_Booking_App_Notifications_Service' ) ) {
-			Handik_Booking_App_Notifications_Service::dispatch_for_cal( (int) $job_request_id, $row_id, $payload );
+		// Sprint 14c — same dispatch shape, but for cancelled/rescheduled
+		// statuses. Idempotency via the new `last_status_emailed` column
+		// (Migration 1.5.2) so webhook retries with the same status are
+		// no-ops while real state changes (booked→cancelled→rebooked)
+		// each get one email.
+		$normalized_status = sanitize_key( $status );
+		if ( class_exists( 'Handik_Booking_App_Notifications_Service' ) ) {
+			if ( 'booked' === $normalized_status ) {
+				Handik_Booking_App_Notifications_Service::dispatch_for_cal( (int) $job_request_id, $row_id, $payload );
+			} elseif ( 'cancelled' === $normalized_status ) {
+				Handik_Booking_App_Notifications_Service::dispatch_for_cal_cancel( (int) $job_request_id, $row_id, $payload );
+			} elseif ( 'rescheduled' === $normalized_status ) {
+				Handik_Booking_App_Notifications_Service::dispatch_for_cal_reschedule( (int) $job_request_id, $row_id, $payload );
+			}
 		}
 		return $row_id;
 	}
@@ -148,8 +160,17 @@ class Handik_Booking_App_Bookings_Service {
 		// capture_booking()` ALSO dispatches; idempotency on the
 		// `direct_booking_requests.confirmation_email_sent_at` column
 		// guarantees only one email goes out per real booking.
-		if ( 'booked' === sanitize_key( $status ) && class_exists( 'Handik_Booking_App_Notifications_Service' ) ) {
-			Handik_Booking_App_Notifications_Service::dispatch_for_direct( (int) $direct_request_id, $payload );
+		// Sprint 14c — same dispatch for cancel/reschedule via the new
+		// `last_status_emailed` column.
+		$normalized_status = sanitize_key( $status );
+		if ( class_exists( 'Handik_Booking_App_Notifications_Service' ) ) {
+			if ( 'booked' === $normalized_status ) {
+				Handik_Booking_App_Notifications_Service::dispatch_for_direct( (int) $direct_request_id, $payload );
+			} elseif ( 'cancelled' === $normalized_status ) {
+				Handik_Booking_App_Notifications_Service::dispatch_for_direct_cancel( (int) $direct_request_id, $payload );
+			} elseif ( 'rescheduled' === $normalized_status ) {
+				Handik_Booking_App_Notifications_Service::dispatch_for_direct_reschedule( (int) $direct_request_id, $payload );
+			}
 		}
 		return $row_id;
 	}

@@ -195,20 +195,170 @@ class Handik_Booking_App_Settings {
 			'owner_notification_address'        => '',
 			'owner_notification_subject'        => 'New booking — {{customer_name}} on {{booking_when}}',
 			'owner_notification_body'           => self::default_owner_body_text(),
+
+			// 2.1.21.3 — recipient for the Notifications tab "Send test
+			// email" buttons. Empty → fallback to the currently logged-in
+			// WordPress admin's email (the prior behaviour). Set to e.g.
+			// `hello@handik.pro` to ship test previews to a shared
+			// inbox without changing the admin user's profile email.
+			'notification_test_recipient'       => '',
+
+			// 2.1.21.4 — brand logo for the customer-confirmation HTML
+			// email. Empty → no logo block in the default template; just
+			// the {{from_name}} text in the footer. Set to a public
+			// HTTPS URL (e.g. https://handik.pro/wp-content/uploads/handik-logo.png)
+			// and the default template renders it as a centered <img>
+			// at the top. Stored as a raw URL; rendered through esc_url
+			// when substituted into HTML so script: schemes can't slip
+			// through.
+			'brand_logo_url'                    => '',
+
+			// 2.1.22.0 (Sprint 14c) — cancellation + reschedule emails.
+			// Both customer-side toggles default OFF on upgrade; owner
+			// side reuses the existing `owner_notification_enabled`
+			// toggle from Sprint 14b (one switch covers all three event
+			// types — booked/cancelled/rescheduled — for the owner). If
+			// an owner wants only the booked notification, just don't
+			// edit the cancel/reschedule body templates and the empty
+			// strings will produce empty emails (handled gracefully but
+			// pointless to send — owner is expected to either accept
+			// the bundled defaults or write their own copy).
+			'customer_cancellation_enabled'     => 0,
+			'customer_cancellation_subject'     => 'Your visit was cancelled — {{booking_when_long}}',
+			'customer_cancellation_body_html'   => self::default_customer_cancellation_body_html(),
+			'customer_cancellation_body_text'   => self::default_customer_cancellation_body_text(),
+			'customer_reschedule_enabled'       => 0,
+			'customer_reschedule_subject'       => 'Your visit moved to {{booking_when_long}}',
+			'customer_reschedule_body_html'     => self::default_customer_reschedule_body_html(),
+			'customer_reschedule_body_text'     => self::default_customer_reschedule_body_text(),
+			'owner_cancellation_subject'        => 'Cancelled — {{customer_name}} on {{booking_when}}',
+			'owner_cancellation_body'           => self::default_owner_cancellation_body_text(),
+			'owner_reschedule_subject'          => 'Rescheduled — {{customer_name}}: {{old_booking_when}} → {{booking_when}}',
+			'owner_reschedule_body'             => self::default_owner_reschedule_body_text(),
 		);
 	}
 
 	/**
 	 * @return string
 	 */
+	protected static function default_customer_cancellation_body_html() {
+		return '<table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="font-family: -apple-system, BlinkMacSystemFont, \'Segoe UI\', Roboto, sans-serif; max-width: 560px; margin: 0 auto; color: #0f172a;">' . "\n"
+			. '  <tr><td style="padding: 24px 0; text-align: center;">{{brand_logo_html}}</td></tr>' . "\n"
+			. '  <tr><td style="background: #fef2f2; padding: 28px 24px; border-radius: 12px;">' . "\n"
+			. '    <p style="margin: 0 0 16px;">Hi {{customer_name}},</p>' . "\n"
+			. '    <p style="margin: 0 0 16px;">Your visit on <strong>{{booking_when_long}}</strong> has been cancelled.</p>' . "\n"
+			. '    <p style="margin: 0 0 16px;">If you’d like to book again, reply to this email and {{operator_first_name}} will help find a new time.</p>' . "\n"
+			. '    <p style="margin: 0;">— {{from_name}}</p>' . "\n"
+			. '  </td></tr>' . "\n"
+			. '  <tr><td style="padding: 16px 0; text-align: center; color: #64748b; font-size: 12px;">' . "\n"
+			. '    {{site_name}} · <a href="{{site_url}}" style="color: #64748b; text-decoration: underline;">{{site_url}}</a>' . "\n"
+			. '  </td></tr>' . "\n"
+			. '</table>';
+	}
+
+	/**
+	 * @return string
+	 */
+	protected static function default_customer_cancellation_body_text() {
+		return "Hi {{customer_name}},\n\n"
+			. "Your visit on {{booking_when_long}} has been cancelled.\n\n"
+			. "If you'd like to book again, reply to this email and {{operator_first_name}} will help find a new time.\n\n"
+			. '— {{from_name}}';
+	}
+
+	/**
+	 * @return string
+	 */
+	protected static function default_customer_reschedule_body_html() {
+		return '<table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="font-family: -apple-system, BlinkMacSystemFont, \'Segoe UI\', Roboto, sans-serif; max-width: 560px; margin: 0 auto; color: #0f172a;">' . "\n"
+			. '  <tr><td style="padding: 24px 0; text-align: center;">{{brand_logo_html}}</td></tr>' . "\n"
+			. '  <tr><td style="background: #f8fafc; padding: 28px 24px; border-radius: 12px;">' . "\n"
+			. '    <p style="margin: 0 0 16px;">Hi {{customer_name}},</p>' . "\n"
+			. '    <p style="margin: 0 0 16px;">Your visit has moved to <strong>{{booking_when_long}}</strong>.</p>' . "\n"
+			. '    <p style="margin: 0 0 8px;"><strong>Where:</strong> {{address}}</p>' . "\n"
+			. '    <p style="margin: 24px 0 16px;">An updated calendar invite is attached — your existing event will move to the new time when you import it. If you can’t make the new time, just reply to this email — {{operator_first_name}} reads them.</p>' . "\n"
+			. '    <p style="margin: 0;">— {{from_name}}</p>' . "\n"
+			. '  </td></tr>' . "\n"
+			. '  <tr><td style="padding: 16px 0; text-align: center; color: #64748b; font-size: 12px;">' . "\n"
+			. '    {{site_name}} · <a href="{{site_url}}" style="color: #64748b; text-decoration: underline;">{{site_url}}</a>' . "\n"
+			. '  </td></tr>' . "\n"
+			. '</table>';
+	}
+
+	/**
+	 * @return string
+	 */
+	protected static function default_customer_reschedule_body_text() {
+		return "Hi {{customer_name}},\n\n"
+			. "Your visit has moved to {{booking_when_long}}.\n\n"
+			. "Where: {{address}}\n\n"
+			. "An updated calendar invite is attached — your existing event will move to the new time when you import it. If you can't make the new time, just reply to this email — {{operator_first_name}} reads them.\n\n"
+			. '— {{from_name}}';
+	}
+
+	/**
+	 * @return string
+	 */
+	protected static function default_owner_cancellation_body_text() {
+		return "{{customer_name}} cancelled.\n\n"
+			. "Was:     {{booking_when_long}}\n"
+			. "Phone:   {{customer_phone}}\n"
+			. "Email:   {{customer_email}}\n"
+			. "Address: {{address}}\n"
+			. "Source:  {{source_label}}\n"
+			. "Reason:  {{cancellation_reason}}\n\n"
+			. 'Open in admin: {{open_request_admin_link}}';
+	}
+
+	/**
+	 * @return string
+	 */
+	protected static function default_owner_reschedule_body_text() {
+		return "{{customer_name}} rescheduled.\n\n"
+			. "Was: {{old_booking_when_long}}\n"
+			. "Now: {{booking_when_long}}\n\n"
+			. "Phone:   {{customer_phone}}\n"
+			. "Email:   {{customer_email}}\n"
+			. "Address: {{address}}\n"
+			. "Source:  {{source_label}}\n\n"
+			. 'Open in admin: {{open_request_admin_link}}';
+	}
+
+	/**
+	 * 2.1.21.4 — branded default. Table-based layout (still the most
+	 * portable email construct: Outlook desktop and many mobile webmail
+	 * clients drop CSS-grid / flexbox), inline styles only (Gmail strips
+	 * `<style>` blocks), max-width 560px (works on both desktop and
+	 * mobile preview), system fonts (no webfont latency).
+	 *
+	 * `{{brand_logo_html}}` resolves to a centered `<img>` if
+	 * `brand_logo_url` is configured, otherwise to an empty string —
+	 * so an install without a logo just gets a clean text-first email.
+	 * The rest of the template sets HTML safely; user-controlled scalar
+	 * placeholders (customer_name, address, etc.) are HTML-escaped at
+	 * substitution time by Notifications_Service::placeholders_for_html().
+	 *
+	 * Existing installs keep whatever they had saved; only fresh
+	 * activations and explicit "reset to default" land this template.
+	 *
+	 * @return string
+	 */
 	protected static function default_customer_body_html() {
-		return "<p>Hi {{customer_name}},</p>\n"
-			. "<p>Your visit is confirmed for <strong>{{booking_when_long}}</strong>.</p>\n"
-			. "<p><strong>Where:</strong> {{address}}</p>\n"
-			. "<p><strong>What we'll be doing:</strong></p>\n"
-			. "{{tasks_list_html}}\n"
-			. "<p>A calendar invite is attached. If you need to reschedule or cancel, just reply to this email — {{operator_first_name}} reads them.</p>\n"
-			. '<p>— {{from_name}}</p>';
+		return '<table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="font-family: -apple-system, BlinkMacSystemFont, \'Segoe UI\', Roboto, sans-serif; max-width: 560px; margin: 0 auto; color: #0f172a;">' . "\n"
+			. '  <tr><td style="padding: 24px 0; text-align: center;">{{brand_logo_html}}</td></tr>' . "\n"
+			. '  <tr><td style="background: #f8fafc; padding: 28px 24px; border-radius: 12px;">' . "\n"
+			. '    <p style="margin: 0 0 16px;">Hi {{customer_name}},</p>' . "\n"
+			. '    <p style="margin: 0 0 16px;">Your visit is confirmed for <strong>{{booking_when_long}}</strong>.</p>' . "\n"
+			. '    <p style="margin: 0 0 8px;"><strong>Where:</strong> {{address}}</p>' . "\n"
+			. '    <p style="margin: 0 0 8px;"><strong>What we\'ll be doing:</strong></p>' . "\n"
+			. '    {{tasks_list_html}}' . "\n"
+			. '    <p style="margin: 24px 0 16px;">A calendar invite is attached. If you need to reschedule or cancel, just reply to this email — {{operator_first_name}} reads them.</p>' . "\n"
+			. '    <p style="margin: 0;">— {{from_name}}</p>' . "\n"
+			. '  </td></tr>' . "\n"
+			. '  <tr><td style="padding: 16px 0; text-align: center; color: #64748b; font-size: 12px;">' . "\n"
+			. '    {{site_name}} · <a href="{{site_url}}" style="color: #64748b; text-decoration: underline;">{{site_url}}</a>' . "\n"
+			. '  </td></tr>' . "\n"
+			. '</table>';
 	}
 
 	/**
@@ -323,21 +473,29 @@ class Handik_Booking_App_Settings {
 				case 'cal_large_event_url':
 				case 'cal_project_event_url':
 				case 'cal_fallback_url':
+				case 'brand_logo_url':
 					$output[ $key ] = esc_url_raw( (string) $value );
 					break;
 				case 'email_from_address':
 				case 'customer_confirmation_reply_to':
 				case 'owner_notification_address':
+				case 'notification_test_recipient':
 					$output[ $key ] = sanitize_email( $value );
 					break;
 				case 'service_area_zips':
 				case 'cal_confirmation_note':
 				case 'magic_link_email_body':
 				case 'customer_confirmation_body_text':
+				case 'customer_cancellation_body_text':
+				case 'customer_reschedule_body_text':
 				case 'owner_notification_body':
+				case 'owner_cancellation_body':
+				case 'owner_reschedule_body':
 					$output[ $key ] = trim( str_replace( "\0", '', (string) $value ) );
 					break;
 				case 'customer_confirmation_body_html':
+				case 'customer_cancellation_body_html':
+				case 'customer_reschedule_body_html':
 					// Allow safe HTML — same allow-list as comments / post
 					// content so the owner can use <p>, <strong>, <a>, <ul>,
 					// <li>, etc. in the email body without surprise stripping.
@@ -345,6 +503,8 @@ class Handik_Booking_App_Settings {
 					break;
 				case 'customer_confirmations_enabled':
 				case 'owner_notification_enabled':
+				case 'customer_cancellation_enabled':
+				case 'customer_reschedule_enabled':
 					$output[ $key ] = empty( $value ) ? 0 : 1;
 					break;
 				case 'log_max_entries_info':
