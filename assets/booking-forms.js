@@ -393,7 +393,18 @@
 		// Note: we deliberately do NOT move focus to the new <h2> on step
 		// transitions — same parity decision the main form made (it was
 		// dismissing mobile keyboards and confusing screen magnifiers).
-		if ( 'address' === this.state.step ) {
+		// 2.1.22.2 P0 hotfix: this was gated on 'address' which is the
+		// OLD step name from before Sprint 5 (which combined contact +
+		// address into a single 'details' step). The mount hook never
+		// fired in production, so Google Maps Places autocomplete
+		// silently never loaded on the Additional Forms — customer
+		// typed an address manually, validation then required
+		// `address.is_valid === true` (a Places-picked address) and
+		// rejected manual input with `errorAddressInvalid`. Owner-
+		// reported as "Google Maps API не предлагает адреса" but the
+		// real symptom was that the Maps script wasn't requested at
+		// all (no console error because no fetch even attempted).
+		if ( 'details' === this.state.step ) {
 			this.mountAddressAutocomplete();
 		}
 		if ( 'cal' === this.state.step ) {
