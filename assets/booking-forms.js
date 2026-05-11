@@ -2204,8 +2204,25 @@
 			self.addressAutocomplete.addListener( 'place_changed', function () {
 				var place = self.addressAutocomplete.getPlace();
 				if ( ! place ) { return; }
-				var parsed = parseAddressComponents( place );
+				// 2.1.22.3 P0 hotfix: pass the current address state into
+				// parseAddressComponents so partial places (Google can fire
+				// `place_changed` with just `name` set on API keys where
+				// Place Details is restricted) fall back to existing
+				// values instead of wiping the typed address. Matches the
+				// pattern in booking-app.js:3557.
+				var parsed = parseAddressComponents( place, self.state.address );
 				self.state.address = Object.assign( {}, self.state.address, parsed, { address_id: 0 } );
+				// 2.1.22.3 P0 hotfix: write the address back to the
+				// (still-attached) input element BEFORE we re-render the
+				// shell. Belt-and-suspenders alongside the state update:
+				// if for any reason the parsed result was empty AND the
+				// previous state was also empty, we keep whatever Google
+				// wrote to input.value when the suggestion was clicked,
+				// so the customer at least sees what they picked. The
+				// re-render then carries that value through via the
+				// `value="..."` attribute on the freshly built input.
+				// Matches booking-app.js:3562.
+				input.value = self.state.address.address_full || input.value;
 				// A Places pick is the customer's authoritative answer —
 				// reset the userTyped flag so subsequent re-renders don't
 				// invalidate this address until they actually retype.
@@ -2438,7 +2455,8 @@
 		return '&#9432;';
 	}
 
-	function parseAddressComponents( place ) {
+	function parseAddressComponents( place, prev ) {
+		prev = prev || {};
 		var components = Array.isArray( place.address_components ) ? place.address_components : [];
 		function value( type, useShort ) {
 			var match = components.find( function ( c ) { return Array.isArray( c.types ) && c.types.indexOf( type ) !== -1; } );
@@ -2456,13 +2474,23 @@
 		// + state. Earlier we accepted Place results missing ZIP/state, then
 		// the server payload would arrive at /forms/* without the fields the
 		// CRM and Cal location string expect.
+		//
+		// 2.1.22.3 P0 hotfix: fall back to the previous state values when
+		// Google returns a partial place. Google can fire `place_changed`
+		// with a "lite" place (just `name` set to the typed query) — this
+		// happens reliably on API keys where "Place Autocomplete (New)"
+		// suggestions work but the "Place Details" call is restricted or
+		// throttled. Before the fallback this handler would wipe a typed
+		// address to an empty string on click, which the owner reported
+		// as "адреса показываются, но при клике исчезают". Matches
+		// booking-app.js:3508-3522.
 		return {
-			address_full:   place.formatted_address || '',
-			address_line_1: lineOne || place.formatted_address || '',
-			address_unit:   subpremise || '',
-			city:  value( 'locality', false ) || value( 'postal_town', false ) || value( 'sublocality_level_1', false ),
-			state: state,
-			zip_code: postalCode,
+			address_full:   place.formatted_address || prev.address_full || '',
+			address_line_1: lineOne || place.formatted_address || prev.address_line_1 || '',
+			address_unit:   subpremise || prev.address_unit || '',
+			city:  value( 'locality', false ) || value( 'postal_town', false ) || value( 'sublocality_level_1', false ) || prev.city || '',
+			state: state || prev.state || '',
+			zip_code: postalCode || prev.zip_code || '',
 			is_valid: !! (
 				place.formatted_address
 				&& lineOne

@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.1.22.2
+Stable tag: 2.1.22.3
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, silent returning-client recognition, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,13 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.1.22.3 =
+* **P0 production hotfix — Additional Forms: clicking a Places suggestion wiped the address instead of inserting it.** Follow-up to 2.1.22.2. Now that `mountAddressAutocomplete()` actually fires on the `details` step the dropdown appears, but on click the input was being cleared.
+* Root cause: `parseAddressComponents` in `booking-forms.js` was hard-resetting every field to empty string when Google returned a partial place. Google can fire `place_changed` with a "lite" place object (just `name` set to the typed query, no `address_components` / `formatted_address` / `geometry`) on API keys where the **Place Autocomplete** suggestion endpoint is unrestricted but the follow-up **Place Details** call is rate-limited, restricted to a different referrer, or gated behind a separate billing SKU. With nothing to parse, the old code overwrote `state.address.address_full` (and every other field) with `''`, the re-render rebuilt the input with `value=""`, and from the customer's perspective the address vanished the moment they clicked a suggestion.
+* Fix mirrors what the main SPA (`booking-app.js`) has always done: pass the previous `state.address` into `parseAddressComponents` as a fallback (so partial places preserve whatever fields they don't provide), and write `input.value = state.address.address_full || input.value` to the still-attached input *before* the re-render so even a totally-empty place keeps whatever Google wrote to the input when the suggestion was clicked. Both changes are direct ports from `booking-app.js:3508-3522` and `booking-app.js:3562`.
+* No server change, no settings change, no DB migration. Bumping the plugin version invalidates the cached `booking-forms.js` (it's enqueued with `HANDIK_BOOKING_APP_VERSION` as the cache-buster), so customers get the fix on their next page load.
+* Recommended sanity check after deploying: in the Google Cloud Console, verify the Maps API key has both **"Places API"** (for the dropdown suggestions) AND **"Places API (New)"** / **"Geocoding API"** unrestricted for the production domain — the fallback above keeps the UI from breaking when Place Details is degraded, but you'll still want fully-validated addresses (`is_valid: true`) hitting the CRM for ZIP / city / state, otherwise the Continue button blocks at the address-validation gate.
 
 = 2.1.22.2 =
 * **P0 production hotfix — customers couldn't book through Additional Forms.** Owner reported "Google Maps API не предлагает адреса". Customer types address into the input, no dropdown appears, can't proceed (Continue button shows `errorAddressInvalid` toast because the address never reached Places-verified state).
