@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.1.22.3
+Stable tag: 2.1.22.4
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, silent returning-client recognition, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,13 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.1.22.4 =
+* **P0 production hotfix — Additional Forms: address input lost the picked suggestion on blur (the real root cause).** 2.1.22.3 made the field forgiving of partial Place Details responses, but the owner reported clicking a suggestion still didn't insert the address and Continue still surfaced "Choose a valid address from the suggestions". This release fixes the actual sequence-of-events bug.
+* Root cause: Google's Autocomplete library commits a selection by setting `input.value` and then synchronously calling `input.blur()` BEFORE it fires `place_changed`. Our `onBlur` in `booking-forms.js` had a catch-all "re-render on any blur on the details step" branch (a leftover from when blur drove error-message refreshes for the name/phone/email fields). That re-render ran first, blew away the entire `[data-handik-booking-form-shell]` subtree, and `afterRender` immediately re-mounted a fresh `google.maps.places.Autocomplete` instance against the freshly-built input — overwriting `self.addressAutocomplete`. By the time `place_changed` finally fired on the original (now-stale) listener registration, `self.addressAutocomplete.getPlace()` was reading from the NEW Autocomplete instance, which had never had a selection. Result: empty place data, our parser kept the previously-typed query as `address_full`, `is_valid` stayed `false`, the customer saw their typed query (not the chosen suggestion) and Continue rejected the address. The main SPA (`booking-app.js`) has never had this bug because it only attaches blur listeners to specific contact fields (`contact.full_name`, `contact.phone`, `contact.email`) — booking-app.js:3753-3773 — and deliberately leaves the address input alone.
+* Fix: short-circuit `onBlur` in `booking-forms.js` for `address.address_full` and `address.address_unit` after flipping `touched`. The re-render path that other fields rely on still runs for them; the address field is now blur-no-op, which means Google's `place_changed` fires against the still-current Autocomplete instance and the selected address lands in state cleanly. The 2.1.22.3 parseAddressComponents `prev` fallback and explicit `input.value =` write are kept as defense-in-depth for keys with degraded Place Details.
+* Not migrating to `google.maps.places.PlaceAutocompleteElement` — both SPAs continue to use the legacy `google.maps.places.Autocomplete` constructor. The new web component is a much larger UX change (custom-element styling story, different event surface, requires `loading=async`, no longer pixel-compatible with the existing input markup) and would have to ship symmetrically across both SPAs. Booked as a Sprint 11 item.
+* No server change, no settings change, no DB migration. Cache invalidates via the bumped `HANDIK_BOOKING_APP_VERSION` query param.
 
 = 2.1.22.3 =
 * **P0 production hotfix — Additional Forms: clicking a Places suggestion wiped the address instead of inserting it.** Follow-up to 2.1.22.2. Now that `mountAddressAutocomplete()` actually fires on the `details` step the dropdown appears, but on click the input was being cleared.

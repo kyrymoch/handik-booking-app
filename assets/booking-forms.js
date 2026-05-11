@@ -1162,6 +1162,26 @@
 		if ( ! model ) { return; }
 		var key = model.split( '.' ).pop();
 		this.state.touched[ key ] = true;
+		// 2.1.22.4 P0 hotfix: never re-render the shell on blur of the
+		// address inputs. When the customer clicks a Google Places
+		// suggestion, Google commits the selection by setting
+		// `input.value` and then synchronously calling `input.blur()`
+		// BEFORE it fires `place_changed`. The blur was tripping our
+		// catch-all "re-render on every blur" branch below, which
+		// rebuilt the entire shell and constructed a fresh
+		// `Autocomplete` on the new input — by the time
+		// `place_changed` fired, `self.addressAutocomplete` already
+		// pointed at the NEW (empty) instance, so `getPlace()`
+		// returned no data and the picked address vanished. The main
+		// SPA (booking-app.js:3753-3773) doesn't have this bug
+		// because it only attaches blur listeners to specific
+		// contact fields (full_name / phone / email) and leaves the
+		// address input alone. Match that behavior here. Touched
+		// state is still flipped above so any address error span
+		// can surface on subsequent renders triggered elsewhere.
+		if ( 'address.address_full' === model || 'address.address_unit' === model ) {
+			return;
+		}
 		// Soft phone format on blur — only when the value has 10 digits and
 		// looks legitimate. Never rewrites partial input (avoids the "11 1
 		// 234" artifact owners reported with the old per-keystroke
