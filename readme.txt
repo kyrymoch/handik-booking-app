@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.1.22.1
+Stable tag: 2.1.22.2
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, silent returning-client recognition, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,13 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.1.22.2 =
+* **P0 production hotfix — customers couldn't book through Additional Forms.** Owner reported "Google Maps API не предлагает адреса". Customer types address into the input, no dropdown appears, can't proceed (Continue button shows `errorAddressInvalid` toast because the address never reached Places-verified state).
+* Root cause: Sprint 5 combined the separate `contact` + `address` steps in `booking-forms.js` into a single `details` step, but the `afterRender` hook that mounts Google Maps Places Autocomplete was still gated on the **old** `'address'` step name. So `mountAddressAutocomplete()` literally never fired on Additional Forms — the Maps JavaScript API script was never even requested (which is why there was no console error: the browser had no fetch to fail). The plain text input stayed dumb; customer-entered addresses never reached `is_valid: true`; the address-required validation rejected them.
+* Fix: one-line `'address' === this.state.step` → `'details' === this.state.step` in `booking-forms.js::afterRender`. Main SPA (`booking-app.js`) was unaffected — it uses a separate `address_details` step name and its mount hook was correctly wired.
+* Bumping the plugin version invalidates the browser's cached `booking-forms.js` (the asset is enqueued with `HANDIK_BOOKING_APP_VERSION` as a cache-buster query param), so customers pick up the fix on their next page load.
+* No DB change. No settings change. No security implications.
 
 = 2.1.22.1 =
 * **P0 hotfix — `{{booking_when_long}}` was rendering empty + `.ics` not attaching** in customer-confirmation emails. Owner-reported via real-booking test: subject came through as "Booking confirmed —" (placeholder empty), body said "Your visit is confirmed for ." (also empty), no calendar attachment despite the body promising one.
