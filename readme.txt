@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.1.23.1
+Stable tag: 2.1.24.0
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, silent returning-client recognition, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,26 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.1.24.0 =
+* **Sprint 15 / Part 3 — external Cal.com bookings now surface in the admin Bookings list.** Owner-reported scenario: customer can't complete the booking flow through the plugin (form error, embed timeout, etc.) → clicks the "Open the booking page directly" fallback link → books on Cal.com on Cal's own page → that booking previously vanished entirely from the plugin's admin. Cal's webhook fires, but our `Webhook_Service::handle_cal_webhook` routing requires either a `handik_*` metadata key, a `cal_booking_id` match against an existing `job_requests` row, or a pending-request email/phone fallback. None of those match for a booking made directly on Cal, so the handler logged an error and returned 404.
+* **Schema** (`handik_bookings`, migration 1.6.1): new nullable `external_contact_id BIGINT(20) UNSIGNED NULL` + key, AFTER `project_work_day_id`. Optional FK into `handik_contacts` for when the webhook attendee email/phone resolves to a contact we already have on file. Idempotent via `column_exists`/`index_exists`. Now four mutually-exclusive sources can hang off a `handik_bookings` row:
+  * `job_request_id IS NOT NULL`       → main SPA AI flow
+  * `direct_request_id IS NOT NULL`    → public direct booking form (Sprint 4)
+  * `project_work_day_id IS NOT NULL`  → public project work days form (Sprint 15 / Part 1, this release line)
+  * `external_contact_id IS NOT NULL`  → external Cal.com booking matched to an existing contact (this release)
+  * **all FKs NULL** → external Cal.com booking from an unknown attendee, with attendee info pulled from `raw_webhook_json` at render time
+* **New service method** `Bookings_Service::upsert_external_booking($payload, $status)`. Flattens the payload through the existing `flatten_cal_embed_payload` helper (so nested `payload.booking.*` / `payload.eventType.*` shapes work), extracts the Cal booking id, tries `Contacts_Service::find_by_email_or_phone($attendee_email, $attendee_phone)` to populate `external_contact_id`, and INSERTs/UPDATEs the row with `cal_booking_id` UNIQUE-key idempotency. **We never auto-create a contact** — false-positive risk from test bookings is too high; the operator can manually link from the booking detail view later. Two new attendee-extraction helpers (`extract_attendee_email`, `extract_attendee_phone`) handle the half-dozen places Cal stashes contact info in the webhook payload across event types (`attendees[]`, `responses.email.value`, `attendeeEmail`, `smsReminderNumber`, etc.).
+* **Wired into `Webhook_Service::handle_cal_webhook`**: the previous 404 fail path on `! $request_id` after all matching attempts is replaced with a call to `upsert_external_booking`. Cal stops retrying (the handler returns 200 with `{success: true, status, external: true}`), and the booking shows up in the admin. Same `map_status` rule for ignoring non-state-changing events still applies.
+* **Plugin DI**: `Bookings_Service::__construct` gains optional `$contacts = null` arg. `class-plugin.php` passes `$this->contacts` (which is constructed earlier in the boot order, so DI order is fine). Null-default keeps legacy construction sites (tests, admin modules) working.
+* **Admin Bookings — list page** (`Admin_Bookings::decorate_bookings` + cards + table):
+  * Bulk-fetch any `external_contact_id` values into the existing contacts bulk fetch, so external bookings with a matched contact resolve cleanly with one query.
+  * Per-row decoration loop gains a 4th branch (matched-contact case) and an unmatched-external case (all FKs NULL, contact stays null, render falls through to JSON extraction at card render time).
+  * Cards + table extract attendee name/email out of `raw_webhook_json` when no contact match — so the Client column shows the actual person's name rather than "Unknown", even for bookings we can't link.
+  * Task summary for external rows: `External Cal.com booking — <event_type_slug>` (with a translator hint) so the operator can tell at a glance which event type was booked and that it didn't come through the form.
+* **Admin Bookings — booking detail page**: new `external_preset_block_markup()` renders an "External Cal.com booking" block with the attendee name/email/phone (best-effort, pulled from `raw_webhook_json`), the Cal event type slug, duration, and a "Linked contact" line indicating whether email/phone match attached this row to a person in People & Requests. Includes a muted note reminding the operator that address + job-scope are typically missing for external bookings and need a manual follow-up.
+* **Admin Bookings — booking detail page**: ALSO adds a `project_preset_block_markup()` for project work-day rows. Was a 2.1.23.0 follow-up gap — the cards/table list rendered project rows but the detail page didn't have a content block, so it was empty between the at-a-glance bar and the technical block.
+* **No JS changes.** No new REST endpoints. The webhook receiver already existed; we just stopped rejecting an unmatched route.
 
 = 2.1.23.1 =
 * **Sprint 15 / Part 2 — admin "What the customer wrote" panel: structured fallback + on-demand backfill from OpenAI.** Owner-reported: the panel was empty for newer main-SPA bookings even when the conversation clearly happened in ChatKit. Root cause is event-shape drift in the embedded `<openai-chatkit>` web component — the local JS bridge (`handik-chatkit-bridge.js`) listens for `chatkit.log` (`name=composer.submit`) and the bubbled `'message'` event, then runs `extractMessageText()` against the payload. Newer ChatKit releases occasionally ship event-payload structures where neither `detail.data.content` nor `detail.content` carries the typed string, so `recordMessage()` silently no-ops and the local `handik_messages` table stays empty for the booking. OpenAI's thread storage is always authoritative — this release adds a path to read it back.

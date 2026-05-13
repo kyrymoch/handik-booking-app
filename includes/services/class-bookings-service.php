@@ -16,12 +16,21 @@ class Handik_Booking_App_Bookings_Service {
 	protected $job_requests;
 
 	/**
+	 * @var Handik_Booking_App_Contacts_Service|null
+	 */
+	protected $contacts;
+
+	/**
 	 * @param Handik_Booking_App_Logger               $logger Logger.
 	 * @param Handik_Booking_App_Job_Requests_Service $job_requests Requests.
+	 * @param Handik_Booking_App_Contacts_Service|null $contacts Contacts (1.6.1 — needed for external-booking attendee
+	 *                                                                       resolution; optional / null-default so
+	 *                                                                       legacy construction sites keep working).
 	 */
-	public function __construct( $logger, $job_requests ) {
+	public function __construct( $logger, $job_requests, $contacts = null ) {
 		$this->logger       = $logger;
 		$this->job_requests = $job_requests;
+		$this->contacts     = $contacts;
 	}
 
 	/**
@@ -260,6 +269,178 @@ class Handik_Booking_App_Bookings_Service {
 			$row_id = (int) $wpdb->insert_id;
 		}
 		return $row_id;
+	}
+
+	/**
+	 * 1.6.1 — Mirror an "external" Cal.com booking into handik_bookings.
+	 * Called from Webhook_Service::handle_cal_webhook when none of the
+	 * normal routing paths (handik_booking_source metadata, handik_job
+	 * _request_id, cal_booking_id match, pending-contact fallback)
+	 * resolve to one of our local request rows — which is exactly the
+	 * "customer abandoned our form, used the 'Open the booking page
+	 * directly' link, booked on Cal.com" case the owner reported.
+	 *
+	 * All foreign-key columns (job_request_id, direct_request_id,
+	 * project_work_day_id) stay NULL. We DO try to attach an existing
+	 * contact when the attendee email/phone matches via
+	 * Contacts_Service::find_by_email_or_phone, populating the new
+	 * `external_contact_id` column so People & Requests can show the
+	 * booking under that person — but we never auto-create a contact
+	 * here. Cal's stock embed only collects email + name (phone only
+	 * when the event type has a custom phone question), so the
+	 * match rate is best-effort. When no match, the booking still
+	 * surfaces in the admin Bookings list with the attendee name +
+	 * email pulled out of raw_webhook_json by the render code.
+	 *
+	 * Idempotent on cal_booking_id UNIQUE — duplicate webhook
+	 * deliveries collapse into an UPDATE.
+	 *
+	 * @param array<string, mixed> $payload Cal webhook `payload` block.
+	 * @param string               $status  Mapped status (booked / cancelled / rescheduled).
+	 * @return int Row id in handik_bookings (0 on failure / no Cal id).
+	 */
+	public function upsert_external_booking( array $payload, $status ) {
+		global $wpdb;
+		$table      = Handik_Booking_App_DB::table( 'bookings' );
+		$payload    = self::flatten_cal_embed_payload( $payload );
+		$booking_id = $this->extract_booking_id( $payload );
+		if ( ! $booking_id ) {
+			if ( $this->logger ) {
+				$this->logger->info( 'Skipped external-booking mirror — no Cal booking id in payload.' );
+			}
+			return 0;
+		}
+
+		// Try to resolve the attendee to an existing contact. Best-effort:
+		// no match → external_contact_id stays NULL and the admin sees
+		// the attendee pulled from raw_webhook_json instead.
+		$attendee_email = $this->extract_attendee_email( $payload );
+		$attendee_phone = $this->extract_attendee_phone( $payload );
+		$contact_id     = 0;
+		if ( $this->contacts && method_exists( $this->contacts, 'find_by_email_or_phone' ) ) {
+			$matched = $this->contacts->find_by_email_or_phone( $attendee_email, $attendee_phone );
+			if ( $matched && ! empty( $matched['id'] ) ) {
+				$contact_id = (int) $matched['id'];
+			}
+		}
+
+		$record = array(
+			'job_request_id'       => null,
+			'direct_request_id'    => null,
+			'project_work_day_id'  => null,
+			'external_contact_id'  => $contact_id > 0 ? $contact_id : null,
+			'cal_booking_id'       => $booking_id,
+			'booking_type'         => ! empty( $payload['booking_type'] ) ? sanitize_key( $payload['booking_type'] ) : '',
+			'event_type_slug'      => ! empty( $payload['eventTypeSlug'] ) ? sanitize_key( $payload['eventTypeSlug'] ) : sanitize_key( (string) ( $payload['type'] ?? '' ) ),
+			'duration_minutes'     => absint( $payload['duration'] ?? $payload['lengthInMinutes'] ?? 0 ),
+			'start_time'           => $this->normalize_datetime( $payload['startTime'] ?? $payload['start'] ?? '' ),
+			'end_time'             => $this->normalize_datetime( $payload['endTime'] ?? $payload['end'] ?? '' ),
+			'status'               => sanitize_key( $status ),
+			'raw_webhook_json'     => wp_json_encode( $payload ),
+		);
+
+		$existing = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$table} WHERE cal_booking_id = %s LIMIT 1", $booking_id ), ARRAY_A );
+		if ( $existing ) {
+			$wpdb->update( $table, $record, array( 'id' => (int) $existing['id'] ) );
+			$row_id = (int) $existing['id'];
+		} else {
+			$wpdb->insert( $table, $record );
+			$row_id = (int) $wpdb->insert_id;
+		}
+
+		if ( $this->logger ) {
+			$this->logger->info(
+				'External Cal.com booking captured.',
+				array(
+					'cal_booking_id' => $booking_id,
+					'row_id'         => $row_id,
+					'matched_contact'=> $contact_id,
+					'attendee_email' => $attendee_email,
+					'status'         => $status,
+				)
+			);
+		}
+		return $row_id;
+	}
+
+	/**
+	 * Pull the attendee email out of a Cal webhook payload. Cal puts it
+	 * in different shapes depending on the event/version: the booking-
+	 * questions response (`responses.email.value`), the attendees array
+	 * (`attendees[0].email`), or sometimes flat at top level.
+	 *
+	 * @param array<string, mixed> $payload Flattened payload.
+	 * @return string Lowercased email, '' if not found.
+	 */
+	protected function extract_attendee_email( array $payload ) {
+		$candidates = array();
+		if ( ! empty( $payload['responses']['email']['value'] ) ) {
+			$candidates[] = $payload['responses']['email']['value'];
+		}
+		if ( ! empty( $payload['responses']['email'] ) && is_string( $payload['responses']['email'] ) ) {
+			$candidates[] = $payload['responses']['email'];
+		}
+		if ( isset( $payload['attendees'] ) && is_array( $payload['attendees'] ) ) {
+			foreach ( $payload['attendees'] as $att ) {
+				if ( is_array( $att ) && ! empty( $att['email'] ) ) {
+					$candidates[] = $att['email'];
+					break;
+				}
+			}
+		}
+		if ( ! empty( $payload['attendeeEmail'] ) ) {
+			$candidates[] = $payload['attendeeEmail'];
+		}
+		foreach ( $candidates as $email ) {
+			$email = sanitize_email( strtolower( trim( (string) $email ) ) );
+			if ( $email && is_email( $email ) ) {
+				return $email;
+			}
+		}
+		return '';
+	}
+
+	/**
+	 * Pull the attendee phone out of a Cal webhook payload. Cal only
+	 * collects this when the event type explicitly adds a phone-question
+	 * to the booking form, so most payloads don't carry one. Returns
+	 * '' when missing.
+	 *
+	 * @param array<string, mixed> $payload Flattened payload.
+	 * @return string Phone, '' if not found.
+	 */
+	protected function extract_attendee_phone( array $payload ) {
+		$candidates = array();
+		foreach ( array( 'phone', 'attendeePhone', 'attendeePhoneNumber', 'smsReminderNumber' ) as $key ) {
+			if ( ! empty( $payload[ $key ] ) && is_string( $payload[ $key ] ) ) {
+				$candidates[] = $payload[ $key ];
+			}
+		}
+		if ( ! empty( $payload['responses']['phone']['value'] ) ) {
+			$candidates[] = $payload['responses']['phone']['value'];
+		}
+		if ( ! empty( $payload['responses']['phone'] ) && is_string( $payload['responses']['phone'] ) ) {
+			$candidates[] = $payload['responses']['phone'];
+		}
+		if ( isset( $payload['attendees'] ) && is_array( $payload['attendees'] ) ) {
+			foreach ( $payload['attendees'] as $att ) {
+				if ( is_array( $att ) && ! empty( $att['phoneNumber'] ) ) {
+					$candidates[] = $att['phoneNumber'];
+					break;
+				}
+				if ( is_array( $att ) && ! empty( $att['phone'] ) ) {
+					$candidates[] = $att['phone'];
+					break;
+				}
+			}
+		}
+		foreach ( $candidates as $phone ) {
+			$phone = trim( (string) $phone );
+			if ( $phone ) {
+				return $phone;
+			}
+		}
+		return '';
 	}
 
 	/**

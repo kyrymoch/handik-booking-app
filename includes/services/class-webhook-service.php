@@ -133,8 +133,43 @@ class Handik_Booking_App_Webhook_Service {
 		}
 
 		if ( ! $request_id ) {
-			$this->logger->error( 'Could not match Cal webhook to job request.', array( 'event' => $event, 'payload' => $payload ) );
-			return array( 'error' => __( 'Matching request not found.', 'handik-booking-app' ), 'status' => 404 );
+			// 1.6.1 — A6 fallback: this webhook didn't match any of our
+			// local source paths (no handik_* metadata, no
+			// cal_booking_id match in job_requests, no
+			// email/phone hit on a pending request). That's the
+			// "customer used the 'Open the booking page directly'
+			// link and booked on Cal.com without going through our
+			// flow" path. Previously we returned 404 here and the
+			// booking became invisible. Now we mirror it as an
+			// external row in handik_bookings so it surfaces in the
+			// admin Bookings list with attendee info from the
+			// webhook payload.
+			$mapped_status = $this->map_status( $event );
+			if ( '' === $mapped_status ) {
+				$this->logger->info(
+					'Cal webhook acknowledged for external booking (no state change).',
+					array( 'event' => $event )
+				);
+				return array( 'success' => true, 'status' => 'ignored' );
+			}
+			$row_id = $this->bookings->upsert_external_booking( $data, $mapped_status );
+			if ( ! $row_id ) {
+				$this->logger->error(
+					'Cal external-booking mirror failed — no Cal booking id in payload.',
+					array( 'event' => $event, 'payload' => $payload )
+				);
+				return array( 'error' => __( 'Webhook payload missing Cal booking id.', 'handik-booking-app' ), 'status' => 422 );
+			}
+			$this->logger->info(
+				'Cal external booking captured (no local source row).',
+				array(
+					'event'      => $event,
+					'booking_id' => $this->bookings->extract_booking_id( $data ),
+					'row_id'     => $row_id,
+					'status'     => $mapped_status,
+				)
+			);
+			return array( 'success' => true, 'status' => $mapped_status, 'external' => true );
 		}
 
 		$data['booking_type'] = ! empty( $metadata['handik_booking_type'] ) ? sanitize_key( $metadata['handik_booking_type'] ) : '';

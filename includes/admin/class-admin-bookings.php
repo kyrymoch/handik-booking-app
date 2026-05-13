@@ -421,16 +421,19 @@ class Handik_Booking_App_Admin_Bookings {
 		// 1.6.0 — third source: project work days hang off
 		// `project_work_day_id`, and their contact/address come from
 		// `handik_project_scheduling_requests` (joined via work_day).
-		$request_ids        = array();
-		$direct_request_ids = array();
-		$project_day_ids    = array();
+		$request_ids         = array();
+		$direct_request_ids  = array();
+		$project_day_ids     = array();
+		$external_contact_ids = array();
 		foreach ( $rows as $row ) {
 			$rid  = (int) ( $row['job_request_id']      ?? 0 );
 			$drid = (int) ( $row['direct_request_id']   ?? 0 );
 			$pwid = (int) ( $row['project_work_day_id'] ?? 0 );
-			if ( $rid > 0 )  { $request_ids[]        = $rid; }
-			if ( $drid > 0 ) { $direct_request_ids[] = $drid; }
-			if ( $pwid > 0 ) { $project_day_ids[]    = $pwid; }
+			$ecid = (int) ( $row['external_contact_id'] ?? 0 );
+			if ( $rid > 0 )  { $request_ids[]         = $rid; }
+			if ( $drid > 0 ) { $direct_request_ids[]  = $drid; }
+			if ( $pwid > 0 ) { $project_day_ids[]     = $pwid; }
+			if ( $ecid > 0 ) { $external_contact_ids[] = $ecid; }
 		}
 
 		$requests = ( $this->job_requests && method_exists( $this->job_requests, 'get_many' ) )
@@ -515,6 +518,12 @@ class Handik_Booking_App_Admin_Bookings {
 			if ( $cid > 0 ) { $contact_ids[] = $cid; }
 			if ( $aid > 0 ) { $address_ids[] = $aid; }
 		}
+		// 1.6.1 — external Cal.com bookings: external_contact_id is a
+		// direct FK to handik_contacts, no intermediate request row to
+		// JOIN through. Just add to the contact bulk fetch.
+		foreach ( $external_contact_ids as $ecid ) {
+			$contact_ids[] = (int) $ecid;
+		}
 		$contacts  = ( $this->contacts  && method_exists( $this->contacts,  'get_many' ) ) ? $this->contacts->get_many( $contact_ids )   : array();
 		$addresses = ( $this->addresses && method_exists( $this->addresses, 'get_many' ) ) ? $this->addresses->get_many( $address_ids ) : array();
 
@@ -524,6 +533,7 @@ class Handik_Booking_App_Admin_Bookings {
 			$rid  = (int) ( $row['job_request_id']      ?? 0 );
 			$drid = (int) ( $row['direct_request_id']   ?? 0 );
 			$pwid = (int) ( $row['project_work_day_id'] ?? 0 );
+			$ecid = (int) ( $row['external_contact_id'] ?? 0 );
 			if ( $rid && isset( $requests[ $rid ] ) ) {
 				$req = $requests[ $rid ];
 				$cid = (int) ( $req['contact_id'] ?? 0 );
@@ -562,7 +572,22 @@ class Handik_Booking_App_Admin_Bookings {
 					'contact'          => $cid && isset( $contacts[ $cid ] )  ? $contacts[ $cid ]  : null,
 					'address'          => $aid && isset( $addresses[ $aid ] ) ? $addresses[ $aid ] : null,
 				);
+			} elseif ( $ecid && isset( $contacts[ $ecid ] ) ) {
+				// 1.6.1 — external Cal booking matched to an existing
+				// contact via Bookings_Service::upsert_external_booking's
+				// email/phone lookup.
+				$out[ $bid ] = array(
+					'request'          => null,
+					'direct_request'   => null,
+					'project_day'      => null,
+					'project_schedule' => null,
+					'contact'          => $contacts[ $ecid ],
+					'address'          => null,
+				);
 			} else {
+				// 1.6.1 — external Cal booking with no matched contact.
+				// The render code falls back to raw_webhook_json to
+				// pull the attendee name + email out of the payload.
 				$out[ $bid ] = array(
 					'request'          => null,
 					'direct_request'   => null,
@@ -635,7 +660,10 @@ class Handik_Booking_App_Admin_Bookings {
 				? (int) ( $request['contact_id'] ?? 0 )
 				: ( $direct
 					? (int) ( $direct['contact_id'] ?? 0 )
-					: ( $project_schedule ? (int) ( $project_schedule['contact_id'] ?? 0 ) : 0 ) );
+					: ( $project_schedule
+						? (int) ( $project_schedule['contact_id'] ?? 0 )
+						// 1.6.1 — fourth source: external Cal.com booking, FK directly on the booking row.
+						: (int) ( $row['external_contact_id'] ?? 0 ) ) );
 			$address_id = $request
 				? (int) ( $request['address_id'] ?? 0 )
 				: ( $direct
@@ -645,7 +673,38 @@ class Handik_Booking_App_Admin_Bookings {
 			$address = ( $address_id && $this->addresses ) ? $this->addresses->get( $address_id ) : null;
 		}
 
-		$client = $contact ? (string) ( $contact['full_name'] ?? '' ) : __( 'Unknown', 'handik-booking-app' );
+		// 1.6.1 — external Cal booking with no matched contact: extract
+		// attendee name from the stored raw_webhook_json so the card
+		// shows SOMETHING useful instead of "Unknown".
+		$external_attendee_name  = '';
+		$external_attendee_email = '';
+		$is_external_booking     = ! $request && ! $direct && ! $project_day && empty( $row['external_contact_id'] );
+		if ( $is_external_booking && ! empty( $row['raw_webhook_json'] ) ) {
+			$decoded = json_decode( (string) $row['raw_webhook_json'], true );
+			if ( is_array( $decoded ) ) {
+				if ( isset( $decoded['attendees'] ) && is_array( $decoded['attendees'] ) && ! empty( $decoded['attendees'][0] ) ) {
+					$first_att              = $decoded['attendees'][0];
+					$external_attendee_name = (string) ( $first_att['name']  ?? '' );
+					$external_attendee_email = (string) ( $first_att['email'] ?? '' );
+				}
+				if ( '' === $external_attendee_name && ! empty( $decoded['responses']['name']['value'] ) ) {
+					$external_attendee_name = (string) $decoded['responses']['name']['value'];
+				}
+				if ( '' === $external_attendee_email && ! empty( $decoded['responses']['email']['value'] ) ) {
+					$external_attendee_email = (string) $decoded['responses']['email']['value'];
+				}
+			}
+		}
+
+		if ( $contact ) {
+			$client = (string) ( $contact['full_name'] ?? '' );
+		} elseif ( '' !== $external_attendee_name ) {
+			$client = $external_attendee_name;
+		} elseif ( '' !== $external_attendee_email ) {
+			$client = $external_attendee_email;
+		} else {
+			$client = __( 'Unknown', 'handik-booking-app' );
+		}
 		// Sprint 13.5 — task summary: main-SPA bookings have a list of
 		// catalog task ids; direct bookings only have the preset's
 		// form_title (single label). Fall back to whichever applies.
@@ -669,6 +728,16 @@ class Handik_Booking_App_Admin_Bookings {
 			} else {
 				$task_summary = $title;
 			}
+		} elseif ( $is_external_booking || ! empty( $row['external_contact_id'] ) ) {
+			// 1.6.1 — external Cal booking. Tag prominently so admin
+			// knows the booking didn't come through the plugin form
+			// (and may need a manual follow-up to collect address /
+			// scope details that the form would normally capture).
+			$slug = (string) ( $row['event_type_slug'] ?? '' );
+			$task_summary = $slug
+				/* translators: %s: Cal.com event type slug */
+				? sprintf( __( 'External Cal.com booking — %s', 'handik-booking-app' ), $slug )
+				: __( 'External Cal.com booking', 'handik-booking-app' );
 		} else {
 			$task_summary = '';
 		}
@@ -767,7 +836,10 @@ class Handik_Booking_App_Admin_Bookings {
 								? (int) ( $request['contact_id'] ?? 0 )
 								: ( $direct
 									? (int) ( $direct['contact_id'] ?? 0 )
-									: ( $project_schedule ? (int) ( $project_schedule['contact_id'] ?? 0 ) : 0 ) );
+									: ( $project_schedule
+										? (int) ( $project_schedule['contact_id'] ?? 0 )
+										// 1.6.1 — fourth source: external Cal.com booking.
+										: (int) ( $row['external_contact_id'] ?? 0 ) ) );
 							$aid = $request
 								? (int) ( $request['address_id'] ?? 0 )
 								: ( $direct
@@ -782,18 +854,45 @@ class Handik_Booking_App_Admin_Bookings {
 							$past_divider_inserted = true;
 						}
 						$status = $this->bookings ? $this->bookings->effective_status( $row ) : (string) ( $row['status'] ?? '' );
+						// 1.6.1 — extract external attendee from raw_webhook_json
+						// when this row has no linked source (4th-source case).
+						$external_name  = '';
+						$external_email = '';
+						if ( ! $request && ! $direct && ! $project_schedule && empty( $row['external_contact_id'] ) && ! empty( $row['raw_webhook_json'] ) ) {
+							$decoded_w = json_decode( (string) $row['raw_webhook_json'], true );
+							if ( is_array( $decoded_w ) ) {
+								if ( isset( $decoded_w['attendees'][0] ) && is_array( $decoded_w['attendees'][0] ) ) {
+									$external_name  = (string) ( $decoded_w['attendees'][0]['name']  ?? '' );
+									$external_email = (string) ( $decoded_w['attendees'][0]['email'] ?? '' );
+								}
+								if ( '' === $external_name && ! empty( $decoded_w['responses']['name']['value'] ) ) {
+									$external_name = (string) $decoded_w['responses']['name']['value'];
+								}
+							}
+						}
 						// Sprint 13.5 — Direct rows show preset title; main rows show task summary.
 						if ( $request ) {
 							$tasks = Handik_Booking_App_Admin_Helpers::task_summary_text( is_array( $request['selected_tasks'] ?? null ) ? $request['selected_tasks'] : array(), $this->catalog );
 						} elseif ( $direct ) {
 							$tasks = (string) ( $direct['form_title'] ?? __( 'Direct booking', 'handik-booking-app' ) );
+						} elseif ( $project_schedule ) {
+							$tasks = (string) ( $project_schedule['form_title'] ?? __( 'Project work day', 'handik-booking-app' ) );
+						} elseif ( $external_name || ! empty( $row['external_contact_id'] ) || ! empty( $row['cal_booking_id'] ) ) {
+							$slug = (string) ( $row['event_type_slug'] ?? '' );
+							$tasks = $slug
+								? sprintf( __( 'External — %s', 'handik-booking-app' ), $slug )
+								: __( 'External Cal.com booking', 'handik-booking-app' );
 						} else {
 							$tasks = '';
 						}
+						// Override the Client cell for external bookings without a contact match.
+						$client_label = $contact
+							? (string) ( $contact['full_name'] ?? '' )
+							: ( '' !== $external_name ? $external_name : ( '' !== $external_email ? $external_email : __( 'Unknown', 'handik-booking-app' ) ) );
 					?>
 					<tr class="handik-admin-row-link" tabindex="0" data-href="<?php echo esc_url( $detail_url ); ?>">
 						<td><?php echo esc_html( Handik_Booking_App_Admin_Helpers::format_booking_window( $row, 'compact' ) ); ?></td>
-						<td><?php echo esc_html( (string) ( $contact['full_name'] ?? __( 'Unknown', 'handik-booking-app' ) ) ); ?></td>
+						<td><?php echo esc_html( $client_label ); ?></td>
 						<td><?php echo esc_html( $tasks ); ?></td>
 						<td><?php echo esc_html( Handik_Booking_App_Admin_Helpers::request_city( $request, $address ) ); ?></td>
 						<td><?php echo esc_html( ! empty( $row['duration_minutes'] ) ? $row['duration_minutes'] . ' min' : '—' ); ?></td>
@@ -1010,7 +1109,10 @@ class Handik_Booking_App_Admin_Bookings {
 			? (int) ( $request['contact_id'] ?? 0 )
 			: ( $direct
 				? (int) ( $direct['contact_id'] ?? 0 )
-				: ( $project_schedule ? (int) ( $project_schedule['contact_id'] ?? 0 ) : 0 ) );
+				: ( $project_schedule
+					? (int) ( $project_schedule['contact_id'] ?? 0 )
+					// 1.6.1 — fourth source: external Cal.com booking with linked contact.
+					: (int) ( $booking['external_contact_id'] ?? 0 ) ) );
 		$address_id = $request
 			? (int) ( $request['address_id'] ?? 0 )
 			: ( $direct
@@ -1018,7 +1120,38 @@ class Handik_Booking_App_Admin_Bookings {
 				: ( $project_schedule ? (int) ( $project_schedule['address_id'] ?? 0 ) : 0 ) );
 		$contact = ( $contact_id && $this->contacts ) ? $this->contacts->get( $contact_id ) : null;
 		$address = ( $address_id && $this->addresses ) ? $this->addresses->get( $address_id ) : null;
-		$photos  = is_array( $request['photos'] ?? null ) ? $request['photos'] : array(); // direct bookings have no photos
+		// 1.6.1 — external Cal booking without a linked contact: pull
+		// attendee from the stashed webhook payload so the sticky
+		// action bar / detail page show something useful in the
+		// "Client" slot. External bookings never carry photos.
+		if ( ! $request && ! $direct && ! $project_schedule && ! $contact && ! empty( $booking['raw_webhook_json'] ) ) {
+			$decoded_w = json_decode( (string) $booking['raw_webhook_json'], true );
+			if ( is_array( $decoded_w ) ) {
+				$external_name  = '';
+				$external_email = '';
+				$external_phone = '';
+				if ( isset( $decoded_w['attendees'][0] ) && is_array( $decoded_w['attendees'][0] ) ) {
+					$external_name  = (string) ( $decoded_w['attendees'][0]['name']  ?? '' );
+					$external_email = (string) ( $decoded_w['attendees'][0]['email'] ?? '' );
+				}
+				if ( '' === $external_name && ! empty( $decoded_w['responses']['name']['value'] ) ) {
+					$external_name = (string) $decoded_w['responses']['name']['value'];
+				}
+				if ( '' === $external_email && ! empty( $decoded_w['responses']['email']['value'] ) ) {
+					$external_email = (string) $decoded_w['responses']['email']['value'];
+				}
+				if ( $external_name || $external_email ) {
+					$contact = array(
+						'id'         => 0,
+						'full_name'  => $external_name ?: $external_email,
+						'email'      => $external_email,
+						'phone'      => $external_phone,
+						'_external'  => true, // marker so downstream renderers know this isn't a real contact row
+					);
+				}
+			}
+		}
+		$photos  = is_array( $request['photos'] ?? null ) ? $request['photos'] : array(); // direct/project/external bookings have no photos
 		$full_address = Handik_Booking_App_Admin_Helpers::full_request_address( $request, $address );
 
 		echo '<div class="wrap handik-admin-wrap handik-admin-booking-detail">';
@@ -1035,6 +1168,11 @@ class Handik_Booking_App_Admin_Bookings {
 			echo $this->tasks_block_markup( $request );
 		} elseif ( $direct ) {
 			echo $this->direct_preset_block_markup( $direct );
+		} elseif ( $project_schedule || ! empty( $booking['project_work_day_id'] ) ) {
+			echo $this->project_preset_block_markup( $project_schedule, $project_day );
+		} elseif ( empty( $booking['job_request_id'] ) && empty( $booking['direct_request_id'] ) && empty( $booking['project_work_day_id'] ) ) {
+			// 1.6.1 — external Cal booking has no source row at all.
+			echo $this->external_preset_block_markup( $booking );
 		}
 		echo $this->address_block_markup( $full_address );
 		echo $this->technical_block_markup( $request, $booking );
@@ -1067,6 +1205,114 @@ class Handik_Booking_App_Admin_Bookings {
 				__( 'Source', 'handik-booking-app' )            => 'admin:bookings' === ( $direct['source_url'] ?? '' )
 					? __( 'Admin booking (added on behalf of customer)', 'handik-booking-app' )
 					: __( 'Public direct booking form', 'handik-booking-app' ),
+			) );
+			?>
+		</section>
+		<?php
+		return (string) ob_get_clean();
+	}
+
+	/**
+	 * 1.6.0 — minimal "what was booked" block for project work-day
+	 * rows (no chat, no photos). Renders the schedule form title +
+	 * Day N of M + duration so the operator sees which day of which
+	 * project this row represents.
+	 *
+	 * @param array<string, mixed>|null $schedule project_scheduling_requests row.
+	 * @param array<string, mixed>|null $day      project_work_days row.
+	 * @return string
+	 */
+	protected function project_preset_block_markup( $schedule, $day ) {
+		$title = $schedule ? (string) ( $schedule['form_title'] ?? '' ) : '';
+		$day_n = $day ? ( (int) ( $day['day_index'] ?? 0 ) + 1 ) : 0;
+		$total = $schedule ? (int) ( $schedule['required_days'] ?? 0 ) : 0;
+		$duration_min = $schedule ? (int) ( $schedule['work_day_duration_minutes'] ?? 0 ) : 0;
+
+		ob_start();
+		?>
+		<section class="handik-admin-block">
+			<h2 class="handik-admin-section-title"><?php esc_html_e( 'Project work day', 'handik-booking-app' ); ?></h2>
+			<?php
+			echo Handik_Booking_App_Admin_Helpers::detail_list_markup( array(
+				__( 'Project form', 'handik-booking-app' ) => $title,
+				__( 'Day', 'handik-booking-app' )          => $day_n > 0 && $total > 0
+					/* translators: 1: day number, 2: total days */
+					? sprintf( __( 'Day %1$d of %2$d', 'handik-booking-app' ), $day_n, $total )
+					: '',
+				__( 'Per-day duration', 'handik-booking-app' ) => $duration_min > 0
+					? ( $duration_min . ' ' . __( 'min', 'handik-booking-app' ) )
+					: '',
+				__( 'Source', 'handik-booking-app' )         => __( 'Public project work days form', 'handik-booking-app' ),
+			) );
+			?>
+		</section>
+		<?php
+		return (string) ob_get_clean();
+	}
+
+	/**
+	 * 1.6.1 — minimal block for "external" Cal.com bookings — ones
+	 * that arrived via webhook without any handik metadata (customer
+	 * abandoned our form, used the "Open the booking page directly"
+	 * link, booked on Cal.com directly). Pulls the attendee name +
+	 * email + Cal event type slug straight out of `raw_webhook_json`
+	 * so the operator sees who booked + which event type + can
+	 * follow up manually to collect the address that Cal's stock
+	 * embed didn't capture.
+	 *
+	 * @param array<string, mixed> $booking Booking row.
+	 * @return string
+	 */
+	protected function external_preset_block_markup( array $booking ) {
+		$decoded = ! empty( $booking['raw_webhook_json'] )
+			? json_decode( (string) $booking['raw_webhook_json'], true )
+			: array();
+		$decoded = is_array( $decoded ) ? $decoded : array();
+
+		$attendee_name  = '';
+		$attendee_email = '';
+		$attendee_phone = '';
+		if ( isset( $decoded['attendees'][0] ) && is_array( $decoded['attendees'][0] ) ) {
+			$attendee_name  = (string) ( $decoded['attendees'][0]['name']  ?? '' );
+			$attendee_email = (string) ( $decoded['attendees'][0]['email'] ?? '' );
+		}
+		if ( '' === $attendee_name && ! empty( $decoded['responses']['name']['value'] ) ) {
+			$attendee_name = (string) $decoded['responses']['name']['value'];
+		}
+		if ( '' === $attendee_email && ! empty( $decoded['responses']['email']['value'] ) ) {
+			$attendee_email = (string) $decoded['responses']['email']['value'];
+		}
+		foreach ( array( 'phone', 'attendeePhone', 'attendeePhoneNumber', 'smsReminderNumber' ) as $k ) {
+			if ( '' === $attendee_phone && ! empty( $decoded[ $k ] ) && is_string( $decoded[ $k ] ) ) {
+				$attendee_phone = (string) $decoded[ $k ];
+			}
+		}
+		if ( '' === $attendee_phone && ! empty( $decoded['responses']['phone']['value'] ) ) {
+			$attendee_phone = (string) $decoded['responses']['phone']['value'];
+		}
+
+		$event_type_slug = (string) ( $booking['event_type_slug'] ?? '' );
+		$linked_label    = ! empty( $booking['external_contact_id'] )
+			? __( 'Yes — linked via webhook email/phone match', 'handik-booking-app' )
+			: __( 'No — customer is not in People & Requests yet', 'handik-booking-app' );
+
+		ob_start();
+		?>
+		<section class="handik-admin-block">
+			<h2 class="handik-admin-section-title"><?php esc_html_e( 'External Cal.com booking', 'handik-booking-app' ); ?></h2>
+			<p class="handik-admin-muted">
+				<?php esc_html_e( 'This booking was made directly on Cal.com (not through the plugin\'s form). Address and job details below may be missing — follow up with the customer to complete them.', 'handik-booking-app' ); ?>
+			</p>
+			<?php
+			echo Handik_Booking_App_Admin_Helpers::detail_list_markup( array(
+				__( 'Attendee name', 'handik-booking-app' )    => $attendee_name,
+				__( 'Attendee email', 'handik-booking-app' )   => $attendee_email,
+				__( 'Attendee phone', 'handik-booking-app' )   => $attendee_phone,
+				__( 'Cal event type', 'handik-booking-app' )   => $event_type_slug,
+				__( 'Duration', 'handik-booking-app' )         => ! empty( $booking['duration_minutes'] )
+					? ( (int) $booking['duration_minutes'] . ' ' . __( 'min', 'handik-booking-app' ) )
+					: '',
+				__( 'Linked contact', 'handik-booking-app' )   => $linked_label,
 			) );
 			?>
 		</section>
