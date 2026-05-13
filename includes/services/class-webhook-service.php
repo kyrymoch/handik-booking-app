@@ -304,6 +304,30 @@ class Handik_Booking_App_Webhook_Service {
 		$day_status = ( 'booked' === $status ) ? Handik_Booking_App_Project_Schedule_Service::DAY_STATUS_CONFIRMED : $status;
 		$this->project->update_day_status_by_uid( $uid, $day_status );
 
+		// 1.6.0 — also mirror the work day into `handik_bookings` so
+		// it surfaces in the unified admin Bookings list. Idempotent
+		// via cal_booking_id UNIQUE — collapses with the leading-edge
+		// upsert that already fired in
+		// `Project_Schedule_Service::confirm_schedule()`. Lookup the
+		// day_id off uid because the webhook only carries
+		// schedule_id + uid (NOT day_id in metadata — the day index
+		// isn't stable across reschedules).
+		if ( $this->bookings && method_exists( $this->bookings, 'upsert_from_project' ) ) {
+			$day_row = $this->project->find_day_by_uid( $uid );
+			if ( $day_row ) {
+				$this->bookings->upsert_from_project(
+					(int) $day_row['id'],
+					$data,
+					$status,
+					array(
+						'booking_type'     => (string) ( $schedule['booking_type'] ?? '' ),
+						'event_type_slug'  => (string) ( $schedule['cal_event_slug'] ?? '' ),
+						'duration_minutes' => (int) ( $schedule['work_day_duration_minutes'] ?? 0 ),
+					)
+				);
+			}
+		}
+
 		$this->logger->info(
 			'Cal webhook routed to project work days.',
 			array(

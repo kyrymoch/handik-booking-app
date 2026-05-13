@@ -418,13 +418,19 @@ class Handik_Booking_App_Admin_Bookings {
 		// admin-initiated since Sprint 13) hang off `direct_request_id`
 		// and have NO job_request — their contact/address come from
 		// `handik_direct_booking_requests` instead.
+		// 1.6.0 — third source: project work days hang off
+		// `project_work_day_id`, and their contact/address come from
+		// `handik_project_scheduling_requests` (joined via work_day).
 		$request_ids        = array();
 		$direct_request_ids = array();
+		$project_day_ids    = array();
 		foreach ( $rows as $row ) {
-			$rid  = (int) ( $row['job_request_id']    ?? 0 );
-			$drid = (int) ( $row['direct_request_id'] ?? 0 );
+			$rid  = (int) ( $row['job_request_id']      ?? 0 );
+			$drid = (int) ( $row['direct_request_id']   ?? 0 );
+			$pwid = (int) ( $row['project_work_day_id'] ?? 0 );
 			if ( $rid > 0 )  { $request_ids[]        = $rid; }
 			if ( $drid > 0 ) { $direct_request_ids[] = $drid; }
+			if ( $pwid > 0 ) { $project_day_ids[]    = $pwid; }
 		}
 
 		$requests = ( $this->job_requests && method_exists( $this->job_requests, 'get_many' ) )
@@ -450,6 +456,45 @@ class Handik_Booking_App_Admin_Bookings {
 			}
 		}
 
+		// 1.6.0 — Bulk-fetch project work-day rows + their parent
+		// scheduling_requests (which carry the contact_id/address_id).
+		// Mirrors the direct_rows SELECT-IN shape. Two queries instead
+		// of a JOIN so the keys stay parallel to the other arrays
+		// (`$project_day_rows` keyed by day id, `$project_schedule_rows`
+		// keyed by schedule id).
+		$project_day_rows      = array();
+		$project_schedule_rows = array();
+		if ( ! empty( $project_day_ids ) ) {
+			$project_day_ids = array_values( array_unique( array_filter( array_map( 'absint', $project_day_ids ) ) ) );
+			if ( ! empty( $project_day_ids ) ) {
+				$placeholders   = implode( ',', array_fill( 0, count( $project_day_ids ), '%d' ) );
+				$days_table     = Handik_Booking_App_DB::table( 'project_work_days' );
+				$days_db        = $wpdb->get_results(
+					$wpdb->prepare( "SELECT * FROM {$days_table} WHERE id IN ({$placeholders})", $project_day_ids ), // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+					ARRAY_A
+				);
+				$schedule_ids   = array();
+				foreach ( (array) $days_db as $d ) {
+					$project_day_rows[ (int) $d['id'] ] = $d;
+					if ( ! empty( $d['scheduling_request_id'] ) ) {
+						$schedule_ids[] = (int) $d['scheduling_request_id'];
+					}
+				}
+				$schedule_ids = array_values( array_unique( array_filter( $schedule_ids ) ) );
+				if ( ! empty( $schedule_ids ) ) {
+					$placeholders     = implode( ',', array_fill( 0, count( $schedule_ids ), '%d' ) );
+					$schedules_table  = Handik_Booking_App_DB::table( 'project_scheduling_requests' );
+					$schedules_db     = $wpdb->get_results(
+						$wpdb->prepare( "SELECT * FROM {$schedules_table} WHERE id IN ({$placeholders})", $schedule_ids ), // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+						ARRAY_A
+					);
+					foreach ( (array) $schedules_db as $s ) {
+						$project_schedule_rows[ (int) $s['id'] ] = $s;
+					}
+				}
+			}
+		}
+
 		$contact_ids = array();
 		$address_ids = array();
 		foreach ( $requests as $request ) {
@@ -464,40 +509,67 @@ class Handik_Booking_App_Admin_Bookings {
 			if ( $cid > 0 ) { $contact_ids[] = $cid; }
 			if ( $aid > 0 ) { $address_ids[] = $aid; }
 		}
+		foreach ( $project_schedule_rows as $ps ) {
+			$cid = (int) ( $ps['contact_id'] ?? 0 );
+			$aid = (int) ( $ps['address_id'] ?? 0 );
+			if ( $cid > 0 ) { $contact_ids[] = $cid; }
+			if ( $aid > 0 ) { $address_ids[] = $aid; }
+		}
 		$contacts  = ( $this->contacts  && method_exists( $this->contacts,  'get_many' ) ) ? $this->contacts->get_many( $contact_ids )   : array();
 		$addresses = ( $this->addresses && method_exists( $this->addresses, 'get_many' ) ) ? $this->addresses->get_many( $address_ids ) : array();
 
 		$out = array();
 		foreach ( $rows as $row ) {
 			$bid  = (int) $row['id'];
-			$rid  = (int) ( $row['job_request_id']    ?? 0 );
-			$drid = (int) ( $row['direct_request_id'] ?? 0 );
+			$rid  = (int) ( $row['job_request_id']      ?? 0 );
+			$drid = (int) ( $row['direct_request_id']   ?? 0 );
+			$pwid = (int) ( $row['project_work_day_id'] ?? 0 );
 			if ( $rid && isset( $requests[ $rid ] ) ) {
 				$req = $requests[ $rid ];
 				$cid = (int) ( $req['contact_id'] ?? 0 );
 				$aid = (int) ( $req['address_id'] ?? 0 );
 				$out[ $bid ] = array(
-					'request'        => $req,
-					'direct_request' => null,
-					'contact'        => $cid && isset( $contacts[ $cid ] )  ? $contacts[ $cid ]  : null,
-					'address'        => $aid && isset( $addresses[ $aid ] ) ? $addresses[ $aid ] : null,
+					'request'          => $req,
+					'direct_request'   => null,
+					'project_day'      => null,
+					'project_schedule' => null,
+					'contact'          => $cid && isset( $contacts[ $cid ] )  ? $contacts[ $cid ]  : null,
+					'address'          => $aid && isset( $addresses[ $aid ] ) ? $addresses[ $aid ] : null,
 				);
 			} elseif ( $drid && isset( $direct_rows[ $drid ] ) ) {
 				$dr  = $direct_rows[ $drid ];
 				$cid = (int) ( $dr['contact_id'] ?? 0 );
 				$aid = (int) ( $dr['address_id'] ?? 0 );
 				$out[ $bid ] = array(
-					'request'        => null,
-					'direct_request' => $dr,
-					'contact'        => $cid && isset( $contacts[ $cid ] )  ? $contacts[ $cid ]  : null,
-					'address'        => $aid && isset( $addresses[ $aid ] ) ? $addresses[ $aid ] : null,
+					'request'          => null,
+					'direct_request'   => $dr,
+					'project_day'      => null,
+					'project_schedule' => null,
+					'contact'          => $cid && isset( $contacts[ $cid ] )  ? $contacts[ $cid ]  : null,
+					'address'          => $aid && isset( $addresses[ $aid ] ) ? $addresses[ $aid ] : null,
+				);
+			} elseif ( $pwid && isset( $project_day_rows[ $pwid ] ) ) {
+				$pday  = $project_day_rows[ $pwid ];
+				$psid  = (int) ( $pday['scheduling_request_id'] ?? 0 );
+				$psch  = $psid && isset( $project_schedule_rows[ $psid ] ) ? $project_schedule_rows[ $psid ] : null;
+				$cid   = $psch ? (int) ( $psch['contact_id'] ?? 0 ) : 0;
+				$aid   = $psch ? (int) ( $psch['address_id'] ?? 0 ) : 0;
+				$out[ $bid ] = array(
+					'request'          => null,
+					'direct_request'   => null,
+					'project_day'      => $pday,
+					'project_schedule' => $psch,
+					'contact'          => $cid && isset( $contacts[ $cid ] )  ? $contacts[ $cid ]  : null,
+					'address'          => $aid && isset( $addresses[ $aid ] ) ? $addresses[ $aid ] : null,
 				);
 			} else {
 				$out[ $bid ] = array(
-					'request'        => null,
-					'direct_request' => null,
-					'contact'        => null,
-					'address'        => null,
+					'request'          => null,
+					'direct_request'   => null,
+					'project_day'      => null,
+					'project_schedule' => null,
+					'contact'          => null,
+					'address'          => null,
 				);
 			}
 		}
@@ -525,27 +597,50 @@ class Handik_Booking_App_Admin_Bookings {
 			)
 		);
 		if ( null !== $decorations && isset( $decorations[ (int) $row['id'] ] ) ) {
-			$bundle  = $decorations[ (int) $row['id'] ];
-			$request = $bundle['request'];
-			$direct  = $bundle['direct_request'] ?? null;
-			$contact = $bundle['contact'];
-			$address = $bundle['address'];
+			$bundle           = $decorations[ (int) $row['id'] ];
+			$request          = $bundle['request'];
+			$direct           = $bundle['direct_request']   ?? null;
+			$project_day      = $bundle['project_day']      ?? null;
+			$project_schedule = $bundle['project_schedule'] ?? null;
+			$contact          = $bundle['contact'];
+			$address          = $bundle['address'];
 		} else {
-			$request = ! empty( $row['job_request_id'] ) && $this->job_requests ? $this->job_requests->get( (int) $row['job_request_id'] ) : null;
-			$direct  = null;
+			$request          = ! empty( $row['job_request_id'] ) && $this->job_requests ? $this->job_requests->get( (int) $row['job_request_id'] ) : null;
+			$direct           = null;
+			$project_day      = null;
+			$project_schedule = null;
+			global $wpdb;
 			if ( ! $request && ! empty( $row['direct_request_id'] ) ) {
-				global $wpdb;
 				$direct = $wpdb->get_row( $wpdb->prepare(
 					'SELECT * FROM ' . Handik_Booking_App_DB::table( 'direct_booking_requests' ) . ' WHERE id = %d LIMIT 1',
 					(int) $row['direct_request_id']
 				), ARRAY_A );
 			}
+			// 1.6.0 — third source: project work day rows hang off
+			// `project_work_day_id`. Two lookups (day → schedule) to
+			// reach the contact/address that the schedule carries.
+			if ( ! $request && ! $direct && ! empty( $row['project_work_day_id'] ) ) {
+				$project_day = $wpdb->get_row( $wpdb->prepare(
+					'SELECT * FROM ' . Handik_Booking_App_DB::table( 'project_work_days' ) . ' WHERE id = %d LIMIT 1',
+					(int) $row['project_work_day_id']
+				), ARRAY_A );
+				if ( $project_day && ! empty( $project_day['scheduling_request_id'] ) ) {
+					$project_schedule = $wpdb->get_row( $wpdb->prepare(
+						'SELECT * FROM ' . Handik_Booking_App_DB::table( 'project_scheduling_requests' ) . ' WHERE id = %d LIMIT 1',
+						(int) $project_day['scheduling_request_id']
+					), ARRAY_A );
+				}
+			}
 			$contact_id = $request
 				? (int) ( $request['contact_id'] ?? 0 )
-				: ( $direct ? (int) ( $direct['contact_id'] ?? 0 ) : 0 );
+				: ( $direct
+					? (int) ( $direct['contact_id'] ?? 0 )
+					: ( $project_schedule ? (int) ( $project_schedule['contact_id'] ?? 0 ) : 0 ) );
 			$address_id = $request
 				? (int) ( $request['address_id'] ?? 0 )
-				: ( $direct ? (int) ( $direct['address_id'] ?? 0 ) : 0 );
+				: ( $direct
+					? (int) ( $direct['address_id'] ?? 0 )
+					: ( $project_schedule ? (int) ( $project_schedule['address_id'] ?? 0 ) : 0 ) );
 			$contact = ( $contact_id && $this->contacts ) ? $this->contacts->get( $contact_id ) : null;
 			$address = ( $address_id && $this->addresses ) ? $this->addresses->get( $address_id ) : null;
 		}
@@ -554,6 +649,9 @@ class Handik_Booking_App_Admin_Bookings {
 		// Sprint 13.5 — task summary: main-SPA bookings have a list of
 		// catalog task ids; direct bookings only have the preset's
 		// form_title (single label). Fall back to whichever applies.
+		// 1.6.0 — project work-day rows use the schedule's form_title
+		// + day index ("Form title — Day 2 of 5") so the admin list
+		// can tell which day of the project each row represents.
 		if ( $request ) {
 			$task_summary = Handik_Booking_App_Admin_Helpers::task_summary_text(
 				is_array( $request['selected_tasks'] ?? null ) ? $request['selected_tasks'] : array(),
@@ -561,6 +659,16 @@ class Handik_Booking_App_Admin_Bookings {
 			);
 		} elseif ( $direct ) {
 			$task_summary = (string) ( $direct['form_title'] ?? __( 'Direct booking', 'handik-booking-app' ) );
+		} elseif ( $project_schedule || $project_day ) {
+			$title = (string) ( $project_schedule['form_title'] ?? __( 'Project work day', 'handik-booking-app' ) );
+			$day_n = $project_day ? ( (int) ( $project_day['day_index'] ?? 0 ) + 1 ) : 0;
+			$total = (int) ( $project_schedule['required_days'] ?? 0 );
+			if ( $day_n > 0 && $total > 0 ) {
+				/* translators: 1: form title, 2: day number, 3: total days */
+				$task_summary = sprintf( __( '%1$s — Day %2$d of %3$d', 'handik-booking-app' ), $title, $day_n, $total );
+			} else {
+				$task_summary = $title;
+			}
 		} else {
 			$task_summary = '';
 		}
@@ -627,21 +735,44 @@ class Handik_Booking_App_Admin_Bookings {
 						);
 						$direct = null;
 						if ( null !== $decorations && isset( $decorations[ (int) $row['id'] ] ) ) {
-							$bundle  = $decorations[ (int) $row['id'] ];
-							$request = $bundle['request'];
-							$direct  = $bundle['direct_request'] ?? null;
-							$contact = $bundle['contact'];
-							$address = $bundle['address'];
+							$bundle           = $decorations[ (int) $row['id'] ];
+							$request          = $bundle['request'];
+							$direct           = $bundle['direct_request']   ?? null;
+							$project_schedule = $bundle['project_schedule'] ?? null;
+							$contact          = $bundle['contact'];
+							$address          = $bundle['address'];
 						} else {
-							$request = ! empty( $row['job_request_id'] ) && $this->job_requests ? $this->job_requests->get( (int) $row['job_request_id'] ) : null;
+							$request          = ! empty( $row['job_request_id'] ) && $this->job_requests ? $this->job_requests->get( (int) $row['job_request_id'] ) : null;
+							$project_schedule = null;
 							if ( ! $request && ! empty( $row['direct_request_id'] ) ) {
 								$direct = $wpdb->get_row( $wpdb->prepare(
 									'SELECT * FROM ' . Handik_Booking_App_DB::table( 'direct_booking_requests' ) . ' WHERE id = %d LIMIT 1',
 									(int) $row['direct_request_id']
 								), ARRAY_A );
 							}
-							$cid = $request ? (int) ( $request['contact_id'] ?? 0 ) : ( $direct ? (int) ( $direct['contact_id'] ?? 0 ) : 0 );
-							$aid = $request ? (int) ( $request['address_id'] ?? 0 ) : ( $direct ? (int) ( $direct['address_id'] ?? 0 ) : 0 );
+							// 1.6.0 — project work-day branch.
+							if ( ! $request && ! $direct && ! empty( $row['project_work_day_id'] ) ) {
+								$pday = $wpdb->get_row( $wpdb->prepare(
+									'SELECT * FROM ' . Handik_Booking_App_DB::table( 'project_work_days' ) . ' WHERE id = %d LIMIT 1',
+									(int) $row['project_work_day_id']
+								), ARRAY_A );
+								if ( $pday && ! empty( $pday['scheduling_request_id'] ) ) {
+									$project_schedule = $wpdb->get_row( $wpdb->prepare(
+										'SELECT * FROM ' . Handik_Booking_App_DB::table( 'project_scheduling_requests' ) . ' WHERE id = %d LIMIT 1',
+										(int) $pday['scheduling_request_id']
+									), ARRAY_A );
+								}
+							}
+							$cid = $request
+								? (int) ( $request['contact_id'] ?? 0 )
+								: ( $direct
+									? (int) ( $direct['contact_id'] ?? 0 )
+									: ( $project_schedule ? (int) ( $project_schedule['contact_id'] ?? 0 ) : 0 ) );
+							$aid = $request
+								? (int) ( $request['address_id'] ?? 0 )
+								: ( $direct
+									? (int) ( $direct['address_id'] ?? 0 )
+									: ( $project_schedule ? (int) ( $project_schedule['address_id'] ?? 0 ) : 0 ) );
 							$contact = ( $cid && $this->contacts ) ? $this->contacts->get( $cid ) : null;
 							$address = ( $aid && $this->addresses ) ? $this->addresses->get( $aid ) : null;
 						}
@@ -851,16 +982,40 @@ class Handik_Booking_App_Admin_Bookings {
 		// Sprint 13.5 — direct bookings have no job_request. Resolve
 		// contact + address from the linked direct_booking_requests row
 		// instead, so the detail page renders something useful.
-		$request = ! empty( $booking['job_request_id'] ) && $this->job_requests ? $this->job_requests->get( (int) $booking['job_request_id'] ) : null;
-		$direct  = null;
+		// 1.6.0 — same shape for project work-day bookings (third
+		// source): day_id → schedule_id → contact/address.
+		$request          = ! empty( $booking['job_request_id'] ) && $this->job_requests ? $this->job_requests->get( (int) $booking['job_request_id'] ) : null;
+		$direct           = null;
+		$project_day      = null;
+		$project_schedule = null;
 		if ( ! $request && ! empty( $booking['direct_request_id'] ) ) {
 			$direct = $wpdb->get_row( $wpdb->prepare(
 				'SELECT * FROM ' . Handik_Booking_App_DB::table( 'direct_booking_requests' ) . ' WHERE id = %d LIMIT 1',
 				(int) $booking['direct_request_id']
 			), ARRAY_A );
 		}
-		$contact_id = $request ? (int) ( $request['contact_id'] ?? 0 ) : ( $direct ? (int) ( $direct['contact_id'] ?? 0 ) : 0 );
-		$address_id = $request ? (int) ( $request['address_id'] ?? 0 ) : ( $direct ? (int) ( $direct['address_id'] ?? 0 ) : 0 );
+		if ( ! $request && ! $direct && ! empty( $booking['project_work_day_id'] ) ) {
+			$project_day = $wpdb->get_row( $wpdb->prepare(
+				'SELECT * FROM ' . Handik_Booking_App_DB::table( 'project_work_days' ) . ' WHERE id = %d LIMIT 1',
+				(int) $booking['project_work_day_id']
+			), ARRAY_A );
+			if ( $project_day && ! empty( $project_day['scheduling_request_id'] ) ) {
+				$project_schedule = $wpdb->get_row( $wpdb->prepare(
+					'SELECT * FROM ' . Handik_Booking_App_DB::table( 'project_scheduling_requests' ) . ' WHERE id = %d LIMIT 1',
+					(int) $project_day['scheduling_request_id']
+				), ARRAY_A );
+			}
+		}
+		$contact_id = $request
+			? (int) ( $request['contact_id'] ?? 0 )
+			: ( $direct
+				? (int) ( $direct['contact_id'] ?? 0 )
+				: ( $project_schedule ? (int) ( $project_schedule['contact_id'] ?? 0 ) : 0 ) );
+		$address_id = $request
+			? (int) ( $request['address_id'] ?? 0 )
+			: ( $direct
+				? (int) ( $direct['address_id'] ?? 0 )
+				: ( $project_schedule ? (int) ( $project_schedule['address_id'] ?? 0 ) : 0 ) );
 		$contact = ( $contact_id && $this->contacts ) ? $this->contacts->get( $contact_id ) : null;
 		$address = ( $address_id && $this->addresses ) ? $this->addresses->get( $address_id ) : null;
 		$photos  = is_array( $request['photos'] ?? null ) ? $request['photos'] : array(); // direct bookings have no photos
