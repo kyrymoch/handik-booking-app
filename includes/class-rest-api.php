@@ -101,6 +101,16 @@ class Handik_Booking_App_REST_API {
 			'callback'            => array( $this, 'admin_booking_status' ),
 			'permission_callback' => array( $this, 'admin_permission' ),
 		) );
+		// 2.1.23.1 — A5: backfill the local handik_messages table from
+		// OpenAI ChatKit's authoritative thread storage. Triggered by
+		// the "Load chat from OpenAI" button in the admin booking
+		// detail "What the customer wrote" panel when the JS bridge
+		// missed events (ChatKit web component event shape drift).
+		register_rest_route( $namespace, '/admin/booking/(?P<id>\d+)/fetch-chat', array(
+			'methods'             => WP_REST_Server::CREATABLE,
+			'callback'            => array( $this, 'admin_booking_fetch_chat' ),
+			'permission_callback' => array( $this, 'admin_permission' ),
+		) );
 		register_rest_route( $namespace, '/admin/contact', array(
 			'methods'             => WP_REST_Server::CREATABLE,
 			'callback'            => array( $this, 'admin_contact_create' ),
@@ -432,6 +442,110 @@ class Handik_Booking_App_REST_API {
 		}
 		$ok = $this->bookings->update_admin_fields( $id, array( 'admin_status_override' => '' === $status ? null : $status ) );
 		return rest_ensure_response( array( 'success' => $ok, 'status' => $status ) );
+	}
+
+	/**
+	 * 2.1.23.1 — A5: fetch the ChatKit thread transcript from OpenAI
+	 * and backfill the local handik_messages table for this booking.
+	 *
+	 * The local JS bridge (handik-chatkit-bridge.js) writes user/
+	 * assistant messages on `composer.submit` and `'message'` events.
+	 * Newer `<openai-chatkit>` web component releases ship event-
+	 * payload shape changes that occasionally make the bridge's
+	 * `extractMessageText` come back empty, leaving the admin's
+	 * "What the customer wrote" panel blank for what otherwise looks
+	 * like a healthy booking. OpenAI is always the authoritative
+	 * source of truth for the conversation, so we offer the admin a
+	 * one-click backfill — `ChatKit_Service::fetch_thread_messages`
+	 * pages through the `/v1/chatkit/threads/{id}/items` endpoint
+	 * and `Messages_Service::record` collapses duplicates against
+	 * whatever the bridge DID manage to capture (10-second dedup
+	 * window on request_id + role + content).
+	 */
+	public function admin_booking_fetch_chat( WP_REST_Request $request ) {
+		if ( ! $this->bookings || ! $this->job_requests || ! $this->chatkit || ! $this->messages ) {
+			return $this->admin_unavailable();
+		}
+		$booking_id = absint( $request['id'] );
+		$booking    = $this->bookings->get( $booking_id );
+		if ( ! $booking ) {
+			return new WP_Error( 'handik_booking_not_found', __( 'Booking not found.', 'handik-booking-app' ), array( 'status' => 404 ) );
+		}
+		$req_id = (int) ( $booking['job_request_id'] ?? 0 );
+		if ( $req_id <= 0 ) {
+			// Direct + project form bookings have no chat — surface a
+			// clear message rather than a generic "no thread id" error.
+			return new WP_Error(
+				'handik_no_chat_for_form',
+				__( 'This booking was made through a form — there is no AI chat history to fetch.', 'handik-booking-app' ),
+				array( 'status' => 400 )
+			);
+		}
+		$job_request = $this->job_requests->get( $req_id );
+		if ( ! $job_request ) {
+			return new WP_Error( 'handik_request_not_found', __( 'Job request row not found.', 'handik-booking-app' ), array( 'status' => 404 ) );
+		}
+		$thread_id = trim( (string) ( $job_request['chat_thread_id'] ?? '' ) );
+		if ( '' === $thread_id ) {
+			return new WP_Error(
+				'handik_no_thread_id',
+				__( 'No ChatKit thread id is recorded for this booking — nothing to fetch.', 'handik-booking-app' ),
+				array( 'status' => 400 )
+			);
+		}
+
+		$result = $this->chatkit->fetch_thread_messages( $thread_id );
+		if ( ! empty( $result['error'] ) ) {
+			return new WP_Error(
+				'handik_chat_fetch_failed',
+				(string) $result['error'],
+				array( 'status' => isset( $result['status'] ) ? (int) $result['status'] : 502 )
+			);
+		}
+		$messages = isset( $result['messages'] ) && is_array( $result['messages'] ) ? $result['messages'] : array();
+
+		// Pre-load whatever the JS bridge already captured for this
+		// request and build a `role|content` hash set so we don't
+		// double-insert anything we have a local copy of. The
+		// Messages_Service::record() built-in 10-second dedup window
+		// only catches near-simultaneous double-fires from the bridge
+		// itself — it can't recognize a bridge-captured row from
+		// minutes/hours ago that an OpenAI backfill is about to
+		// re-insert with an older source timestamp.
+		$existing       = $this->messages->list_for_request( $req_id, 1000 );
+		$existing_keys  = array();
+		foreach ( $existing as $row ) {
+			$key = (string) ( $row['role'] ?? '' ) . '|' . md5( (string) ( $row['content'] ?? '' ) );
+			$existing_keys[ $key ] = true;
+		}
+
+		$inserted = 0;
+		foreach ( $messages as $msg ) {
+			$role    = (string) ( $msg['role'] ?? 'user' );
+			$content = (string) ( $msg['content'] ?? '' );
+			$key     = $role . '|' . md5( $content );
+			if ( isset( $existing_keys[ $key ] ) ) {
+				continue;
+			}
+			$id = $this->messages->record(
+				$req_id,
+				(string) ( $msg['thread_id'] ?? $thread_id ),
+				$role,
+				$content,
+				is_array( $msg['metadata'] ?? null ) ? $msg['metadata'] : array()
+			);
+			if ( $id > 0 ) {
+				$existing_keys[ $key ] = true;
+				$inserted++;
+			}
+		}
+		return rest_ensure_response( array(
+			'success'           => true,
+			'fetched'           => count( $messages ),
+			'inserted'          => $inserted,
+			'duplicates'        => count( $messages ) - $inserted,
+			'openai_request_id' => isset( $result['openai_request_id'] ) ? (string) $result['openai_request_id'] : '',
+		) );
 	}
 
 	public function admin_contact_create( WP_REST_Request $request ) {

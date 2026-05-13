@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.1.23.0
+Stable tag: 2.1.23.1
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, silent returning-client recognition, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,16 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.1.23.1 =
+* **Sprint 15 / Part 2 — admin "What the customer wrote" panel: structured fallback + on-demand backfill from OpenAI.** Owner-reported: the panel was empty for newer main-SPA bookings even when the conversation clearly happened in ChatKit. Root cause is event-shape drift in the embedded `<openai-chatkit>` web component — the local JS bridge (`handik-chatkit-bridge.js`) listens for `chatkit.log` (`name=composer.submit`) and the bubbled `'message'` event, then runs `extractMessageText()` against the payload. Newer ChatKit releases occasionally ship event-payload structures where neither `detail.data.content` nor `detail.content` carries the typed string, so `recordMessage()` silently no-ops and the local `handik_messages` table stays empty for the booking. OpenAI's thread storage is always authoritative — this release adds a path to read it back.
+* New `Handik_Booking_App_ChatKit_Service::fetch_thread_messages($thread_id, $limit)`. GETs `{api_base}/v1/chatkit/threads/{thread_id}/items` with the existing ChatKit auth headers (`Authorization: Bearer`, `OpenAI-Beta: chatkit_beta=v1`, `OpenAI-Project`, `OpenAI-Organization`). Pages through with `after=last_id` until `has_more=false` or 10 pages × 100 items = 1000-message defensive cap. `normalize_thread_item()` collapses each item's `content` parts (string OR array of `{type, text}` segments) into a single body string, infers `role` from the item `type` when it isn't set explicitly (`user_message` → user, `assistant_message` → assistant, etc.), and returns one row per renderable item — non-renderable tool calls / empty parts are dropped. Errors are logged with the OpenAI `x-request-id` header so admin can correlate against the OpenAI dashboard.
+* New admin REST endpoint `POST /handik-booking-app/v1/admin/booking/{id}/fetch-chat`. Capability-gated via the existing `admin_permission` callback. Looks up `job_request_id`, refuses cleanly for direct/project-form bookings (400 with a clear message — those flows have no chat by design), then calls `ChatKit_Service::fetch_thread_messages` and feeds the result into `Messages_Service::record()`. **Custom dedup**: the built-in 10-second `record()` dedup window can't see bridge-captured rows from minutes/hours ago, so the handler pre-loads `list_for_request` and builds a `role|md5(content)` hash set to skip any message the bridge already captured. Response: `{ fetched, inserted, duplicates, openai_request_id }`.
+* Admin booking detail "What the customer wrote" panel (`Admin_Bookings::transcript_block_markup`): when the local transcript is empty AND `chat_thread_id` is set, the panel renders a **structured fallback** of what we DO know — the initial customer-typed `short_description` (if present), the catalog tasks they selected, the assistant's `assistant_summary` — followed by a **"Load chat from OpenAI"** button. When the transcript already has rows, the same button surfaces as a smaller "Refresh from OpenAI" link so admin can pull any newer messages from the OpenAI side.
+* JS handler `initFetchChat()` in `booking-app-admin.js`. Hits the new endpoint, surfaces the count via toast (`Fetched %1$d messages (%2$d new).`), and reloads the page on success so the transcript renders. Failure paths show the server-side error message inline + as a toast — including the "no chat for form booking" case.
+* Four new i18n strings on `HandikAdmin.i18n`: `fetchingChat`, `fetchedChat`, `noChatFound`, `fetchFailed`.
+* No schema change. No data migration. Plugin DB version stays at 1.6.0.
+* Notes: the `/v1/chatkit/threads/{id}/items` endpoint URL + paging fields (`has_more`, `last_id`, `next_cursor`) are the documented OpenAI ChatKit beta shapes as of this release. The shipped code handles both `data[]` and `items[]` response containers and both `last_id` and `next_cursor` for paging. If OpenAI ships a breaking change, the error path logs the response body so we can adapt in a follow-up patch.
 
 = 2.1.23.0 =
 * **Sprint 15 / Part 1 — booking pipeline: Additional Forms bookings now surface in the admin Bookings list.** Owner-reported P0: every booking made through `[handik_project_day_form]` (multi-day projects) AND a subset of bookings made through `[handik_direct_booking_form]` (direct single-slot) saved the customer into People & Requests but never appeared in the unified Bookings list. Two distinct root causes, both fixed here.

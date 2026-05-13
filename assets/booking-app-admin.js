@@ -1686,6 +1686,60 @@
 		} );
 	}
 
+	// ============================================================
+	// 2.1.23.1 — A5: "Load chat from OpenAI" button on the admin
+	// booking detail "What the customer wrote" panel. Calls
+	// /admin/booking/{id}/fetch-chat, which pages through the
+	// authoritative OpenAI ChatKit thread and backfills
+	// handik_messages. Reloads on success so the transcript renders.
+	// ============================================================
+
+	function initFetchChat() {
+		document.querySelectorAll( '[data-handik-fetch-chat]' ).forEach( function( btn ) {
+			btn.addEventListener( 'click', async function( event ) {
+				event.preventDefault();
+				const bookingId = btn.dataset.bookingId;
+				if ( ! bookingId ) { return; }
+				const status = btn.parentElement
+					? btn.parentElement.querySelector( '[data-handik-fetch-chat-status]' )
+					: null;
+				if ( status ) {
+					status.textContent = i18n.fetchingChat || 'Fetching chat history…';
+				}
+				try {
+					const result = await withButtonLoading( btn, function() {
+						return adminFetch( btn, 'admin/booking/' + bookingId + '/fetch-chat', { body: {} } );
+					} );
+					const fetched  = result && typeof result.fetched  === 'number' ? result.fetched  : 0;
+					const inserted = result && typeof result.inserted === 'number' ? result.inserted : 0;
+					if ( fetched > 0 ) {
+						toast(
+							( i18n.fetchedChat || 'Fetched %1$d messages (%2$d new).' )
+								.replace( '%1$d', String( fetched ) )
+								.replace( '%2$d', String( inserted ) ),
+							'success'
+						);
+						window.setTimeout( function() {
+							window.location.reload();
+						}, 600 );
+					} else {
+						if ( status ) {
+							status.textContent = i18n.noChatFound || 'OpenAI returned no messages for this thread.';
+						} else {
+							toast( i18n.noChatFound || 'OpenAI returned no messages for this thread.', 'info', 3500 );
+						}
+					}
+				} catch ( err ) {
+					const msg = ( err && err.message ) ? err.message : ( i18n.fetchFailed || 'Fetch failed' );
+					if ( status ) {
+						status.textContent = msg;
+					}
+					toast( msg, 'error', 4500 );
+				}
+			} );
+		} );
+	}
+
 	document.addEventListener( 'DOMContentLoaded', function() {
 		initRowLinks();
 		initBookingActions();
@@ -1700,6 +1754,7 @@
 		initRestoreScroll();
 		initDangerZone();
 		initNewBookingFlow();
+		initFetchChat();
 	} );
 
 }( window, document ) );

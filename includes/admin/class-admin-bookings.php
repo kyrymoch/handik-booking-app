@@ -1270,28 +1270,83 @@ class Handik_Booking_App_Admin_Bookings {
 
 	protected function transcript_block_markup( $request, $booking ) {
 		$request_id = $request ? (int) $request['id'] : 0;
-		$messages = ( $this->messages && $request_id ) ? $this->messages->list_for_request( $request_id, 200 ) : array();
+		$messages   = ( $this->messages && $request_id ) ? $this->messages->list_for_request( $request_id, 200 ) : array();
+		$booking_id = $booking ? (int) ( $booking['id'] ?? 0 ) : 0;
+		$thread_id  = $request ? (string) ( $request['chat_thread_id'] ?? '' ) : '';
+		// 2.1.23.1 — A5: structured fallback when the local transcript
+		// is empty AND we have a ChatKit thread id, plus a button that
+		// hits /admin/booking/{id}/fetch-chat to backfill from OpenAI.
+		// The fallback shows the structured booking metadata we DO
+		// have (assistant_summary, selected_tasks, short_description)
+		// so the panel is never just a dead empty-state.
+		$has_fetch_target = ( $booking_id > 0 && '' !== $thread_id );
 
 		ob_start();
 		?>
-		<section class="handik-admin-block">
+		<section class="handik-admin-block" data-handik-transcript-block>
 			<h2 class="handik-admin-section-title"><?php esc_html_e( 'What the customer wrote', 'handik-booking-app' ); ?></h2>
 			<?php if ( empty( $messages ) ) : ?>
-				<p class="handik-admin-muted">
+				<div class="handik-admin-transcript-fallback">
 					<?php
-					if ( $request_id && $request_id < $this->first_request_with_messages_id() ) {
-						esc_html_e( 'No transcript stored for this older booking.', 'handik-booking-app' );
-					} else {
-						esc_html_e( 'Full transcript will appear here once chat persistence catches new messages.', 'handik-booking-app' );
-					}
-					?>
-				</p>
+					$short_description = $request ? trim( (string) ( $request['short_description'] ?? '' ) ) : '';
+					$assistant_summary = $request ? trim( (string) ( $request['assistant_summary'] ?? '' ) ) : '';
+					$selected_tasks    = $request && is_array( $request['selected_tasks'] ?? null ) ? $request['selected_tasks'] : array();
+					$tasks_summary     = ! empty( $selected_tasks ) && $this->catalog
+						? Handik_Booking_App_Admin_Helpers::task_summary_text( $selected_tasks, $this->catalog )
+						: '';
+					if ( '' !== $short_description ) :
+						?>
+						<p class="handik-admin-muted"><strong><?php esc_html_e( 'Initial job description (typed by the customer):', 'handik-booking-app' ); ?></strong></p>
+						<p><?php echo esc_html( $short_description ); ?></p>
+					<?php endif; ?>
+					<?php if ( '' !== $tasks_summary ) : ?>
+						<p class="handik-admin-muted"><strong><?php esc_html_e( 'Tasks the customer selected:', 'handik-booking-app' ); ?></strong></p>
+						<p><?php echo esc_html( $tasks_summary ); ?></p>
+					<?php endif; ?>
+					<?php if ( '' !== $assistant_summary ) : ?>
+						<p class="handik-admin-muted"><strong><?php esc_html_e( 'AI assistant\'s summary of the conversation:', 'handik-booking-app' ); ?></strong></p>
+						<p><?php echo nl2br( esc_html( $assistant_summary ) ); ?></p>
+					<?php endif; ?>
+					<p class="handik-admin-muted">
+						<?php
+						if ( $request_id && $request_id < $this->first_request_with_messages_id() ) {
+							esc_html_e( 'No chat transcript stored locally for this older booking.', 'handik-booking-app' );
+						} else {
+							esc_html_e( 'Chat transcript was not captured locally. Fetch it from OpenAI to populate this panel.', 'handik-booking-app' );
+						}
+						?>
+					</p>
+					<?php if ( $has_fetch_target ) : ?>
+						<button
+							type="button"
+							class="button button-secondary"
+							data-handik-fetch-chat
+							data-booking-id="<?php echo esc_attr( (string) $booking_id ); ?>"
+						>
+							<?php esc_html_e( 'Load chat from OpenAI', 'handik-booking-app' ); ?>
+						</button>
+						<span class="handik-admin-fetch-chat-status" data-handik-fetch-chat-status aria-live="polite"></span>
+					<?php endif; ?>
+				</div>
 			<?php else : ?>
 				<div class="handik-admin-transcript">
 					<?php foreach ( $messages as $msg ) : ?>
 						<?php echo $this->transcript_bubble( $msg ); ?>
 					<?php endforeach; ?>
 				</div>
+				<?php if ( $has_fetch_target ) : ?>
+					<p>
+						<button
+							type="button"
+							class="button button-link"
+							data-handik-fetch-chat
+							data-booking-id="<?php echo esc_attr( (string) $booking_id ); ?>"
+						>
+							<?php esc_html_e( 'Refresh from OpenAI', 'handik-booking-app' ); ?>
+						</button>
+						<span class="handik-admin-fetch-chat-status" data-handik-fetch-chat-status aria-live="polite"></span>
+					</p>
+				<?php endif; ?>
 			<?php endif; ?>
 		</section>
 		<?php
