@@ -359,6 +359,21 @@ class Handik_Booking_App_Admin_People {
 		$tel  = Handik_Booking_App_Admin_Helpers::tel_url( (string) ( $contact['phone'] ?? '' ) );
 		$mail = Handik_Booking_App_Admin_Helpers::mailto_url( (string) ( $contact['email'] ?? '' ) );
 
+		// 2.1.25.0 (B5): replace the wide text-and-emoji buttons (📞
+		// +1 617 555 1234 / ✉ alex@... / 📅 Book a visit) with
+		// matching-style icon-only buttons on mobile. Same component
+		// (.handik-admin-icon-btn) the Bookings detail header uses
+		// — call (green), SMS (blue), email (slate), Book a visit
+		// (primary blue). Number/email is the call-to-action; the
+		// person's full name + the addresses list below carry the
+		// "is this the right person?" context.
+		$phone = (string) ( $contact['phone'] ?? '' );
+		$sms   = $phone ? Handik_Booking_App_Admin_Helpers::sms_url( $phone ) : '';
+		$book_url = Handik_Booking_App_Admin_Helpers::admin_url_for(
+			'handik-booking-app-bookings',
+			array( 'action' => 'new', 'contact_id' => (int) ( $contact['id'] ?? 0 ) )
+		);
+
 		ob_start();
 		?>
 		<header class="handik-admin-person-header"
@@ -373,18 +388,24 @@ class Handik_Booking_App_Admin_People {
 				<?php if ( ! empty( $contact['is_returning'] ) ) : ?><span class="handik-admin-pill handik-admin-pill--info"><?php esc_html_e( 'returning', 'handik-booking-app' ); ?></span><?php endif; ?>
 			</div>
 			<div class="handik-admin-person-header__contacts">
-				<?php if ( $tel ) : ?><a class="button" href="<?php echo esc_url( $tel ); ?>">📞 <?php echo esc_html( (string) $contact['phone'] ); ?></a><?php endif; ?>
-				<?php if ( $mail ) : ?><a class="button" href="<?php echo esc_url( $mail ); ?>">✉️ <?php echo esc_html( (string) $contact['email'] ); ?></a><?php endif; ?>
-				<?php
-				// Sprint 13 — book a visit for this customer. Routes to
-				// the Bookings → Add page with contact_id pre-filled so
-				// the operator skips the search step.
-				$book_url = Handik_Booking_App_Admin_Helpers::admin_url_for(
-					'handik-booking-app-bookings',
-					array( 'action' => 'new', 'contact_id' => (int) ( $contact['id'] ?? 0 ) )
-				);
-				?>
-				<a class="button button-primary" href="<?php echo esc_url( $book_url ); ?>">📅 <?php esc_html_e( 'Book a visit', 'handik-booking-app' ); ?></a>
+				<?php if ( $tel ) : ?>
+					<a class="handik-admin-icon-btn is-call" href="<?php echo esc_url( $tel ); ?>" aria-label="<?php echo esc_attr( sprintf( __( 'Call %s', 'handik-booking-app' ), $phone ) ); ?>" title="<?php echo esc_attr( sprintf( __( 'Call %s', 'handik-booking-app' ), $phone ) ); ?>">
+						<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M20.01 15.38c-1.23 0-2.42-.2-3.53-.56-.35-.12-.74-.03-1.01.24l-1.57 1.97c-2.83-1.35-5.48-3.9-6.89-6.83l1.95-1.66c.27-.28.35-.67.24-1.02-.37-1.11-.56-2.3-.56-3.53 0-.54-.45-.99-.99-.99H4.19C3.65 3 3 3.24 3 3.99 3 13.28 10.73 21 20.01 21c.71 0 .99-.63.99-1.18v-3.45c0-.54-.45-.99-.99-.99z"/></svg>
+					</a>
+				<?php endif; ?>
+				<?php if ( $sms ) : ?>
+					<a class="handik-admin-icon-btn is-sms" href="<?php echo esc_url( $sms ); ?>" aria-label="<?php echo esc_attr( sprintf( __( 'Send SMS to %s', 'handik-booking-app' ), $phone ) ); ?>" title="<?php echo esc_attr( sprintf( __( 'Send SMS to %s', 'handik-booking-app' ), $phone ) ); ?>">
+						<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M20 2H4c-1.1 0-1.99.9-1.99 2L2 22l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM7 9h10v2H7V9zm6 5H7v-2h6v2zm4-6H7V6h10v2z"/></svg>
+					</a>
+				<?php endif; ?>
+				<?php if ( $mail ) : ?>
+					<a class="handik-admin-icon-btn is-email" href="<?php echo esc_url( $mail ); ?>" aria-label="<?php echo esc_attr( sprintf( __( 'Email %s', 'handik-booking-app' ), (string) $contact['email'] ) ); ?>" title="<?php echo esc_attr( sprintf( __( 'Email %s', 'handik-booking-app' ), (string) $contact['email'] ) ); ?>">
+						<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z"/></svg>
+					</a>
+				<?php endif; ?>
+				<a class="handik-admin-icon-btn is-book" href="<?php echo esc_url( $book_url ); ?>" aria-label="<?php esc_attr_e( 'Book a visit for this customer', 'handik-booking-app' ); ?>" title="<?php esc_attr_e( 'Book a visit', 'handik-booking-app' ); ?>">
+					<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M19 4h-1V2h-2v2H8V2H6v2H5c-1.11 0-1.99.9-1.99 2L3 20a2 2 0 002 2h14c1.1 0 2-.9 2-2V6a2 2 0 00-2-2zm0 16H5V10h14v10zM11 12h2v2h-2v-2zm0 4h2v2h-2v-2zm-4-4h2v2H7v-2zm0 4h2v2H7v-2zm8-4h2v2h-2v-2zm0 4h2v2h-2v-2z"/></svg>
+				</a>
 			</div>
 		</header>
 		<?php

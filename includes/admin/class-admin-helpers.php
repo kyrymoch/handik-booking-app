@@ -265,6 +265,24 @@ class Handik_Booking_App_Admin_Helpers {
 		return 'tel:' . preg_replace( '/[^0-9+]/', '', $phone );
 	}
 
+	/**
+	 * 2.1.25.0 — `sms:` URL for the mobile-compact action bar icon. iOS
+	 * Safari opens the Messages composer pre-filled with the recipient
+	 * when this is the link href, Android does the same via the
+	 * default messaging app. Strips formatting the same way `tel_url`
+	 * does (digits + leading +).
+	 *
+	 * @param string $phone Phone in any format.
+	 * @return string `sms:+18005551234` or '' when no phone is set.
+	 */
+	public static function sms_url( $phone ) {
+		$phone = trim( (string) $phone );
+		if ( '' === $phone ) {
+			return '';
+		}
+		return 'sms:' . preg_replace( '/[^0-9+]/', '', $phone );
+	}
+
 	public static function mailto_url( $email ) {
 		$email = sanitize_email( (string) $email );
 		return '' === $email ? '' : 'mailto:' . $email;
