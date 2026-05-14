@@ -1197,10 +1197,32 @@
 		// Re-render on any blur within the current step so an error span
 		// that's no longer applicable (the customer fixed the email and
 		// tabbed to phone) actually disappears.
+		//
+		// 2.1.27.0 (A3 P0 fix): DEFER the re-render via requestAnimationFrame.
+		// On mobile, owner reported that the Continue button "sometimes
+		// doesn't fire" — root cause is exactly this blur handler. When
+		// the customer taps Continue, the previously-focused input fires
+		// blur BEFORE the tap's click event reaches the button. Our
+		// synchronous render() then rebuilds the shell, destroying the
+		// Continue button node the touch was about to land on. The
+		// queued click event then dispatches against a detached element
+		// (whose listener went with it on innerHTML reassignment) and
+		// silently no-ops. Deferring the render to the next animation
+		// frame lets the click event drain first, the action handler
+		// runs (and it'll call render() itself on state change), so the
+		// blur-driven refresh is a no-op for the common "Continue
+		// after editing a field" path. The visible behaviour (error
+		// spans disappear when the field becomes valid) is preserved
+		// because the action handler's render captures the same state.
 		if ( 'phone' === this.state.step
 			|| 'otp' === this.state.step
 			|| 'details' === this.state.step ) {
-			this.render();
+			var self2 = this;
+			if ( typeof window.requestAnimationFrame === 'function' ) {
+				window.requestAnimationFrame( function () { self2.render(); } );
+			} else {
+				window.setTimeout( function () { self2.render(); }, 0 );
+			}
 		}
 	};
 
