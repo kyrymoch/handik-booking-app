@@ -122,7 +122,25 @@ class Handik_Booking_App_Admin_Bookings {
 		// The CTA shows for any user with the bookings cap; capability
 		// for the underlying REST is the same (admin_permission gate).
 		$add_url = Handik_Booking_App_Admin_Helpers::admin_url_for( 'handik-booking-app-bookings', array( 'action' => 'new' ) );
-		echo '<p class="handik-admin-bookings-list__cta"><a class="button button-primary" href="' . esc_url( $add_url ) . '">+ ' . esc_html__( 'Add booking', 'handik-booking-app' ) . '</a></p>';
+		// 2.1.26.2 — "Pull from Cal.com" backfills any booking that's
+		// on Cal but never reached us: pre-installation bookings, or
+		// bookings where the webhook delivery was dropped. Same
+		// admin_permission gate as the rest of the page.
+		$rest_base    = trailingslashit( rest_url( 'handik-booking-app/v1' ) );
+		$pull_endpoint = $rest_base . 'admin/bookings/pull-from-cal';
+		?>
+		<p class="handik-admin-bookings-list__cta">
+			<a class="button button-primary" href="<?php echo esc_url( $add_url ); ?>">+ <?php esc_html_e( 'Add booking', 'handik-booking-app' ); ?></a>
+			<button type="button"
+				class="button button-secondary"
+				data-handik-pull-from-cal
+				data-pull-endpoint="<?php echo esc_attr( esc_url_raw( $pull_endpoint ) ); ?>"
+				data-rest-nonce="<?php echo esc_attr( wp_create_nonce( 'wp_rest' ) ); ?>">
+				<?php esc_html_e( 'Pull from Cal.com', 'handik-booking-app' ); ?>
+			</button>
+			<span class="handik-admin-pull-from-cal-status" data-handik-pull-from-cal-status aria-live="polite"></span>
+		</p>
+		<?php
 
 		echo $this->filter_bar_markup( $filter_time, $filter_status, $query );
 
@@ -1449,9 +1467,9 @@ class Handik_Booking_App_Admin_Bookings {
 			data-booking-id="<?php echo esc_attr( (string) $booking_id ); ?>"
 			data-rest-base="<?php echo esc_attr( esc_url_raw( $rest ) ); ?>"
 			data-rest-nonce="<?php echo esc_attr( wp_create_nonce( 'wp_rest' ) ); ?>">
-			<button type="button" class="button" data-handik-action="add-note">📝 <?php esc_html_e( 'Add note', 'handik-booking-app' ); ?></button>
-			<button type="button" class="button" data-handik-action="mark-completed">✅ <?php esc_html_e( 'Mark as completed', 'handik-booking-app' ); ?></button>
-			<button type="button" class="button" data-handik-action="mark-cancelled">⛔ <?php esc_html_e( 'Mark as cancelled', 'handik-booking-app' ); ?></button>
+			<button type="button" class="button" data-handik-action="add-note">📝 <?php esc_html_e( 'Note', 'handik-booking-app' ); ?></button>
+			<button type="button" class="button" data-handik-action="mark-completed">✅ <?php esc_html_e( 'Completed', 'handik-booking-app' ); ?></button>
+			<button type="button" class="button" data-handik-action="mark-cancelled">⛔ <?php esc_html_e( 'Cancelled', 'handik-booking-app' ); ?></button>
 			<?php if ( $has_admin_status_override ) : ?>
 				<button type="button" class="button-link" data-handik-action="clear-override"><?php esc_html_e( 'Clear manual status', 'handik-booking-app' ); ?></button>
 			<?php endif; ?>

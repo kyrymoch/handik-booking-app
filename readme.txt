@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.1.26.1
+Stable tag: 2.1.26.2
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, silent returning-client recognition, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,14 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.1.26.2 =
+* **P0 fix — Project Work Days form: multi-day confirm fails with "One of your selected days could not be confirmed and the others were released. Please pick a new set."** Owner-reported after 2.1.26.1. Investigated the server-side log: Cal.com API v2 responds `end property is wrong, property end should not exist` when our `Cal_Api_Service::create_booking()` POSTs a body containing both `start` + `end` + `lengthInMinutes`. Cal's bookings v2 schema dropped acceptance of `end` — it now derives it from `start + lengthInMinutes`. We had been sending all three since 2.1.9.x; the schema tightening on Cal's side started rejecting bookings sometime between 2.1.26.0 and the owner's most recent test. Fix: strip `end` from the request body and derive `lengthInMinutes` from `args['end'] - args['start']` if the caller passed `end` without `duration_minutes`. The body the API actually sees now is `{start, lengthInMinutes, attendee, eventTypeId, ...}`. Direct booking form was unaffected because it uses the Cal embed iframe, not our server-side `create_booking`.
+* **Pull from Cal.com — owner-requested backfill button.** Owner-reported gap: bookings made BEFORE we shipped webhook-side external mirroring (2.1.24.0) live on Cal but never reached our `handik_bookings` table — they don't appear in the unified admin Bookings list. Also covers webhook-drop scenarios (network blip, secret rotated mid-flight). New REST endpoint `POST /handik-booking-app/v1/admin/bookings/pull-from-cal` admin-only: lists Cal bookings via the v2 API (new `Cal_Api_Service::list_bookings($args)` method, paginated, capped at 1000 per call), reads the existing `handik_bookings.cal_booking_id` set into a hash, and calls `upsert_external_booking` only for items missing locally. Reuses the same external-booking code path the webhook uses — attendee → contact matching, raw_webhook_json stash, external-row fallback — so the result is identical to a freshly-arrived webhook. Default range: last 90 days through 90 days in the future; admin can pass `dateFrom` / `dateTo` body params or `pull_all=1` to override.
+* **Admin UI** — "Pull from Cal.com" button on the Bookings list page next to the "+ Add booking" button (`data-handik-pull-from-cal`). Click → toast `Fetched X · Y new · Z already there` → page reloads if any rows were inserted. Three new i18n strings on `HandikAdmin.i18n`: `pullFromCalFetching`, `pullFromCalDone`, `pullFromCalFailed`.
+* **Polish — shorter action button labels** on the Bookings detail page: `Add note` → `Note`, `Mark as completed` → `Completed`, `Mark as cancelled` → `Cancelled`. Owner-reported (cluster 2 followup) that even after the mobile-compact CSS in 2.1.25.0 the buttons still felt over-wide on phones.
+* **Polish — "Abandoned drafts (24h+)" → "Drafts".** Owner-reported (cluster 3 followup): the dashboard "Action needed" chip and the focus-list page title both used the longer label. Renamed to just "Drafts" — the 24-hour cutoff is an implementation detail the operator doesn't need on the chip surface.
+* No DB change. No migration.
 
 = 2.1.26.1 =
 * **A3 P0 fix — "Continue button sometimes doesn't fire on first tap" on mobile.** Owner-reported across both the main `[handik_booking_app]` form and the Additional Forms SPAs. Two coordinated patches close the race:

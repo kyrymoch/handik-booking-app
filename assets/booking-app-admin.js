@@ -1756,7 +1756,77 @@
 		initNewBookingFlow();
 		initFetchChat();
 		initBulkDeleteDrafts();
+		initPullFromCal();
 	} );
+
+	// ============================================================
+	// 2.1.26.2: "Pull from Cal.com" backfill button on the Bookings
+	// list page. Lists Cal bookings via /admin/bookings/pull-from-cal
+	// and upserts any that aren't already mirrored. Toasts a summary
+	// (fetched / already-present / inserted) and reloads when at
+	// least one row was inserted so the new bookings appear in the
+	// list.
+	// ============================================================
+	function initPullFromCal() {
+		document.querySelectorAll( '[data-handik-pull-from-cal]' ).forEach( function( btn ) {
+			const endpoint = btn.dataset.pullEndpoint || '';
+			const nonce    = btn.dataset.restNonce    || '';
+			if ( ! endpoint ) { return; }
+			const status   = btn.parentElement
+				? btn.parentElement.querySelector( '[data-handik-pull-from-cal-status]' )
+				: null;
+			btn.addEventListener( 'click', async function( event ) {
+				event.preventDefault();
+				if ( status ) {
+					status.textContent = i18n.pullFromCalFetching || 'Fetching bookings from Cal.com…';
+				}
+				try {
+					const result = await withButtonLoading( btn, function() {
+						return window.fetch( endpoint, {
+							method: 'POST',
+							credentials: 'same-origin',
+							headers: {
+								'X-WP-Nonce': nonce,
+								'Content-Type': 'application/json',
+							},
+							body: JSON.stringify( {} ),
+						} ).then( function( response ) {
+							return response.json().catch( function() { return {}; } ).then( function( payload ) {
+								if ( ! response.ok ) {
+									const error = new Error( payload.message || payload.code || 'Request failed' );
+									error.status = response.status;
+									throw error;
+								}
+								return payload;
+							} );
+						} );
+					} );
+					const fetched  = result && typeof result.fetched  === 'number' ? result.fetched  : 0;
+					const inserted = result && typeof result.inserted === 'number' ? result.inserted : 0;
+					const already  = result && typeof result.already_present === 'number' ? result.already_present : 0;
+					const summary  = ( i18n.pullFromCalDone || 'Fetched %1$d · %2$d new · %3$d already there' )
+						.replace( '%1$d', String( fetched ) )
+						.replace( '%2$d', String( inserted ) )
+						.replace( '%3$d', String( already ) );
+					if ( status ) {
+						status.textContent = summary;
+					}
+					toast( summary, 'success' );
+					if ( inserted > 0 ) {
+						window.setTimeout( function() {
+							window.location.reload();
+						}, 800 );
+					}
+				} catch ( err ) {
+					const msg = ( err && err.message ) ? err.message : ( i18n.pullFromCalFailed || 'Pull from Cal.com failed' );
+					if ( status ) {
+						status.textContent = msg;
+					}
+					toast( msg, 'error', 4500 );
+				}
+			} );
+		} );
+	}
 
 	// ============================================================
 	// 2.1.26.0 (A4): bulk-delete "Abandoned drafts (24h+)" focus

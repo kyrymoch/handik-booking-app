@@ -427,7 +427,7 @@ class Handik_Booking_App_Admin_Dashboard {
 				<h2><?php esc_html_e( 'Action needed', 'handik-booking-app' ); ?></h2>
 			</header>
 			<div class="handik-admin-chip-row">
-				<?php echo Handik_Booking_App_Admin_Helpers::chip_markup( $drafts_url, __( 'abandoned drafts (24h+)', 'handik-booking-app' ), $counts['drafts_24h'], 'warning' ); ?>
+				<?php echo Handik_Booking_App_Admin_Helpers::chip_markup( $drafts_url, __( 'drafts', 'handik-booking-app' ), $counts['drafts_24h'], 'warning' ); ?>
 				<?php echo Handik_Booking_App_Admin_Helpers::chip_markup( $ready_url, __( 'ready, not booked', 'handik-booking-app' ), $counts['ready_not_booked'], 'warning' ); ?>
 				<?php echo Handik_Booking_App_Admin_Helpers::chip_markup( $unsafe_url, __( 'unsafe in 7d', 'handik-booking-app' ), $counts['unsafe_7d'], 'danger' ); ?>
 				<?php echo Handik_Booking_App_Admin_Helpers::chip_markup( $errors_url, __( 'errors today', 'handik-booking-app' ), $counts['errors_24h'], 'danger' ); ?>

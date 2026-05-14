@@ -35,8 +35,10 @@ class Handik_Booking_App_REST_API {
 	protected $direct_booking;
 	/** @var Handik_Booking_App_Booking_Presets_Service|null */
 	protected $booking_presets;
+	/** @var Handik_Booking_App_Cal_Api_Service|null */
+	protected $cal_api;
 
-	public function __construct( $app, $auth, $chatkit, $webhook, $messages = null, $bookings = null, $contacts = null, $addresses = null, $settings = null, $logger = null, $job_requests = null, $service_catalog = null, $cascade_delete = null, $direct_booking = null, $booking_presets = null ) {
+	public function __construct( $app, $auth, $chatkit, $webhook, $messages = null, $bookings = null, $contacts = null, $addresses = null, $settings = null, $logger = null, $job_requests = null, $service_catalog = null, $cascade_delete = null, $direct_booking = null, $booking_presets = null, $cal_api = null ) {
 		$this->app             = $app;
 		$this->auth            = $auth;
 		$this->chatkit         = $chatkit;
@@ -52,6 +54,7 @@ class Handik_Booking_App_REST_API {
 		$this->cascade_delete  = $cascade_delete;
 		$this->direct_booking  = $direct_booking;
 		$this->booking_presets = $booking_presets;
+		$this->cal_api         = $cal_api;
 
 		add_action( 'rest_api_init', array( $this, 'register_routes' ) );
 	}
@@ -139,6 +142,17 @@ class Handik_Booking_App_REST_API {
 		// drop is identical to the single-row delete path (messages
 		// → bookings → photos → request row → contact_id stays
 		// orphan-safe via existing cleanup).
+		// 2.1.26.2 — A6 follow-up: pull from Cal.com on demand. Lists
+		// Cal bookings via the v2 API and upserts any that aren't
+		// already in handik_bookings. Use cases: backfilling bookings
+		// that pre-date the plugin install OR bookings made directly
+		// on Cal.com that the webhook failed to deliver (network
+		// drop, secret rotated, etc).
+		register_rest_route( $namespace, '/admin/bookings/pull-from-cal', array(
+			'methods'             => WP_REST_Server::CREATABLE,
+			'callback'            => array( $this, 'admin_pull_from_cal' ),
+			'permission_callback' => array( $this, 'admin_permission' ),
+		) );
 		register_rest_route( $namespace, '/admin/job-requests/bulk-delete', array(
 			'methods'             => WP_REST_Server::CREATABLE,
 			'callback'            => array( $this, 'admin_job_requests_bulk_delete' ),
@@ -686,6 +700,102 @@ class Handik_Booking_App_REST_API {
 	 * per call (defensive cap so a single REST round-trip doesn't
 	 * timeout / OOM on a corrupt selection).
 	 */
+	/**
+	 * 2.1.26.2 — A6 follow-up: pull bookings from Cal.com and upsert
+	 * any that aren't already mirrored locally. Covers two gaps the
+	 * automatic webhook doesn't:
+	 *   1. Bookings made BEFORE we shipped webhook-side external
+	 *      mirroring (2.1.24.0) — they exist on Cal but never reached
+	 *      our handik_bookings table.
+	 *   2. Bookings where the webhook delivery was dropped (network
+	 *      blip, secret rotated mid-flight, signature mismatch we
+	 *      logged and bailed on).
+	 *
+	 * Strategy: read the existing handik_bookings.cal_booking_id set
+	 * into a hash, page through Cal's /v2/bookings, and only call
+	 * upsert_external_booking for items NOT already in the local
+	 * hash. Reuses the same external-booking code path the webhook
+	 * uses, so attendee → contact matching, raw_webhook_json stash,
+	 * and the "no FK at all" external row fallback are identical to
+	 * a fresh webhook arrival.
+	 *
+	 * Default range: last 90 days through 90 days in the future.
+	 * Caller can override via `dateFrom` / `dateTo` body params (ISO
+	 * 8601), or pass `pull_all=1` to scan up to the 1000-booking
+	 * defensive cap with no date filter.
+	 */
+	public function admin_pull_from_cal( WP_REST_Request $request ) {
+		if ( ! $this->cal_api || ! $this->bookings ) {
+			return $this->admin_unavailable();
+		}
+
+		$pull_all  = (bool) $request->get_param( 'pull_all' );
+		$date_from = (string) $request->get_param( 'dateFrom' );
+		$date_to   = (string) $request->get_param( 'dateTo' );
+		$args      = array();
+		if ( $pull_all ) {
+			// Cal accepts no-date-filter "give me everything" — capped
+			// at the API's hard limit per call, paginated up to our
+			// internal 1000-booking ceiling in list_bookings.
+		} elseif ( $date_from || $date_to ) {
+			if ( $date_from ) { $args['dateFrom'] = $date_from; }
+			if ( $date_to )   { $args['dateTo']   = $date_to; }
+		} else {
+			$args['dateFrom'] = gmdate( 'Y-m-d\TH:i:s\Z', time() - 90 * DAY_IN_SECONDS );
+			$args['dateTo']   = gmdate( 'Y-m-d\TH:i:s\Z', time() + 90 * DAY_IN_SECONDS );
+		}
+
+		$result = $this->cal_api->list_bookings( $args );
+		if ( ! empty( $result['error'] ) ) {
+			return new WP_Error(
+				'handik_cal_pull_failed',
+				(string) $result['error'],
+				array( 'status' => isset( $result['status'] ) ? (int) $result['status'] : 502 )
+			);
+		}
+
+		$bookings = isset( $result['bookings'] ) && is_array( $result['bookings'] ) ? $result['bookings'] : array();
+
+		// Pre-load existing cal_booking_id set so we don't run a
+		// SELECT per booking. Cap at 5000 — anyone with more than that
+		// has bigger problems than this dedup query.
+		global $wpdb;
+		$table = Handik_Booking_App_DB::table( 'bookings' );
+		$existing_ids = $wpdb->get_col( "SELECT cal_booking_id FROM {$table} WHERE cal_booking_id <> '' LIMIT 5000" ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+		$existing_set = array_flip( array_map( 'strval', (array) $existing_ids ) );
+
+		$inserted     = 0;
+		$already      = 0;
+		$skipped      = 0;
+		foreach ( $bookings as $cal ) {
+			$payload  = isset( $cal['raw'] ) && is_array( $cal['raw'] ) ? $cal['raw'] : $cal;
+			$cal_id   = $this->bookings->extract_booking_id( $payload );
+			if ( '' === $cal_id ) {
+				$skipped++;
+				continue;
+			}
+			if ( isset( $existing_set[ $cal_id ] ) ) {
+				$already++;
+				continue;
+			}
+			$row_id = $this->bookings->upsert_external_booking( $payload, 'booked' );
+			if ( $row_id > 0 ) {
+				$inserted++;
+				$existing_set[ $cal_id ] = true;
+			} else {
+				$skipped++;
+			}
+		}
+
+		return rest_ensure_response( array(
+			'success'         => true,
+			'fetched'         => count( $bookings ),
+			'already_present' => $already,
+			'inserted'        => $inserted,
+			'skipped'         => $skipped,
+		) );
+	}
+
 	public function admin_job_requests_bulk_delete( WP_REST_Request $request ) {
 		if ( ! $this->cascade_delete ) {
 			return $this->admin_unavailable();
