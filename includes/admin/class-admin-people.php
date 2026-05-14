@@ -237,7 +237,7 @@ class Handik_Booking_App_Admin_People {
 		switch ( $filter ) {
 			case 'drafts_old':
 				$rows = $this->job_requests ? $this->job_requests->list_drafts_older_than( 24, 100 ) : array();
-				$title = __( 'Abandoned drafts (24h+)', 'handik-booking-app' );
+				$title = __( 'Drafts', 'handik-booking-app' );
 				break;
 			case 'ready_not_booked':
 				$rows = $this->job_requests ? $this->job_requests->list_ready_not_booked( 7, 100 ) : array();

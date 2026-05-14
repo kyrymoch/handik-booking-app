@@ -174,11 +174,25 @@ class Handik_Booking_App_Cal_Api_Service {
 				'status' => 400,
 			);
 		}
-		if ( ! empty( $args['end'] ) ) {
-			$body['end'] = (string) $args['end'];
-		}
 		if ( ! empty( $args['duration_minutes'] ) ) {
 			$body['lengthInMinutes'] = (int) $args['duration_minutes'];
+		}
+		// 2.1.26.2 P0 fix: Cal API v2 rejects the `end` property
+		// outright ("end property is wrong, property end should not
+		// exist") — it computes the end from `start + lengthInMinutes`.
+		// Previously we always passed both, and Cal accepted it for a
+		// while; the schema tightened and project-form bookings
+		// started failing on subsequent days, triggering the rollback
+		// of the entire schedule ("One of your selected days could
+		// not be confirmed..."). We now derive `lengthInMinutes` from
+		// `args['end']` when it wasn't explicitly passed, so the body
+		// always has duration but never the forbidden `end` field.
+		if ( empty( $body['lengthInMinutes'] ) && ! empty( $args['end'] ) && ! empty( $args['start'] ) ) {
+			$start_ts = strtotime( (string) $args['start'] );
+			$end_ts   = strtotime( (string) $args['end'] );
+			if ( $start_ts && $end_ts && $end_ts > $start_ts ) {
+				$body['lengthInMinutes'] = (int) round( ( $end_ts - $start_ts ) / 60 );
+			}
 		}
 		if ( ! empty( $args['timezone'] ) ) {
 			$body['attendee']['timeZone'] = (string) $args['timezone'];
@@ -349,6 +363,103 @@ class Handik_Booking_App_Cal_Api_Service {
 			'url'     => $url,
 			'raw'     => $raw,
 		);
+	}
+
+	/**
+	 * 2.1.26.2 — List Cal.com bookings via GET /v2/bookings, used by
+	 * the admin "Pull from Cal.com" button to backfill any bookings
+	 * that exist on Cal but never reached our handik_bookings table
+	 * (e.g. the customer abandoned the plugin form and used the "Open
+	 * the booking page directly" link, OR the booking pre-dates this
+	 * plugin's installation, OR a webhook delivery was dropped).
+	 *
+	 * Pages through results until Cal indicates no more pages or we
+	 * hit a defensive cap of 1000 bookings per call (10 pages × 100).
+	 * Optionally filtered by `dateFrom` / `dateTo` (ISO 8601). Returns
+	 * a flat list of normalized booking arrays — same shape as
+	 * `normalize_booking()` (uid / id / start / end / url / raw) plus
+	 * the raw Cal payload preserved for downstream attendee
+	 * extraction in `Bookings_Service::upsert_external_booking`.
+	 *
+	 * @param array<string, mixed> $args Optional: dateFrom, dateTo,
+	 *                                   status ('upcoming'|'past'|'cancelled'),
+	 *                                   limit (per page, default 100).
+	 * @return array{bookings?: array<int, array<string,mixed>>, error?: string, status?: int}
+	 */
+	public function list_bookings( array $args = array() ) {
+		if ( ! $this->is_configured() ) {
+			return array(
+				'error'  => __( 'Cal.com API key is not configured.', 'handik-booking-app' ),
+				'status' => 500,
+			);
+		}
+		$per_page = ! empty( $args['limit'] ) ? (int) $args['limit'] : 100;
+		$per_page = max( 10, min( 100, $per_page ) );
+
+		$base_query = array(
+			'take' => $per_page,
+		);
+		if ( ! empty( $args['dateFrom'] ) ) {
+			$base_query['dateFrom'] = (string) $args['dateFrom'];
+		}
+		if ( ! empty( $args['dateTo'] ) ) {
+			$base_query['dateTo'] = (string) $args['dateTo'];
+		}
+		if ( ! empty( $args['status'] ) ) {
+			// Cal accepts comma-separated status filter; pass through.
+			$base_query['status'] = (string) $args['status'];
+		}
+
+		$collected = array();
+		$skip      = 0;
+		$page_cap  = 10; // defensive: 10 × 100 = 1000 max
+		for ( $page = 0; $page < $page_cap; $page++ ) {
+			$query = $base_query;
+			if ( $skip > 0 ) {
+				$query['skip'] = $skip;
+			}
+			$response = $this->request(
+				'GET',
+				'/bookings',
+				array(
+					'query'   => $query,
+					'version' => self::BOOKINGS_API_VERSION,
+				)
+			);
+			if ( ! empty( $response['error'] ) ) {
+				return $response;
+			}
+			$data = isset( $response['data']['data'] ) && is_array( $response['data']['data'] )
+				? $response['data']['data']
+				: ( isset( $response['data'] ) && is_array( $response['data'] ) ? $response['data'] : array() );
+
+			if ( empty( $data ) ) {
+				break;
+			}
+			foreach ( $data as $raw ) {
+				if ( ! is_array( $raw ) ) {
+					continue;
+				}
+				$normalized          = $this->normalize_booking( $raw );
+				$normalized['raw']   = $raw;
+				$collected[]         = $normalized;
+			}
+			// Cal returns either `pagination.hasNextPage` (newer
+			// shape) or just a flat array of N items (older shape).
+			// Both are handled — we stop when we got fewer items
+			// than requested, OR when the response signals no more.
+			$has_more = false;
+			if ( isset( $response['data']['pagination']['hasNextPage'] ) ) {
+				$has_more = (bool) $response['data']['pagination']['hasNextPage'];
+			} elseif ( count( $data ) >= $per_page ) {
+				$has_more = true;
+			}
+			if ( ! $has_more ) {
+				break;
+			}
+			$skip += $per_page;
+		}
+		return array( 'bookings' => $collected );
 	}
 
 	// ---------- internals -------------------------------------------------

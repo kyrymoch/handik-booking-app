@@ -438,6 +438,9 @@ class Handik_Booking_App_Admin {
 					'bulkDeleteTitle'   => __( 'Delete drafts', 'handik-booking-app' ),
 					'bulkDeleteConfirm' => __( 'Delete %d drafts? This is irreversible. Linked messages, photos and bookings will also be removed.', 'handik-booking-app' ),
 					'bulkDeleteDone'    => __( 'Deleted %d drafts.', 'handik-booking-app' ),
+					'pullFromCalFetching' => __( 'Fetching bookings from Cal.com…', 'handik-booking-app' ),
+					'pullFromCalDone'     => __( 'Fetched %1$d · %2$d new · %3$d already there', 'handik-booking-app' ),
+					'pullFromCalFailed'   => __( 'Pull from Cal.com failed. See server logs.', 'handik-booking-app' ),
 				),
 			)
 		);
