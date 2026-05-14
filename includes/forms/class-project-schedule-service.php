@@ -51,13 +51,23 @@ class Handik_Booking_App_Project_Schedule_Service {
 	protected $addresses;
 	/** @var Handik_Booking_App_Logger|null */
 	protected $logger;
+	/** @var Handik_Booking_App_Bookings_Service|null */
+	protected $bookings;
 
-	public function __construct( $presets, $cal_api, $contacts, $addresses, $logger = null ) {
+	public function __construct( $presets, $cal_api, $contacts, $addresses, $logger = null, $bookings = null ) {
 		$this->presets   = $presets;
 		$this->cal_api   = $cal_api;
 		$this->contacts  = $contacts;
 		$this->addresses = $addresses;
 		$this->logger    = $logger;
+		// 1.6.0 — wired so confirm_schedule can mirror each created
+		// work-day into the unified `handik_bookings` table the admin
+		// Bookings list reads from. Optional + null-guarded for the
+		// same reason direct booking made it optional: keeps legacy
+		// `new Project_Schedule_Service(...)` callers (admin module,
+		// tests) from breaking when this service is constructed
+		// without DI.
+		$this->bookings  = $bookings;
 
 		// Daily cleanup cron — deletes abandoned schedules (still in
 		// SELECTING / DRAFT after 7 days). Without this, every customer who
@@ -587,6 +597,26 @@ class Handik_Booking_App_Project_Schedule_Service {
 					'cal_booking_url'  => (string) $cal_booking['url'],
 				)
 			);
+			// 1.6.0 — mirror this work day into the unified
+			// `handik_bookings` table so it surfaces in the admin
+			// Bookings list ("?page=handik-booking-app-bookings").
+			// Idempotent via cal_booking_id UNIQUE — the trailing
+			// `Webhook_Service::dispatch_project()` re-upsert will
+			// hit the same row and UPDATE rather than INSERT. Null-
+			// guarded so legacy construction (no $bookings injected)
+			// keeps working — the webhook path still backfills.
+			if ( $this->bookings && method_exists( $this->bookings, 'upsert_from_project' ) ) {
+				$this->bookings->upsert_from_project(
+					(int) $day['id'],
+					$cal_booking,
+					'booked',
+					array(
+						'booking_type'     => (string) ( $schedule['booking_type'] ?? '' ),
+						'event_type_slug'  => (string) ( $schedule['cal_event_slug'] ?? '' ),
+						'duration_minutes' => (int) ( $schedule['work_day_duration_minutes'] ?? 0 ),
+					)
+				);
+			}
 			$created[] = array(
 				'day_id'  => (int) $day['id'],
 				'uid'     => (string) $cal_booking['uid'],

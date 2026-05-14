@@ -133,8 +133,43 @@ class Handik_Booking_App_Webhook_Service {
 		}
 
 		if ( ! $request_id ) {
-			$this->logger->error( 'Could not match Cal webhook to job request.', array( 'event' => $event, 'payload' => $payload ) );
-			return array( 'error' => __( 'Matching request not found.', 'handik-booking-app' ), 'status' => 404 );
+			// 1.6.1 — A6 fallback: this webhook didn't match any of our
+			// local source paths (no handik_* metadata, no
+			// cal_booking_id match in job_requests, no
+			// email/phone hit on a pending request). That's the
+			// "customer used the 'Open the booking page directly'
+			// link and booked on Cal.com without going through our
+			// flow" path. Previously we returned 404 here and the
+			// booking became invisible. Now we mirror it as an
+			// external row in handik_bookings so it surfaces in the
+			// admin Bookings list with attendee info from the
+			// webhook payload.
+			$mapped_status = $this->map_status( $event );
+			if ( '' === $mapped_status ) {
+				$this->logger->info(
+					'Cal webhook acknowledged for external booking (no state change).',
+					array( 'event' => $event )
+				);
+				return array( 'success' => true, 'status' => 'ignored' );
+			}
+			$row_id = $this->bookings->upsert_external_booking( $data, $mapped_status );
+			if ( ! $row_id ) {
+				$this->logger->error(
+					'Cal external-booking mirror failed — no Cal booking id in payload.',
+					array( 'event' => $event, 'payload' => $payload )
+				);
+				return array( 'error' => __( 'Webhook payload missing Cal booking id.', 'handik-booking-app' ), 'status' => 422 );
+			}
+			$this->logger->info(
+				'Cal external booking captured (no local source row).',
+				array(
+					'event'      => $event,
+					'booking_id' => $this->bookings->extract_booking_id( $data ),
+					'row_id'     => $row_id,
+					'status'     => $mapped_status,
+				)
+			);
+			return array( 'success' => true, 'status' => $mapped_status, 'external' => true );
 		}
 
 		$data['booking_type'] = ! empty( $metadata['handik_booking_type'] ) ? sanitize_key( $metadata['handik_booking_type'] ) : '';
@@ -303,6 +338,30 @@ class Handik_Booking_App_Webhook_Service {
 		// other events ("cancelled", "rescheduled") flow through unchanged.
 		$day_status = ( 'booked' === $status ) ? Handik_Booking_App_Project_Schedule_Service::DAY_STATUS_CONFIRMED : $status;
 		$this->project->update_day_status_by_uid( $uid, $day_status );
+
+		// 1.6.0 — also mirror the work day into `handik_bookings` so
+		// it surfaces in the unified admin Bookings list. Idempotent
+		// via cal_booking_id UNIQUE — collapses with the leading-edge
+		// upsert that already fired in
+		// `Project_Schedule_Service::confirm_schedule()`. Lookup the
+		// day_id off uid because the webhook only carries
+		// schedule_id + uid (NOT day_id in metadata — the day index
+		// isn't stable across reschedules).
+		if ( $this->bookings && method_exists( $this->bookings, 'upsert_from_project' ) ) {
+			$day_row = $this->project->find_day_by_uid( $uid );
+			if ( $day_row ) {
+				$this->bookings->upsert_from_project(
+					(int) $day_row['id'],
+					$data,
+					$status,
+					array(
+						'booking_type'     => (string) ( $schedule['booking_type'] ?? '' ),
+						'event_type_slug'  => (string) ( $schedule['cal_event_slug'] ?? '' ),
+						'duration_minutes' => (int) ( $schedule['work_day_duration_minutes'] ?? 0 ),
+					)
+				);
+			}
+		}
 
 		$this->logger->info(
 			'Cal webhook routed to project work days.',

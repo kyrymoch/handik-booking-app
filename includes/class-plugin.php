@@ -66,7 +66,7 @@ class Handik_Booking_App_Plugin {
 		$this->contacts       = new Handik_Booking_App_Contacts_Service( $this->logger );
 		$this->addresses      = new Handik_Booking_App_Addresses_Service();
 		$this->job_requests   = new Handik_Booking_App_Job_Requests_Service( $this->logger );
-		$this->bookings       = new Handik_Booking_App_Bookings_Service( $this->logger, $this->job_requests );
+		$this->bookings       = new Handik_Booking_App_Bookings_Service( $this->logger, $this->job_requests, $this->contacts );
 		$this->messages       = new Handik_Booking_App_Messages_Service( $this->logger );
 		// Sprint 12 — cascading hard-delete coordinator. Wires every
 		// data-layer service so the REST handlers can call one method
@@ -94,7 +94,7 @@ class Handik_Booking_App_Plugin {
 		$this->cal_api          = new Handik_Booking_App_Cal_Api_Service( $this->settings, $this->logger );
 		$this->booking_presets  = new Handik_Booking_App_Booking_Presets_Service( $this->logger );
 		$this->direct_booking   = new Handik_Booking_App_Direct_Booking_Service( $this->booking_presets, $this->contacts, $this->addresses, $this->settings, $this->logger, $this->bookings );
-		$this->project_schedule = new Handik_Booking_App_Project_Schedule_Service( $this->booking_presets, $this->cal_api, $this->contacts, $this->addresses, $this->logger );
+		$this->project_schedule = new Handik_Booking_App_Project_Schedule_Service( $this->booking_presets, $this->cal_api, $this->contacts, $this->addresses, $this->logger, $this->bookings );
 		$this->forms_rest_api   = new Handik_Booking_App_Forms_Rest_Api( $this->booking_presets, $this->direct_booking, $this->project_schedule, $this->logger );
 		$this->forms_router     = new Handik_Booking_App_Forms_Router( $this->booking_presets, $this->project_schedule, $this->settings, $this->appearance );
 		$this->admin_additional_forms = new Handik_Booking_App_Admin_Additional_Forms( $this->booking_presets, $this->direct_booking, $this->project_schedule, $this->contacts, $this->addresses );

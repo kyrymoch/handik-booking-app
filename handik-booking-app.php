@@ -3,7 +3,7 @@
  * Plugin Name: Handik Booking App
  * Plugin URI: https://handik.pro/
  * Description: Single-page booking application for Handik with CRM, hosted ChatKit, silent returning-client recognition, and Cal.com orchestration.
- * Version: 2.1.22.4
+ * Version: 2.1.24.0
  * Author: Handik
  * Author URI: https://handik.pro/
  * Text Domain: handik-booking-app
@@ -16,8 +16,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'HANDIK_BOOKING_APP_VERSION', '2.1.22.4' );
-define( 'HANDIK_BOOKING_APP_DB_VERSION', '1.5.2' );
+define( 'HANDIK_BOOKING_APP_VERSION', '2.1.24.0' );
+define( 'HANDIK_BOOKING_APP_DB_VERSION', '1.6.1' );
 define( 'HANDIK_BOOKING_APP_FILE', __FILE__ );
 define( 'HANDIK_BOOKING_APP_PATH', plugin_dir_path( __FILE__ ) );
 define( 'HANDIK_BOOKING_APP_URL', plugin_dir_url( __FILE__ ) );

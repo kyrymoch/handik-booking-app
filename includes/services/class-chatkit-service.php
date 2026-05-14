@@ -1091,4 +1091,236 @@ class Handik_Booking_App_ChatKit_Service {
 			'unsafe_reason'            => sanitize_textarea_field( (string) ( $request['unsafe_reason'] ?? '' ) ),
 		);
 	}
+
+	/**
+	 * 2.1.23.1 — Fetch the persisted message history for a ChatKit
+	 * thread directly from OpenAI's API. Backstop for the local
+	 * `handik_messages` table when the JS bridge missed `composer.submit`
+	 * / `chatkit.message` events (CustomEvent shape can drift between
+	 * embedded `<openai-chatkit>` versions) so the admin's "What the
+	 * customer wrote" panel can still show the authoritative transcript.
+	 *
+	 * Endpoint: `GET {api_base}/v1/chatkit/threads/{thread_id}/items`
+	 * with the same `OpenAI-Beta: chatkit_beta=v1` header as
+	 * `create_session()`. Paginates via the standard `after` cursor.
+	 *
+	 * Returned items are normalized into our local message shape:
+	 *   [ {
+	 *       'role'       => 'user' | 'assistant' | 'system' | 'tool',
+	 *       'content'    => string,
+	 *       'thread_id'  => string,
+	 *       'created_at' => 'YYYY-MM-DD HH:MM:SS' (UTC, mysql),
+	 *       'metadata'   => array,
+	 *     }, ... ]
+	 *
+	 * Caller (admin REST endpoint) is responsible for de-duping
+	 * against existing rows via `Messages_Service::record()`'s
+	 * built-in 10-second dedup window.
+	 *
+	 * @param string $thread_id ChatKit thread id (stored in
+	 *                          `handik_job_requests.chat_thread_id`).
+	 * @param int    $limit     Max items per API page; we'll loop
+	 *                          until the response indicates no
+	 *                          more pages or we hit 1000 total.
+	 * @return array{messages?: array, error?: string, status?: int, openai_request_id?: string}
+	 */
+	public function fetch_thread_messages( $thread_id, $limit = 100 ) {
+		$thread_id = trim( (string) $thread_id );
+		if ( '' === $thread_id ) {
+			return array( 'error' => __( 'No ChatKit thread id on this booking.', 'handik-booking-app' ), 'status' => 400 );
+		}
+		$api_key         = trim( (string) $this->settings->get( 'openai_api_key', '' ) );
+		$api_base        = untrailingslashit( trim( (string) $this->settings->get( 'openai_api_base', 'https://api.openai.com' ) ) );
+		$project_id      = trim( (string) $this->settings->get( 'openai_project_id', '' ) );
+		$organization_id = trim( (string) $this->settings->get( 'openai_organization_id', '' ) );
+
+		if ( '' === $api_key ) {
+			return array( 'error' => __( 'OpenAI API key is not configured.', 'handik-booking-app' ), 'status' => 500 );
+		}
+
+		$headers = array(
+			'Authorization'      => 'Bearer ' . $api_key,
+			'OpenAI-Beta'        => 'chatkit_beta=v1',
+			'X-Client-Request-Id'=> 'handik-chatkit-fetch-' . wp_generate_uuid4(),
+		);
+		if ( $project_id ) {
+			$headers['OpenAI-Project'] = $project_id;
+		}
+		if ( $organization_id ) {
+			$headers['OpenAI-Organization'] = $organization_id;
+		}
+
+		$collected         = array();
+		$after             = '';
+		$openai_request_id = '';
+		$page_cap          = 10; // 10 pages × 100 = 1000 messages max, defensive.
+		for ( $page = 0; $page < $page_cap; $page++ ) {
+			$url = $api_base . '/v1/chatkit/threads/' . rawurlencode( $thread_id ) . '/items?limit=' . absint( $limit );
+			if ( $after ) {
+				$url .= '&after=' . rawurlencode( $after );
+			}
+			$response = wp_remote_get(
+				$url,
+				array(
+					'headers'     => $headers,
+					'timeout'     => 15,
+					'httpversion' => '1.1',
+				)
+			);
+			if ( is_wp_error( $response ) ) {
+				$this->logger->error(
+					'ChatKit thread fetch failed.',
+					array(
+						'message'   => $response->get_error_message(),
+						'thread_id' => $thread_id,
+						'page'      => $page,
+					)
+				);
+				return array( 'error' => __( 'Unable to reach OpenAI to fetch chat history.', 'handik-booking-app' ), 'status' => 502 );
+			}
+			$code              = (int) wp_remote_retrieve_response_code( $response );
+			$raw_body          = (string) wp_remote_retrieve_body( $response );
+			$payload           = json_decode( $raw_body, true );
+			$openai_request_id = (string) wp_remote_retrieve_header( $response, 'x-request-id' );
+
+			if ( $code < 200 || $code >= 300 ) {
+				$this->logger->error(
+					'ChatKit thread fetch returned non-2xx.',
+					array(
+						'status'            => $code,
+						'thread_id'         => $thread_id,
+						'page'              => $page,
+						'openai_request_id' => $openai_request_id,
+						'body'              => is_array( $payload ) ? $payload : substr( $raw_body, 0, 500 ),
+					)
+				);
+				$error = $this->extract_error_message( $payload, $raw_body );
+				if ( ! $error ) {
+					/* translators: %d: HTTP status code */
+					$error = sprintf( __( 'OpenAI returned HTTP %d.', 'handik-booking-app' ), $code );
+				}
+				return array(
+					'error'             => $error,
+					'status'            => $code >= 400 ? $code : 502,
+					'openai_request_id' => $openai_request_id,
+				);
+			}
+
+			$items = array();
+			if ( is_array( $payload ) ) {
+				if ( isset( $payload['data'] ) && is_array( $payload['data'] ) ) {
+					$items = $payload['data'];
+				} elseif ( isset( $payload['items'] ) && is_array( $payload['items'] ) ) {
+					$items = $payload['items'];
+				}
+			}
+			foreach ( $items as $item ) {
+				$normalized = $this->normalize_thread_item( $item, $thread_id );
+				if ( $normalized ) {
+					$collected[] = $normalized;
+				}
+			}
+
+			$has_more   = ! empty( $payload['has_more'] );
+			$next_after = isset( $payload['last_id'] ) ? (string) $payload['last_id']
+				: ( isset( $payload['next_cursor'] ) ? (string) $payload['next_cursor'] : '' );
+			if ( ! $has_more || '' === $next_after ) {
+				break;
+			}
+			$after = $next_after;
+		}
+
+		$this->logger->info(
+			'ChatKit thread fetched.',
+			array(
+				'thread_id'         => $thread_id,
+				'message_count'     => count( $collected ),
+				'openai_request_id' => $openai_request_id,
+			)
+		);
+		return array(
+			'messages'          => $collected,
+			'openai_request_id' => $openai_request_id,
+		);
+	}
+
+	/**
+	 * Normalize one ChatKit thread item into the shape our
+	 * `Messages_Service::record()` accepts. Items come in several
+	 * shapes (`type: user_message | assistant_message | client_tool_call`
+	 * etc.), with `content` either a string or an array of parts
+	 * `[ { type: "input_text" | "output_text", text: "..." } ]`. We
+	 * collapse parts to a single string and infer the role from
+	 * the `type` when an explicit `role` isn't present.
+	 *
+	 * @param mixed  $item      Raw item from the ChatKit API response.
+	 * @param string $thread_id Thread id (carried into the row).
+	 * @return array<string, mixed>|null Normalized item, or null if
+	 *                                   the item is non-renderable
+	 *                                   (e.g. tool invocation with no
+	 *                                   text body).
+	 */
+	protected function normalize_thread_item( $item, $thread_id ) {
+		if ( ! is_array( $item ) ) {
+			return null;
+		}
+		$type = (string) ( $item['type'] ?? '' );
+		$role = (string) ( $item['role'] ?? '' );
+		if ( '' === $role ) {
+			if ( false !== strpos( $type, 'user' ) ) {
+				$role = 'user';
+			} elseif ( false !== strpos( $type, 'assistant' ) ) {
+				$role = 'assistant';
+			} elseif ( false !== strpos( $type, 'system' ) ) {
+				$role = 'system';
+			} elseif ( false !== strpos( $type, 'tool' ) ) {
+				$role = 'tool';
+			} else {
+				$role = 'assistant';
+			}
+		}
+		$content = '';
+		if ( isset( $item['content'] ) ) {
+			if ( is_string( $item['content'] ) ) {
+				$content = $item['content'];
+			} elseif ( is_array( $item['content'] ) ) {
+				$parts = array();
+				foreach ( $item['content'] as $part ) {
+					if ( is_string( $part ) ) {
+						$parts[] = $part;
+					} elseif ( is_array( $part ) ) {
+						$text = (string) ( $part['text'] ?? $part['value'] ?? $part['content'] ?? '' );
+						if ( '' !== $text ) {
+							$parts[] = $text;
+						}
+					}
+				}
+				$content = trim( implode( "\n\n", array_filter( $parts ) ) );
+			}
+		}
+		if ( '' === $content && ! empty( $item['text'] ) && is_string( $item['text'] ) ) {
+			$content = $item['text'];
+		}
+		if ( '' === trim( $content ) ) {
+			return null;
+		}
+		$created_at = '';
+		if ( ! empty( $item['created_at'] ) ) {
+			$ts = is_numeric( $item['created_at'] ) ? (int) $item['created_at'] : strtotime( (string) $item['created_at'] );
+			if ( $ts ) {
+				$created_at = gmdate( 'Y-m-d H:i:s', $ts );
+			}
+		}
+		return array(
+			'role'       => $role,
+			'content'    => $content,
+			'thread_id'  => $thread_id,
+			'created_at' => $created_at,
+			'metadata'   => array(
+				'source'         => 'openai_thread_fetch',
+				'openai_item_id' => (string) ( $item['id'] ?? '' ),
+				'openai_type'    => $type,
+			),
+		);
+	}
 }
