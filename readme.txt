@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.1.26.0
+Stable tag: 2.1.26.1
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, silent returning-client recognition, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,13 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.1.26.1 =
+* **A3 P0 fix — "Continue button sometimes doesn't fire on first tap" on mobile.** Owner-reported across both the main `[handik_booking_app]` form and the Additional Forms SPAs. Two coordinated patches close the race:
+* **Root cause** is a synchronous re-render driven by the field blur handler. When the customer taps Continue on a phone, the previously-focused input fires `blur` BEFORE the tap's `click` event reaches the button. The blur handlers in both SPAs called `this.render()` synchronously to refresh the inline error spans for the just-blurred field — but `render()` does `shell.innerHTML = '...'`, which destroys the Continue button DOM node the touch was about to land on. The queued `click` event then dispatches against a detached element (whose listener went with it when innerHTML reassigned) and silently no-ops. From the customer's perspective: tap, nothing happens, second tap works.
+* **Fix #1 — defer the blur-driven re-render via `requestAnimationFrame`** in both `booking-forms.js::onBlur` (the catch-all "re-render on details/phone/otp step blur" branch) and `booking-app.js`'s three field-specific blur listeners (contact.full_name / contact.phone / contact.email). The click event drains first, the action handler runs (which renders itself on the resulting state change), and the blur-driven refresh ends up a no-op for the common "Continue after editing a field" path. Visible behaviour preserved — error spans still clear when the field becomes valid because the action handler's render captures the same state.
+* **Fix #2 — add `touch-action: manipulation`** to `.handik-btn` in `booking-app.css` (shared between both SPAs). Eliminates the legacy 300ms tap delay some browsers still impose to detect double-tap-to-zoom — the form is viewport-sized on phones so the delay is pure latency. Belt-and-suspenders for the rAF defer above.
+* No DB change, no REST changes, no schema. Three files: `booking-forms.js`, `booking-app.js`, `booking-app.css`.
 
 = 2.1.26.0 =
 * **Sprint 17 — People & Requests tweaks (cluster 3).** Two targeted improvements that owner asked for after the cluster 2 mobile pass shipped.

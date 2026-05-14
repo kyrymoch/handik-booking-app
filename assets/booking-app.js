@@ -3751,16 +3751,36 @@
 				} );
 
 				const model = input.getAttribute( 'data-model' );
+				// 2.1.27.0 (A3 P0 fix): defer the render() via rAF to
+				// avoid the mobile Continue-button race. Touch tap on
+				// Continue first fires `blur` on the field the customer
+				// just edited; a synchronous render() here destroys the
+				// Continue button node before the queued click event
+				// lands, so the click hits a detached element and
+				// silently no-ops. The defer lets the click drain
+				// first, the action handler runs (which renders
+				// itself), and this blur-driven refresh ends up a
+				// no-op for the common "Continue after editing a
+				// field" path. Error spans still clear when the field
+				// becomes valid because the action handler's render
+				// captures the same state. Mirrors the Forms SPA fix.
+				const deferRender = () => {
+					if ( typeof window.requestAnimationFrame === 'function' ) {
+						window.requestAnimationFrame( () => this.render() );
+					} else {
+						window.setTimeout( () => this.render(), 0 );
+					}
+				};
 				if ( 'contact.full_name' === model ) {
 					input.addEventListener( 'blur', () => {
 						this.state.touched.full_name = true;
-						this.render();
+						deferRender();
 					} );
 				}
 				if ( 'contact.phone' === model ) {
 					input.addEventListener( 'blur', () => {
 						this.state.touched.phone = true;
-						this.render();
+						deferRender();
 						// Hotfix 2.1.13.1: see note in the input handler — lookup
 						// belongs to the post-OTP path now, not contact_details.
 					} );
@@ -3768,7 +3788,7 @@
 				if ( 'contact.email' === model ) {
 					input.addEventListener( 'blur', () => {
 						this.state.touched.email = true;
-						this.render();
+						deferRender();
 					} );
 				}
 			} );

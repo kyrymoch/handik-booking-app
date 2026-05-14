@@ -464,6 +464,13 @@
 	border-radius: 1rem;
 	font: inherit;
 	font-weight: 700;
+	/* 2.1.27.0 (A3): eliminate the legacy 300ms tap-delay browsers
+	 * still impose to detect double-tap-to-zoom. The form is sized
+	 * to viewport on phones (no zoom needed) so the delay is pure
+	 * latency. Combined with the rAF-deferred re-render in the
+	 * field blur handler, this closes the "Continue sometimes
+	 * doesn't fire on first tap" race the owner reported. */
+	touch-action: manipulation;
 }
 
 .handik-btn__icon {
