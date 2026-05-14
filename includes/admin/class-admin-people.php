@@ -264,9 +264,24 @@ class Handik_Booking_App_Admin_People {
 			? $this->contacts->get_many( $focus_contact_ids )
 			: array();
 
+		// 2.1.26.0 — A4: bulk-delete UI for the "Abandoned drafts (24h+)"
+		// focus list. Owner reported many "Unknown Drafts" left over
+		// from removed test contacts that can't be cleared one at a
+		// time. Only render the bulk checkboxes for `drafts_old` —
+		// the other focus lists (ready_not_booked, unsafe) are for
+		// follow-up review, not destructive cleanup.
+		$show_bulk     = 'drafts_old' === $filter && current_user_can( Handik_Booking_App_Capabilities::MANAGE_DELETE );
+		$rest          = trailingslashit( rest_url( 'handik-booking-app/v1' ) );
+		$bulk_endpoint = $rest . 'admin/job-requests/bulk-delete';
+
 		ob_start();
 		?>
-		<section class="handik-admin-block">
+		<section class="handik-admin-block"
+			<?php if ( $show_bulk ) : ?>
+				data-handik-bulk-drafts
+				data-bulk-endpoint="<?php echo esc_attr( esc_url_raw( $bulk_endpoint ) ); ?>"
+				data-rest-nonce="<?php echo esc_attr( wp_create_nonce( 'wp_rest' ) ); ?>"
+			<?php endif; ?>>
 			<h2 class="handik-admin-section-title"><?php echo esc_html( $title ); ?></h2>
 			<?php if ( empty( $rows ) ) : ?>
 				<?php /* Sprint 11 fix: was "Nothing here. Nice." — friendly
@@ -275,23 +290,43 @@ class Handik_Booking_App_Admin_People {
 				   copy so the page voice is consistent. */ ?>
 				<div class="handik-admin-empty"><p><?php esc_html_e( 'No requests in this bucket right now.', 'handik-booking-app' ); ?></p></div>
 			<?php else : ?>
-				<ul class="handik-admin-request-list">
+				<?php if ( $show_bulk ) : ?>
+					<div class="handik-admin-bulk-actions">
+						<label class="handik-admin-checkbox">
+							<input type="checkbox" data-handik-bulk-toggle-all aria-label="<?php esc_attr_e( 'Select all drafts', 'handik-booking-app' ); ?>" />
+							<span><?php esc_html_e( 'Select all', 'handik-booking-app' ); ?></span>
+						</label>
+						<span class="handik-admin-bulk-actions__count" data-handik-bulk-count>0 <?php esc_html_e( 'selected', 'handik-booking-app' ); ?></span>
+						<button type="button" class="button button-secondary" data-handik-bulk-apply disabled>
+							<?php esc_html_e( 'Delete selected', 'handik-booking-app' ); ?>
+						</button>
+					</div>
+				<?php endif; ?>
+				<ul class="handik-admin-request-list<?php echo $show_bulk ? ' is-bulk-mode' : ''; ?>">
 					<?php foreach ( $rows as $r ) :
 						$cid = (int) ( $r['contact_id'] ?? 0 );
 						$contact = $cid && isset( $focus_contacts[ $cid ] )
 							? $focus_contacts[ $cid ]
 							: ( $cid ? $this->contacts->get( $cid ) : null );
-						$url = Handik_Booking_App_Admin_Helpers::admin_url_for( 'handik-booking-app-crm', array( 'request_id' => (int) $r['id'] ) );
+						$rid = (int) $r['id'];
+						$url = Handik_Booking_App_Admin_Helpers::admin_url_for( 'handik-booking-app-crm', array( 'request_id' => $rid ) );
 					?>
-						<li><a href="<?php echo esc_url( $url ); ?>">
-							<strong><?php echo esc_html( (string) ( $contact['full_name'] ?? __( 'Unknown', 'handik-booking-app' ) ) ); ?></strong>
-							<span class="handik-admin-muted">·
-								<?php echo esc_html( (string) ( $r['app_step'] ?? '' ) ); ?>
-								·
-								<?php echo esc_html( Handik_Booking_App_Admin_Helpers::format_short( (string) ( $r['updated_at'] ?? '' ) ) ); ?>
-							</span>
-							<?php echo Handik_Booking_App_Admin_Helpers::status_pill_markup( (string) ( $r['status'] ?? '' ) ); ?>
-						</a></li>
+						<li data-request-id="<?php echo esc_attr( (string) $rid ); ?>">
+							<?php if ( $show_bulk ) : ?>
+								<label class="handik-admin-bulk-row-check" aria-label="<?php esc_attr_e( 'Select draft for bulk delete', 'handik-booking-app' ); ?>">
+									<input type="checkbox" data-handik-bulk-row value="<?php echo esc_attr( (string) $rid ); ?>" />
+								</label>
+							<?php endif; ?>
+							<a href="<?php echo esc_url( $url ); ?>">
+								<strong><?php echo esc_html( (string) ( $contact['full_name'] ?? __( 'Unknown', 'handik-booking-app' ) ) ); ?></strong>
+								<span class="handik-admin-muted">·
+									<?php echo esc_html( (string) ( $r['app_step'] ?? '' ) ); ?>
+									·
+									<?php echo esc_html( Handik_Booking_App_Admin_Helpers::format_short( (string) ( $r['updated_at'] ?? '' ) ) ); ?>
+								</span>
+								<?php echo Handik_Booking_App_Admin_Helpers::status_pill_markup( (string) ( $r['status'] ?? '' ) ); ?>
+							</a>
+						</li>
 					<?php endforeach; ?>
 				</ul>
 			<?php endif; ?>
@@ -450,7 +485,21 @@ class Handik_Booking_App_Admin_People {
 				<p class="handik-admin-muted"><?php esc_html_e( 'No saved addresses yet.', 'handik-booking-app' ); ?></p>
 			<?php else : ?>
 				<ul class="handik-admin-addr-list">
-					<?php foreach ( $addresses as $a ) : ?>
+					<?php foreach ( $addresses as $a ) :
+						// 2.1.26.0 (A2): build the full address string for the
+						// Apple Maps icon so it opens the right pin with one
+						// tap. street + city + state + zip; unit is
+						// intentionally NOT included since Apple Maps
+						// doesn't parse "Apt 3B" reliably and the geocode
+						// is the same with or without it.
+						$addr_parts = array_filter( array(
+							(string) ( $a['address_full'] ?? '' ),
+							(string) ( $a['city'] ?? '' ),
+							trim( (string) ( $a['state'] ?? '' ) . ' ' . (string) ( $a['zip_code'] ?? '' ) ),
+						) );
+						$addr_for_maps = implode( ', ', $addr_parts );
+						$apple_url     = Handik_Booking_App_Admin_Helpers::apple_maps_url( $addr_for_maps );
+					?>
 						<li class="handik-admin-addr"
 							data-address-id="<?php echo esc_attr( (string) (int) $a['id'] ); ?>"
 							data-label="<?php echo esc_attr( (string) ( $a['label'] ?? '' ) ); ?>"
@@ -464,6 +513,16 @@ class Handik_Booking_App_Admin_People {
 								<strong><?php echo esc_html( (string) ( $a['address_full'] ?? '' ) ); ?></strong>
 								<?php if ( ! empty( $a['address_unit'] ) ) : ?><span class="handik-admin-muted">· <?php echo esc_html( (string) $a['address_unit'] ); ?></span><?php endif; ?>
 								<?php if ( ! empty( $a['is_primary'] ) ) : ?><span class="handik-admin-pill handik-admin-pill--info"><?php esc_html_e( 'primary', 'handik-booking-app' ); ?></span><?php endif; ?>
+								<?php if ( $apple_url ) : ?>
+									<a class="handik-admin-icon-btn handik-admin-icon-btn--inline is-map"
+										href="<?php echo esc_url( $apple_url ); ?>"
+										target="_blank"
+										rel="noopener noreferrer"
+										aria-label="<?php esc_attr_e( 'Open in Apple Maps', 'handik-booking-app' ); ?>"
+										title="<?php esc_attr_e( 'Open in Apple Maps', 'handik-booking-app' ); ?>">
+										<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>
+									</a>
+								<?php endif; ?>
 							</div>
 							<div class="handik-admin-addr__actions">
 								<?php if ( empty( $a['is_primary'] ) ) : ?>

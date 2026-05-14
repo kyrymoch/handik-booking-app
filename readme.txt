@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.1.25.0
+Stable tag: 2.1.26.0
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, silent returning-client recognition, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,13 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.1.26.0 =
+* **Sprint 17 — People & Requests tweaks (cluster 3).** Two targeted improvements that owner asked for after the cluster 2 mobile pass shipped.
+* **A2 — Apple Maps icon next to each saved address.** Owner-reported: opening a customer's saved address required either copying the text and switching to Maps, or relying on the at-a-glance Apple Maps button in the booking detail (which only works once a booking is on the calendar). Now every address row in `person_addresses_markup` carries an inline orange map-pin icon button that opens the full address (street + city + state + zip — unit is intentionally omitted because Apple Maps' geocoder doesn't parse "Apt 3B" reliably) in the native Apple Maps app on iOS / Safari, or maps.apple.com on Android / desktop. Reuses the `.handik-admin-icon-btn.is-map` style shipped in 2.1.25.0 with a new `--inline` size modifier (28×28 instead of 40×40) so the icon fits beside the address text without dwarfing it.
+* **A4 — bulk-delete drafts in People & Requests.** Owner-reported: after deleting a batch of test contacts, the admin People & Requests page still showed dozens of "Unknown Drafts" (orphaned `handik_job_requests` rows with `contact_id=0` and an early `app_step`) that could only be cleared one-by-one through each row's detail page. Now: the "Abandoned drafts (24h+)" focus list (filter `?filter=drafts_old`) renders a bulk-action toolbar at the top with a "Select all" checkbox + a per-row checkbox + a "Delete selected" button + a live "N selected" count. Submits the collected IDs (defensively capped at 200 per call) to a new REST endpoint `POST /admin/job-requests/bulk-delete`, which loops each ID through the same `Cascade_Delete_Service::delete_request` path the single-row delete uses (so messages + bookings + photos + the request row all cascade identically). Response shape: `{ requested, deleted, failed }` so the JS can toast the count + flag any rows that couldn't be cleared. Gated on the existing `MANAGE_DELETE` capability — read-only admins don't see the bulk controls.
+* **JS handler** `initBulkDeleteDrafts()` in `booking-app-admin.js`. Wires "Select all" ↔ row checkboxes (with an indeterminate state when a partial selection is active), enables/disables the Delete button live, prompts via the standard `openModal()` typed-confirm, posts to the endpoint, toasts the count, reloads the page on success. Five new i18n strings on `HandikAdmin.i18n`: `selected`, `bulkDeleteTitle`, `bulkDeleteConfirm`, `bulkDeleteDone`.
+* **No DB change. No new schema. No data migration.** Adds one REST endpoint + one helper-method size icon-btn variant.
 
 = 2.1.25.0 =
 * **Sprint 16 — admin mobile UX pass (cluster 2).** Owner-reported: the admin Bookings detail page ate the top ~half of viewport on phones (sticky bar + big "Add note / Mark completed / Mark cancelled" buttons + tall at-a-glance card), Bookings list filters stayed permanently expanded eating another ~30% of viewport, and People & Requests person header repeated the same mistake with wide text buttons. None of that was tappable one-handed on a job site. Five coordinated changes ship together:
