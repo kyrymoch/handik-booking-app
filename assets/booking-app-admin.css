@@ -663,6 +663,80 @@ a.handik-admin-today-card-link:focus-visible .handik-admin-today-card {
 	fill: currentColor;
 }
 
+/* 2.1.26.0 (A2): smaller inline variant for use next to text /
+ * inside a content row. Used by the Apple Maps icon beside each
+ * saved address in the People & Requests person detail page. */
+.handik-admin-icon-btn--inline {
+	width: 28px;
+	height: 28px;
+	min-width: 28px;
+	margin-left: 6px;
+	vertical-align: middle;
+}
+
+/* 2.1.26.0 (A4): bulk-delete UI for the "Abandoned drafts (24h+)"
+ * focus list. Toolbar at the top of the section + a checkbox cell
+ * prepended to each row in bulk mode. */
+.handik-admin-bulk-actions {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	padding: 8px 12px;
+	margin: 0 0 12px;
+	background: #f8fafc;
+	border: 1px solid #e2e8f0;
+	border-radius: 8px;
+	flex-wrap: wrap;
+}
+
+.handik-admin-bulk-actions .handik-admin-checkbox {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	margin: 0;
+	font-size: 0.92rem;
+	color: #0f172a;
+}
+
+.handik-admin-bulk-actions__count {
+	font-size: 0.88rem;
+	color: #475569;
+	min-width: 90px;
+}
+
+.handik-admin-request-list.is-bulk-mode li {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.handik-admin-request-list.is-bulk-mode li > a {
+	flex: 1 1 auto;
+	min-width: 0;
+}
+
+.handik-admin-bulk-row-check {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-width: 36px;
+	min-height: 36px;
+	flex: 0 0 auto;
+	cursor: pointer;
+}
+
+.handik-admin-bulk-row-check input {
+	width: 18px;
+	height: 18px;
+	margin: 0;
+	cursor: pointer;
+}
+
+.handik-admin-icon-btn--inline svg {
+	width: 16px;
+	height: 16px;
+}
+
 .handik-admin-icon-btn.is-call {
 	background: #16a34a;
 	color: #ffffff;

@@ -133,6 +133,17 @@ class Handik_Booking_App_REST_API {
 			'callback'            => array( $this, 'admin_job_request_delete' ),
 			'permission_callback' => array( $this, 'admin_delete_permission' ),
 		) );
+		// 2.1.26.0 — A4: bulk-delete drafts in People & Requests
+		// (the "Abandoned drafts (24h+)" focus list). Each id goes
+		// through Cascade_Delete_Service::delete_request so the
+		// drop is identical to the single-row delete path (messages
+		// → bookings → photos → request row → contact_id stays
+		// orphan-safe via existing cleanup).
+		register_rest_route( $namespace, '/admin/job-requests/bulk-delete', array(
+			'methods'             => WP_REST_Server::CREATABLE,
+			'callback'            => array( $this, 'admin_job_requests_bulk_delete' ),
+			'permission_callback' => array( $this, 'admin_delete_permission' ),
+		) );
 		register_rest_route( $namespace, '/admin/booking/(?P<id>\d+)', array(
 			'methods'             => WP_REST_Server::DELETABLE,
 			'callback'            => array( $this, 'admin_booking_delete' ),
@@ -664,6 +675,47 @@ class Handik_Booking_App_REST_API {
 		return rest_ensure_response( array(
 			'success' => true,
 			'summary' => $res['summary'] ?? array(),
+		) );
+	}
+
+	/**
+	 * 2.1.26.0 — A4: bulk-delete a list of job_request rows. Loops
+	 * through cascade_delete->delete_request for each id so every
+	 * drop matches the per-row admin delete path exactly (messages
+	 * + bookings + photos + request row). Accepts up to 200 ids
+	 * per call (defensive cap so a single REST round-trip doesn't
+	 * timeout / OOM on a corrupt selection).
+	 */
+	public function admin_job_requests_bulk_delete( WP_REST_Request $request ) {
+		if ( ! $this->cascade_delete ) {
+			return $this->admin_unavailable();
+		}
+		$raw_ids = $request->get_param( 'ids' );
+		if ( ! is_array( $raw_ids ) ) {
+			return new WP_Error( 'handik_bulk_delete_invalid', __( 'No request ids provided.', 'handik-booking-app' ), array( 'status' => 400 ) );
+		}
+		$ids = array_values( array_unique( array_filter( array_map( 'absint', $raw_ids ) ) ) );
+		if ( empty( $ids ) ) {
+			return new WP_Error( 'handik_bulk_delete_invalid', __( 'No valid request ids provided.', 'handik-booking-app' ), array( 'status' => 400 ) );
+		}
+		if ( count( $ids ) > 200 ) {
+			return new WP_Error( 'handik_bulk_delete_too_many', __( 'Bulk delete is capped at 200 requests per call.', 'handik-booking-app' ), array( 'status' => 413 ) );
+		}
+		$deleted = 0;
+		$failed  = array();
+		foreach ( $ids as $id ) {
+			$res = $this->cascade_delete->delete_request( (int) $id );
+			if ( ! empty( $res['deleted'] ) ) {
+				$deleted++;
+			} else {
+				$failed[] = (int) $id;
+			}
+		}
+		return rest_ensure_response( array(
+			'success'  => true,
+			'requested'=> count( $ids ),
+			'deleted'  => $deleted,
+			'failed'   => $failed,
 		) );
 	}
 

@@ -434,6 +434,10 @@ class Handik_Booking_App_Admin {
 					'fetchedChat'  => __( 'Fetched %1$d messages (%2$d new).', 'handik-booking-app' ),
 					'noChatFound'  => __( 'OpenAI returned no messages for this thread.', 'handik-booking-app' ),
 					'fetchFailed'  => __( 'Could not fetch chat. See server logs.', 'handik-booking-app' ),
+					'selected'          => __( 'selected', 'handik-booking-app' ),
+					'bulkDeleteTitle'   => __( 'Delete drafts', 'handik-booking-app' ),
+					'bulkDeleteConfirm' => __( 'Delete %d drafts? This is irreversible. Linked messages, photos and bookings will also be removed.', 'handik-booking-app' ),
+					'bulkDeleteDone'    => __( 'Deleted %d drafts.', 'handik-booking-app' ),
 				),
 			)
 		);

@@ -1755,6 +1755,99 @@
 		initDangerZone();
 		initNewBookingFlow();
 		initFetchChat();
+		initBulkDeleteDrafts();
 	} );
+
+	// ============================================================
+	// 2.1.26.0 (A4): bulk-delete "Abandoned drafts (24h+)" focus
+	// list. The section renders with `data-handik-bulk-drafts`,
+	// per-row `[data-handik-bulk-row value="<id>"]` checkboxes, a
+	// "Select all" checkbox + "Delete selected" button at the top.
+	// We post the collected ids to /admin/job-requests/bulk-delete
+	// in one round-trip and reload on success.
+	// ============================================================
+	function initBulkDeleteDrafts() {
+		document.querySelectorAll( '[data-handik-bulk-drafts]' ).forEach( function( section ) {
+			const endpoint = section.dataset.bulkEndpoint || '';
+			const nonce    = section.dataset.restNonce    || '';
+			if ( ! endpoint ) { return; }
+			const toggleAll = section.querySelector( '[data-handik-bulk-toggle-all]' );
+			const rowChecks = Array.from( section.querySelectorAll( '[data-handik-bulk-row]' ) );
+			const countEl   = section.querySelector( '[data-handik-bulk-count]' );
+			const applyBtn  = section.querySelector( '[data-handik-bulk-apply]' );
+			if ( ! applyBtn || ! rowChecks.length ) { return; }
+
+			function refresh() {
+				const checked = rowChecks.filter( function( c ) { return c.checked; } );
+				const n = checked.length;
+				if ( countEl ) {
+					countEl.textContent = String( n ) + ' ' + ( i18n.selected || 'selected' );
+				}
+				applyBtn.disabled = 0 === n;
+				if ( toggleAll ) {
+					toggleAll.checked = n > 0 && n === rowChecks.length;
+					toggleAll.indeterminate = n > 0 && n < rowChecks.length;
+				}
+			}
+
+			if ( toggleAll ) {
+				toggleAll.addEventListener( 'change', function() {
+					rowChecks.forEach( function( c ) { c.checked = toggleAll.checked; } );
+					refresh();
+				} );
+			}
+			rowChecks.forEach( function( c ) {
+				c.addEventListener( 'change', refresh );
+			} );
+
+			applyBtn.addEventListener( 'click', async function( event ) {
+				event.preventDefault();
+				const checked = rowChecks.filter( function( c ) { return c.checked; } );
+				if ( 0 === checked.length ) { return; }
+				const ids = checked.map( function( c ) { return parseInt( c.value, 10 ); } ).filter( function( v ) { return v > 0; } );
+				const confirmMsg = ( i18n.bulkDeleteConfirm || 'Delete %d drafts? This is irreversible.' ).replace( '%d', String( ids.length ) );
+				const ok = await openModal( {
+					title: i18n.bulkDeleteTitle || 'Delete drafts',
+					body: confirmMsg,
+				} );
+				if ( ! ok ) { return; }
+				try {
+					const result = await withButtonLoading( applyBtn, function() {
+						return window.fetch( endpoint, {
+							method: 'POST',
+							credentials: 'same-origin',
+							headers: {
+								'X-WP-Nonce': nonce,
+								'Content-Type': 'application/json',
+							},
+							body: JSON.stringify( { ids: ids } ),
+						} ).then( function( response ) {
+							return response.json().catch( function() { return {}; } ).then( function( payload ) {
+								if ( ! response.ok ) {
+									const error = new Error( payload.message || payload.code || 'Request failed' );
+									error.status = response.status;
+									throw error;
+								}
+								return payload;
+							} );
+						} );
+					} );
+					const deleted = result && typeof result.deleted === 'number' ? result.deleted : 0;
+					toast(
+						( i18n.bulkDeleteDone || 'Deleted %d drafts.' ).replace( '%d', String( deleted ) ),
+						'success'
+					);
+					window.setTimeout( function() {
+						window.location.reload();
+					}, 600 );
+				} catch ( err ) {
+					const msg = ( err && err.message ) ? err.message : ( i18n.saveFailed || 'Delete failed' );
+					toast( msg, 'error', 4500 );
+				}
+			} );
+
+			refresh();
+		} );
+	}
 
 }( window, document ) );
