@@ -267,34 +267,52 @@ class Handik_Booking_App_Admin_Bookings {
 			'completed'   => __( 'Completed', 'handik-booking-app' ),
 		);
 
+		// 2.1.25.0 (B4): collapse filters by default so they don't eat
+		// half the viewport on phones. Auto-expand when any filter is
+		// active (time != 'all' OR status != 'all' OR there's a
+		// search query) so the operator can see at a glance what
+		// filters are currently constraining the list.
+		$active_count = 0;
+		if ( $filter_time && 'all' !== $filter_time )       { $active_count++; }
+		if ( $filter_status && 'all' !== $filter_status )   { $active_count++; }
+		if ( '' !== trim( (string) $query ) )               { $active_count++; }
+		$is_open      = $active_count > 0;
+		$summary_text = $active_count > 0
+			/* translators: %d: number of active filters/search */
+			? sprintf( _n( 'Filters · %d active', 'Filters · %d active', $active_count, 'handik-booking-app' ), $active_count )
+			: __( 'Filters', 'handik-booking-app' );
+
 		ob_start();
 		?>
 		<form class="handik-admin-filter-bar" method="get" action="<?php echo esc_url( admin_url( 'admin.php' ) ); ?>">
 			<input type="hidden" name="page" value="<?php echo esc_attr( $page ); ?>" />
-			<div class="handik-admin-filter-row">
-				<label class="handik-admin-filter">
-					<span><?php esc_html_e( 'Time', 'handik-booking-app' ); ?></span>
-					<select name="filter_time">
-						<?php foreach ( $time_options as $key => $label ) : ?>
-							<option value="<?php echo esc_attr( $key ); ?>"<?php selected( $filter_time, $key ); ?>><?php echo esc_html( $label ); ?></option>
-						<?php endforeach; ?>
-					</select>
-				</label>
-				<label class="handik-admin-filter">
-					<span><?php esc_html_e( 'Status', 'handik-booking-app' ); ?></span>
-					<select name="filter_status">
-						<?php foreach ( $status_options as $key => $label ) : ?>
-							<option value="<?php echo esc_attr( $key ); ?>"<?php selected( $filter_status, $key ); ?>><?php echo esc_html( $label ); ?></option>
-						<?php endforeach; ?>
-					</select>
-				</label>
-				<label class="handik-admin-filter handik-admin-filter--search">
-					<span><?php esc_html_e( 'Search by name or phone', 'handik-booking-app' ); ?></span>
-					<input type="search" name="q" value="<?php echo esc_attr( $query ); ?>" data-handik-debounced-submit placeholder="<?php esc_attr_e( 'e.g. Zinkin or 617…', 'handik-booking-app' ); ?>" />
-				</label>
-				<button type="submit" class="button button-secondary"><?php esc_html_e( 'Apply', 'handik-booking-app' ); ?></button>
-				<a class="button-link" href="<?php echo esc_url( admin_url( 'admin.php?page=' . $page ) ); ?>"><?php esc_html_e( 'Reset', 'handik-booking-app' ); ?></a>
-			</div>
+			<details class="handik-admin-filter-collapse"<?php echo $is_open ? ' open' : ''; ?>>
+				<summary class="handik-admin-filter-collapse__summary"><?php echo esc_html( $summary_text ); ?></summary>
+				<div class="handik-admin-filter-row">
+					<label class="handik-admin-filter">
+						<span><?php esc_html_e( 'Time', 'handik-booking-app' ); ?></span>
+						<select name="filter_time">
+							<?php foreach ( $time_options as $key => $label ) : ?>
+								<option value="<?php echo esc_attr( $key ); ?>"<?php selected( $filter_time, $key ); ?>><?php echo esc_html( $label ); ?></option>
+							<?php endforeach; ?>
+						</select>
+					</label>
+					<label class="handik-admin-filter">
+						<span><?php esc_html_e( 'Status', 'handik-booking-app' ); ?></span>
+						<select name="filter_status">
+							<?php foreach ( $status_options as $key => $label ) : ?>
+								<option value="<?php echo esc_attr( $key ); ?>"<?php selected( $filter_status, $key ); ?>><?php echo esc_html( $label ); ?></option>
+							<?php endforeach; ?>
+						</select>
+					</label>
+					<label class="handik-admin-filter handik-admin-filter--search">
+						<span><?php esc_html_e( 'Search by name or phone', 'handik-booking-app' ); ?></span>
+						<input type="search" name="q" value="<?php echo esc_attr( $query ); ?>" data-handik-debounced-submit placeholder="<?php esc_attr_e( 'e.g. Zinkin or 617…', 'handik-booking-app' ); ?>" />
+					</label>
+					<button type="submit" class="button button-secondary"><?php esc_html_e( 'Apply', 'handik-booking-app' ); ?></button>
+					<a class="button-link" href="<?php echo esc_url( admin_url( 'admin.php?page=' . $page ) ); ?>"><?php esc_html_e( 'Reset', 'handik-booking-app' ); ?></a>
+				</div>
+			</details>
 		</form>
 		<?php
 		return (string) ob_get_clean();
@@ -1368,6 +1386,7 @@ class Handik_Booking_App_Admin_Bookings {
 
 		$phone = is_array( $contact ) ? trim( (string) ( $contact['phone'] ?? '' ) ) : '';
 		$tel   = $phone ? Handik_Booking_App_Admin_Helpers::tel_url( $phone ) : '';
+		$sms   = $phone ? Handik_Booking_App_Admin_Helpers::sms_url( $phone ) : '';
 		$apple = $full_address ? Handik_Booking_App_Admin_Helpers::apple_maps_url( $full_address ) : '';
 
 		$cal_url = '';
@@ -1375,20 +1394,41 @@ class Handik_Booking_App_Admin_Bookings {
 			$cal_url = 'https://app.cal.com/bookings/upcoming?bookingUid=' . rawurlencode( (string) $booking['cal_booking_id'] );
 		}
 
+		// 2.1.25.0 (B1+B3): the action bar used to be a fixed-position
+		// "sticky" strip with full phone number + "Apple Maps" /
+		// "Cal.com" text-and-emoji buttons. On phones this ate ~64px
+		// of viewport and prevented the body from scrolling cleanly.
+		// New treatment: a compact, non-sticky header — back arrow,
+		// when, three icon-only buttons (📞 ☎ / ✉ SMS / 📍 Maps),
+		// optional Cal.com link. Phone number is no longer rendered
+		// inline — the call icon is the canonical "dial this person"
+		// action; the at-a-glance Client cell below still shows the
+		// number for the "is this the right customer?" mental check.
 		ob_start();
 		?>
-		<div class="handik-admin-sticky-bar" data-handik-sticky>
+		<div class="handik-admin-sticky-bar">
 			<a class="handik-admin-sticky-bar__back" href="<?php echo esc_url( $back_url ); ?>" aria-label="<?php esc_attr_e( 'Back to bookings', 'handik-booking-app' ); ?>">←</a>
 			<span class="handik-admin-sticky-bar__title"><?php echo esc_html( $when_short ); ?></span>
 			<div class="handik-admin-sticky-bar__actions">
 				<?php if ( $tel ) : ?>
-					<a class="handik-admin-sticky-bar__cta is-call" href="<?php echo esc_url( $tel ); ?>">📞 <span><?php echo esc_html( $phone ); ?></span></a>
+					<a class="handik-admin-icon-btn is-call" href="<?php echo esc_url( $tel ); ?>" aria-label="<?php echo esc_attr( sprintf( __( 'Call %s', 'handik-booking-app' ), $phone ) ); ?>" title="<?php echo esc_attr( sprintf( __( 'Call %s', 'handik-booking-app' ), $phone ) ); ?>">
+						<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M20.01 15.38c-1.23 0-2.42-.2-3.53-.56-.35-.12-.74-.03-1.01.24l-1.57 1.97c-2.83-1.35-5.48-3.9-6.89-6.83l1.95-1.66c.27-.28.35-.67.24-1.02-.37-1.11-.56-2.3-.56-3.53 0-.54-.45-.99-.99-.99H4.19C3.65 3 3 3.24 3 3.99 3 13.28 10.73 21 20.01 21c.71 0 .99-.63.99-1.18v-3.45c0-.54-.45-.99-.99-.99z"/></svg>
+					</a>
+				<?php endif; ?>
+				<?php if ( $sms ) : ?>
+					<a class="handik-admin-icon-btn is-sms" href="<?php echo esc_url( $sms ); ?>" aria-label="<?php echo esc_attr( sprintf( __( 'Send SMS to %s', 'handik-booking-app' ), $phone ) ); ?>" title="<?php echo esc_attr( sprintf( __( 'Send SMS to %s', 'handik-booking-app' ), $phone ) ); ?>">
+						<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M20 2H4c-1.1 0-1.99.9-1.99 2L2 22l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM7 9h10v2H7V9zm6 5H7v-2h6v2zm4-6H7V6h10v2z"/></svg>
+					</a>
 				<?php endif; ?>
 				<?php if ( $apple ) : ?>
-					<a class="handik-admin-sticky-bar__cta" href="<?php echo esc_url( $apple ); ?>" target="_blank" rel="noopener noreferrer">🗺️ <?php esc_html_e( 'Apple Maps', 'handik-booking-app' ); ?></a>
+					<a class="handik-admin-icon-btn is-map" href="<?php echo esc_url( $apple ); ?>" target="_blank" rel="noopener noreferrer" aria-label="<?php esc_attr_e( 'Open in Apple Maps', 'handik-booking-app' ); ?>" title="<?php esc_attr_e( 'Open in Apple Maps', 'handik-booking-app' ); ?>">
+						<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>
+					</a>
 				<?php endif; ?>
 				<?php if ( $cal_url ) : ?>
-					<a class="handik-admin-sticky-bar__cta" href="<?php echo esc_url( $cal_url ); ?>" target="_blank" rel="noopener noreferrer">📅 Cal.com</a>
+					<a class="handik-admin-icon-btn is-cal" href="<?php echo esc_url( $cal_url ); ?>" target="_blank" rel="noopener noreferrer" aria-label="<?php esc_attr_e( 'Open in Cal.com', 'handik-booking-app' ); ?>" title="<?php esc_attr_e( 'Open in Cal.com', 'handik-booking-app' ); ?>">
+						<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M19 4h-1V2h-2v2H8V2H6v2H5c-1.11 0-1.99.9-1.99 2L3 20a2 2 0 002 2h14c1.1 0 2-.9 2-2V6a2 2 0 00-2-2zm0 16H5V10h14v10zm0-12H5V6h14v2z"/></svg>
+					</a>
 				<?php endif; ?>
 			</div>
 		</div>

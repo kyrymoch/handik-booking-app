@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.1.24.0
+Stable tag: 2.1.25.0
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, silent returning-client recognition, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,17 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.1.25.0 =
+* **Sprint 16 — admin mobile UX pass (cluster 2).** Owner-reported: the admin Bookings detail page ate the top ~half of viewport on phones (sticky bar + big "Add note / Mark completed / Mark cancelled" buttons + tall at-a-glance card), Bookings list filters stayed permanently expanded eating another ~30% of viewport, and People & Requests person header repeated the same mistake with wide text buttons. None of that was tappable one-handed on a job site. Five coordinated changes ship together:
+* **B1 + B3 — Bookings detail header**. `Admin_Bookings::sticky_action_bar_markup` rebuilt: no longer position-sticky (scrolls with the page like a normal header), no longer renders the phone number inline, no longer shows "Apple Maps" / "Cal.com" text labels. The "📞 +1 617 555 0123" pill / "🗺️ Apple Maps" pill / "📅 Cal.com" pill are replaced with a row of four 40×40 circular icon-only tap targets: green call (`tel:`), blue SMS (`sms:` — newly added `Admin_Helpers::sms_url`), orange Apple Maps, blue Cal.com. Each carries an `aria-label` + `title` containing the underlying phone/email/event for screen readers and hover tooltips. The number / email + the "is this the right customer?" mental check now live in the at-a-glance Client cell below the header.
+* **B2 — Bookings detail action buttons**. The `Add note` / `Mark as completed` / `Mark as cancelled` / `Clear manual status` buttons + the "Current status:" pill row used to render at WP's default `.button` size + ~36px tall + generous horizontal padding, so all of them collectively pushed onto two rows on phones. CSS-only patch under `@media (max-width: 767px)`: 4×9px padding, 0.82rem text, min-height 32px, current-status pill drops to its own line below the buttons. Markup is unchanged so the action handlers (notes modal, status patch via `/admin/booking/{id}/status`) keep working byte-for-byte.
+* **B4 — Bookings list filters**. The `filter_bar_markup` block (Time select + Status select + search + Apply / Reset) is now wrapped in a `<details class="handik-admin-filter-collapse">` — same class the Logs page already used — so the chrome is collapsed by default. **Auto-opens when any filter or search is active** (e.g. `?filter_time=this_week&q=zinkin` → summary reads "Filters · 2 active" and starts expanded so the operator sees what's constraining the list). Default state is closed → ~140px of viewport returns to the row list.
+* **B5 — People & Requests header + list toolbar**. Person detail header rebuilt the same way as B1/B3: 📞 phone + ✉ email + 📅 Book-a-visit buttons (which printed the full phone/email text inline) are replaced with the matching `.handik-admin-icon-btn` row — call (green) / SMS (blue) / email (slate) / book-a-visit (primary blue). The h2 person name shrinks to 1.1rem and ellipsises on overflow so the row stays one line. List page toolbar + filter chips tighten margins on mobile, and the chips row now horizontally scrolls when there are more chips than fit (instead of wrapping onto a second row).
+* **New helper** `Admin_Helpers::sms_url($phone)`. Strips formatting the same way `tel_url` does (digits + leading +) and returns `sms:+...` so the SMS icon opens the Messages composer pre-filled on iOS / the default messaging app on Android.
+* **New shared CSS component** `.handik-admin-icon-btn` (with `.is-call` / `.is-sms` / `.is-map` / `.is-email` / `.is-book` / `.is-cal` modifiers). Reused by Bookings detail header AND Person detail header — single source of truth for the icon-only action buttons. Sized 40×40 desktop / 36×36 below 480px, SVG sized to match. Color-coded per the native iOS dialer / Messages / Maps expectation.
+* **No DB change. No new REST endpoints. No JS changes.** Only PHP markup + CSS + one tiny helper method.
+* Out of scope here (separately tracked): A2 (Apple Maps icon next to address in People & Requests), A3 (Continue button intermittent tap on mobile forms), A4 (bulk-select + delete drafts).
 
 = 2.1.24.0 =
 * **Sprint 15 / Part 3 — external Cal.com bookings now surface in the admin Bookings list.** Owner-reported scenario: customer can't complete the booking flow through the plugin (form error, embed timeout, etc.) → clicks the "Open the booking page directly" fallback link → books on Cal.com on Cal's own page → that booking previously vanished entirely from the plugin's admin. Cal's webhook fires, but our `Webhook_Service::handle_cal_webhook` routing requires either a `handik_*` metadata key, a `cal_booking_id` match against an existing `job_requests` row, or a pending-request email/phone fallback. None of those match for a booking made directly on Cal, so the handler logged an error and returned 404.

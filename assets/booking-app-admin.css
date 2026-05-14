@@ -582,25 +582,22 @@ a.handik-admin-today-card-link:focus-visible .handik-admin-today-card {
 	min-width: 180px;
 }
 
-/* --------- Sticky action bar ------------------------------------------- */
+/* --------- Header action bar (compact, no longer sticky) --------------- */
 
 .handik-admin-sticky-bar {
-	/* Sprint 10 fix: was hard-coded `top: var(--wp-admin--admin-bar--height,
-	 * 32px)`. WP renders a 46px admin bar on mobile (≤782px) and a 32px
-	 * bar on desktop, but the var only resolves on themes that actually
-	 * declare it — vanilla wp-admin doesn't, so the fallback (32px) was
-	 * always used and the sticky bar overlapped the back arrow on phone.
-	 * Mobile media-query below now bumps to 46px. */
-	position: -webkit-sticky;
-	position: sticky;
-	top: var(--wp-admin--admin-bar--height, 32px);
-	z-index: 50;
+	/* 2.1.25.0 (B3): used to be `position: sticky` + a blurred-translucent
+	 * background pinned under the WP admin bar. On phones that ate ~64px
+	 * of viewport on every detail page and the body underneath was
+	 * effectively forced into a smaller scroll area. Per owner request
+	 * the bar now scrolls with the page like a normal header. CSS class
+	 * name preserved so themes / customizations targeting it keep
+	 * working — only the `position`/`z-index`/`backdrop-filter` rules
+	 * are gone. */
 	display: flex;
 	align-items: center;
 	gap: 8px;
 	padding: 10px 12px;
-	background: rgba(255,255,255,0.96);
-	backdrop-filter: saturate(140%) blur(8px);
+	background: #ffffff;
 	border-bottom: 1px solid #cbd5e1;
 	margin: 0 -12px 14px;
 }
@@ -626,53 +623,116 @@ a.handik-admin-today-card-link:focus-visible .handik-admin-today-card {
 
 .handik-admin-sticky-bar__actions {
 	display: flex;
-	gap: 8px;
-	flex-wrap: wrap;
+	gap: 6px;
+	flex-wrap: nowrap;
 }
 
-.handik-admin-sticky-bar__cta {
+/* 2.1.25.0 (B1): icon-only header buttons. Replaces the old
+ * `.handik-admin-sticky-bar__cta` text-and-emoji pills (📞 phone
+ * number / 🗺️ Apple Maps / 📅 Cal.com) which on mobile wrapped to
+ * two rows and pushed the body down. Now: 40×40 circular tap target,
+ * call icon green per native iOS color expectation, others
+ * neutral. Phone number is no longer rendered inline — the call
+ * icon IS the action; the at-a-glance Client cell below carries the
+ * number for the "is this the right customer?" mental check the
+ * owner does in the truck. */
+.handik-admin-icon-btn {
 	display: inline-flex;
 	align-items: center;
-	gap: 6px;
-	padding: 8px 12px;
+	justify-content: center;
+	width: 40px;
+	height: 40px;
+	min-width: 40px;
 	border-radius: 999px;
 	background: #f1f5f9;
 	color: #0f172a;
 	text-decoration: none;
-	min-height: 40px;
-	font-size: 0.9rem;
+	border: 1px solid transparent;
+	transition: background-color 0.12s ease;
 }
 
-.handik-admin-sticky-bar__cta.is-call {
-	background: #166534;
-	color: #fff;
+.handik-admin-icon-btn:hover,
+.handik-admin-icon-btn:focus {
+	background: #e2e8f0;
+	color: #0f172a;
 }
 
-@media (max-width: 782px) {
-	/* Sprint 10 fix: WP admin bar is 46px on mobile (not 32px), so the
-	 * sticky bar's `top` needs to match or it overlaps the back arrow.
-	 * 782px is WP's own breakpoint between mobile and desktop admin bar. */
-	.handik-admin-sticky-bar {
-		top: 46px;
+.handik-admin-icon-btn svg {
+	width: 20px;
+	height: 20px;
+	fill: currentColor;
+}
+
+.handik-admin-icon-btn.is-call {
+	background: #16a34a;
+	color: #ffffff;
+}
+
+.handik-admin-icon-btn.is-call:hover,
+.handik-admin-icon-btn.is-call:focus {
+	background: #15803d;
+	color: #ffffff;
+}
+
+.handik-admin-icon-btn.is-sms {
+	background: #2563eb;
+	color: #ffffff;
+}
+
+.handik-admin-icon-btn.is-sms:hover,
+.handik-admin-icon-btn.is-sms:focus {
+	background: #1d4ed8;
+	color: #ffffff;
+}
+
+.handik-admin-icon-btn.is-map {
+	background: #f97316;
+	color: #ffffff;
+}
+
+.handik-admin-icon-btn.is-map:hover,
+.handik-admin-icon-btn.is-map:focus {
+	background: #ea580c;
+	color: #ffffff;
+}
+
+.handik-admin-icon-btn.is-email {
+	background: #475569;
+	color: #ffffff;
+}
+
+.handik-admin-icon-btn.is-email:hover,
+.handik-admin-icon-btn.is-email:focus {
+	background: #334155;
+	color: #ffffff;
+}
+
+.handik-admin-icon-btn.is-book {
+	background: #1e40af;
+	color: #ffffff;
+}
+
+.handik-admin-icon-btn.is-book:hover,
+.handik-admin-icon-btn.is-book:focus {
+	background: #1e3a8a;
+	color: #ffffff;
+}
+
+@media (max-width: 480px) {
+	/* On very narrow phones the title can wrap into two lines — shrink
+	 * it slightly + drop padding around the icon-btn row so all three
+	 * icons fit on one line beside the "Wed, Nov 19 · 2:30 PM" title. */
+	.handik-admin-sticky-bar__title {
+		font-size: 0.9rem;
 	}
-}
-
-@media (max-width: 767px) {
-	/* Sprint 10 fix: the call CTA's <span> wrapping the phone number
-	 * was hidden globally on <768px, leaving just the 📞 icon — but the
-	 * audit showed that hiding the number defeats the "is this the right
-	 * customer?" mental check the owner does in the truck. Keep the
-	 * number visible for the call CTA; only hide labels on the OTHER
-	 * cta buttons (Maps, Cal.com link). */
-	.handik-admin-sticky-bar__cta:not(.is-call) span {
-		display: none;
+	.handik-admin-icon-btn {
+		width: 36px;
+		height: 36px;
+		min-width: 36px;
 	}
-	.handik-admin-sticky-bar__cta.is-call span {
-		font-size: 0.8rem;
-		max-width: 130px;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
+	.handik-admin-icon-btn svg {
+		width: 18px;
+		height: 18px;
 	}
 }
 
@@ -684,6 +744,29 @@ a.handik-admin-today-card-link:focus-visible .handik-admin-today-card {
 	gap: 8px;
 	margin: 0 0 16px;
 	align-items: center;
+}
+
+/* 2.1.25.0 (B2): compact action buttons on mobile. Add note / Mark
+ * completed / Mark cancelled used to render at WP's default
+ * `.button` size (~36px tall, generous horizontal padding) and
+ * collectively took two rows on phones, pushing the rest of the
+ * detail page below the fold. Shrink padding + font-size at <768px
+ * so all three fit one row and the body content rises into view. */
+@media (max-width: 767px) {
+	.handik-admin-actions-bar .button {
+		padding: 4px 9px;
+		font-size: 0.82rem;
+		min-height: 32px;
+		line-height: 1.4;
+	}
+	.handik-admin-actions-bar .button-link {
+		font-size: 0.82rem;
+	}
+	.handik-admin-current-status {
+		font-size: 0.78rem;
+		margin-left: 0;
+		width: 100%;
+	}
 }
 
 .handik-admin-current-status {
@@ -1031,8 +1114,54 @@ a.handik-admin-today-card-link:focus-visible .handik-admin-today-card {
 .handik-admin-person-header__contacts {
 	margin-left: auto;
 	display: flex;
-	flex-wrap: wrap;
+	flex-wrap: nowrap;
 	gap: 6px;
+}
+
+/* 2.1.25.0 (B5): tighten People & Requests header + list toolbar
+ * on phones so the top half of the screen doesn't get eaten by
+ * margin/padding before any actual content scrolls into view.
+ * Person detail page now uses .handik-admin-icon-btn (same as
+ * Bookings detail) for call/SMS/email/book-a-visit, so the
+ * header collapses to a single line on mobile. */
+@media (max-width: 767px) {
+	.handik-admin-person-header {
+		gap: 6px;
+		margin-bottom: 10px;
+	}
+	.handik-admin-person-header h2 {
+		font-size: 1.1rem;
+		flex: 1 1 auto;
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.handik-admin-back {
+		min-width: 36px;
+		min-height: 36px;
+	}
+	.handik-admin-toolbar {
+		margin-bottom: 8px;
+	}
+	.handik-admin-segmented {
+		padding: 3px;
+		gap: 3px;
+		margin-bottom: 8px;
+		flex-wrap: nowrap;
+		overflow-x: auto;
+		max-width: 100%;
+		/* Allow horizontal scroll on overflow rather than wrapping
+		 * onto a second row — saves vertical space on phones. */
+		-webkit-overflow-scrolling: touch;
+	}
+	.handik-admin-segment {
+		padding: 4px 10px;
+		font-size: 0.82rem;
+		min-height: 28px;
+		white-space: nowrap;
+		flex: 0 0 auto;
+	}
 }
 
 .handik-admin-addr-list {
