@@ -1757,7 +1757,168 @@
 		initFetchChat();
 		initBulkDeleteDrafts();
 		initPullFromCal();
+		initBulkMode();
 	} );
+
+	// ============================================================
+	// 2.1.26.3: generic bulk-mode toggler + selection apply for
+	// page-level lists. Used by Bookings and People & Requests
+	// (and any future list that opts in via `data-handik-bulk-
+	// section` on a container + `data-handik-bulk-toggle` on a
+	// trigger button + per-row `data-handik-bulk-row value=...`
+	// checkboxes inside the container).
+	//
+	// Activation:
+	//   - Trigger button carries `data-handik-bulk-target=".css-selector"`
+	//     pointing at the container element. Clicking it toggles the
+	//     `is-bulk-mode` class on that container + flips its
+	//     `[data-handik-bulk-bar]` strip visibility.
+	//   - The container's `data-bulk-endpoint` is the REST URL
+	//     to POST `ids: [...]` to. `data-rest-nonce` carries the
+	//     WP REST nonce. `data-bulk-kind` is used in the toast
+	//     ("Deleted 5 bookings" vs "Deleted 5 contacts" etc).
+	// ============================================================
+	function initBulkMode() {
+		const containers = Array.from( document.querySelectorAll( '[data-handik-bulk-section]' ) );
+		containers.forEach( function( container ) {
+			const endpoint = container.dataset.bulkEndpoint || '';
+			const nonce    = container.dataset.restNonce    || '';
+			const kind     = container.dataset.bulkKind     || 'rows';
+			const bar      = container.querySelector( '[data-handik-bulk-bar]' );
+			const countEl  = container.querySelector( '[data-handik-bulk-count]' );
+			const toggleAll = container.querySelector( '[data-handik-bulk-toggle-all]' );
+			const applyBtn = container.querySelector( '[data-handik-bulk-apply]' );
+
+			function getCheckboxes() {
+				return Array.from( container.querySelectorAll( '[data-handik-bulk-row]' ) );
+			}
+
+			function refresh() {
+				const boxes  = getCheckboxes();
+				const checked = boxes.filter( function( c ) { return c.checked; } );
+				const n = checked.length;
+				if ( countEl ) {
+					countEl.textContent = String( n ) + ' ' + ( i18n.selected || 'selected' );
+				}
+				if ( applyBtn ) {
+					applyBtn.disabled = 0 === n;
+				}
+				if ( toggleAll ) {
+					toggleAll.checked = n > 0 && n === boxes.length;
+					toggleAll.indeterminate = n > 0 && n < boxes.length;
+				}
+			}
+
+			function enterBulkMode() {
+				container.classList.add( 'is-bulk-mode' );
+				if ( bar ) { bar.hidden = false; }
+				refresh();
+			}
+
+			function exitBulkMode() {
+				container.classList.remove( 'is-bulk-mode' );
+				if ( bar ) { bar.hidden = true; }
+				getCheckboxes().forEach( function( c ) { c.checked = false; } );
+				refresh();
+			}
+
+			// Hook the toggle button(s) that point at this container.
+			const selector = '[data-handik-bulk-toggle]';
+			document.querySelectorAll( selector ).forEach( function( btn ) {
+				const targetSel = btn.dataset.handikBulkTarget;
+				if ( ! targetSel ) { return; }
+				if ( ! container.matches( targetSel ) ) { return; }
+				btn.addEventListener( 'click', function( event ) {
+					event.preventDefault();
+					if ( container.classList.contains( 'is-bulk-mode' ) ) {
+						btn.textContent = i18n.bulkSelect || 'Select';
+						exitBulkMode();
+					} else {
+						btn.textContent = i18n.bulkDone || 'Done';
+						enterBulkMode();
+					}
+				} );
+			} );
+
+			if ( toggleAll ) {
+				toggleAll.addEventListener( 'change', function() {
+					getCheckboxes().forEach( function( c ) { c.checked = toggleAll.checked; } );
+					refresh();
+				} );
+			}
+
+			container.addEventListener( 'change', function( event ) {
+				const target = event.target;
+				if ( target && target.matches && target.matches( '[data-handik-bulk-row]' ) ) {
+					refresh();
+				}
+			} );
+
+			// Prevent the checkbox click from also navigating the
+			// underlying card/row link. The checkbox is a sibling
+			// of the link on cards (separate DOM nodes) but inside
+			// a clickable <tr> on tables — stop propagation there.
+			container.addEventListener( 'click', function( event ) {
+				const target = event.target;
+				if ( target && target.matches && target.matches( '[data-handik-bulk-row]' ) ) {
+					event.stopPropagation();
+				}
+			} );
+
+			if ( applyBtn ) {
+				applyBtn.addEventListener( 'click', async function( event ) {
+					event.preventDefault();
+					const boxes  = getCheckboxes();
+					const checked = boxes.filter( function( c ) { return c.checked; } );
+					if ( 0 === checked.length ) { return; }
+					const ids = checked.map( function( c ) { return parseInt( c.value, 10 ); } ).filter( function( v ) { return v > 0; } );
+					const confirmTpl = 'contacts' === kind
+						? ( i18n.bulkDeleteContactsConfirm || 'Delete %d contacts AND all their requests, bookings, addresses? This is irreversible.' )
+						: ( i18n.bulkDeleteBookingsConfirm || 'Delete %d bookings? This is irreversible.' );
+					const ok = await openModal( {
+						title: i18n.bulkDeleteTitle || 'Delete',
+						body: confirmTpl.replace( '%d', String( ids.length ) ),
+					} );
+					if ( ! ok ) { return; }
+					try {
+						const result = await withButtonLoading( applyBtn, function() {
+							return window.fetch( endpoint, {
+								method: 'POST',
+								credentials: 'same-origin',
+								headers: {
+									'X-WP-Nonce': nonce,
+									'Content-Type': 'application/json',
+								},
+								body: JSON.stringify( { ids: ids } ),
+							} ).then( function( response ) {
+								return response.json().catch( function() { return {}; } ).then( function( payload ) {
+									if ( ! response.ok ) {
+										const error = new Error( payload.message || payload.code || 'Request failed' );
+										error.status = response.status;
+										throw error;
+									}
+									return payload;
+								} );
+							} );
+						} );
+						const deleted = result && typeof result.deleted === 'number' ? result.deleted : 0;
+						const tpl = 'contacts' === kind
+							? ( i18n.bulkDeleteContactsDone || 'Deleted %d contacts.' )
+							: ( i18n.bulkDeleteBookingsDone || 'Deleted %d bookings.' );
+						toast( tpl.replace( '%d', String( deleted ) ), 'success' );
+						window.setTimeout( function() {
+							window.location.reload();
+						}, 600 );
+					} catch ( err ) {
+						const msg = ( err && err.message ) ? err.message : ( i18n.saveFailed || 'Delete failed' );
+						toast( msg, 'error', 4500 );
+					}
+				} );
+			}
+
+			refresh();
+		} );
+	}
 
 	// ============================================================
 	// 2.1.26.2: "Pull from Cal.com" backfill button on the Bookings

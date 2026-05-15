@@ -174,24 +174,33 @@ class Handik_Booking_App_Cal_Api_Service {
 				'status' => 400,
 			);
 		}
+		// 2.1.26.3 P0 fix: Cal API v2 has TWO mutually-exclusive
+		// length rules depending on the event type:
+		//   - FIXED-length event type → REJECTS lengthInMinutes
+		//     ("Can't specify 'lengthInMinutes' because event type
+		//     does not have multiple possible lengths. Please,
+		//     remove the 'lengthInMinutes' field from the request.")
+		//   - VARIABLE-length event type → REQUIRES lengthInMinutes
+		//
+		// Since we don't have event-type metadata at request time,
+		// the only robust approach is: try without lengthInMinutes
+		// first (matches the common case — fixed-length event types),
+		// retry WITH lengthInMinutes if Cal indicates it's required
+		// (`lengthInMinutes` appears in a 400 response message).
+		//
+		// `end` is dropped entirely — Cal v2 doesn't accept it at
+		// all anymore (separate validation, "end property is wrong,
+		// property end should not exist"). It's derived server-side
+		// from start + event-type-length (or start + the retry's
+		// lengthInMinutes for variable-length).
+		$length_minutes = 0;
 		if ( ! empty( $args['duration_minutes'] ) ) {
-			$body['lengthInMinutes'] = (int) $args['duration_minutes'];
-		}
-		// 2.1.26.2 P0 fix: Cal API v2 rejects the `end` property
-		// outright ("end property is wrong, property end should not
-		// exist") — it computes the end from `start + lengthInMinutes`.
-		// Previously we always passed both, and Cal accepted it for a
-		// while; the schema tightened and project-form bookings
-		// started failing on subsequent days, triggering the rollback
-		// of the entire schedule ("One of your selected days could
-		// not be confirmed..."). We now derive `lengthInMinutes` from
-		// `args['end']` when it wasn't explicitly passed, so the body
-		// always has duration but never the forbidden `end` field.
-		if ( empty( $body['lengthInMinutes'] ) && ! empty( $args['end'] ) && ! empty( $args['start'] ) ) {
+			$length_minutes = (int) $args['duration_minutes'];
+		} elseif ( ! empty( $args['end'] ) && ! empty( $args['start'] ) ) {
 			$start_ts = strtotime( (string) $args['start'] );
 			$end_ts   = strtotime( (string) $args['end'] );
 			if ( $start_ts && $end_ts && $end_ts > $start_ts ) {
-				$body['lengthInMinutes'] = (int) round( ( $end_ts - $start_ts ) / 60 );
+				$length_minutes = (int) round( ( $end_ts - $start_ts ) / 60 );
 			}
 		}
 		if ( ! empty( $args['timezone'] ) ) {
@@ -226,6 +235,34 @@ class Handik_Booking_App_Cal_Api_Service {
 				'version' => self::BOOKINGS_API_VERSION,
 			)
 		);
+		// Retry-with-length: if Cal returned 400 mentioning
+		// `lengthInMinutes` (signal for a variable-length event type
+		// that requires the field), re-attempt the POST with the
+		// computed length. Single retry, no infinite loop.
+		if ( ! empty( $response['error'] )
+			&& isset( $response['status'] )
+			&& 400 === (int) $response['status']
+			&& $length_minutes > 0
+			&& stripos( (string) $response['error'], 'lengthInMinutes' ) !== false
+			&& stripos( (string) $response['error'], "Can't specify" ) === false
+		) {
+			$body['lengthInMinutes'] = $length_minutes;
+			// Bump idempotency key suffix so Cal doesn't return the
+			// cached 400. Append "-len" — still deterministic per
+			// caller, just a different key from the first attempt.
+			if ( ! empty( $headers['Cal-Idempotency-Key'] ) ) {
+				$headers['Cal-Idempotency-Key'] = $headers['Cal-Idempotency-Key'] . '-len';
+			}
+			$response = $this->request(
+				'POST',
+				'/bookings',
+				array(
+					'headers' => $headers,
+					'body'    => $body,
+					'version' => self::BOOKINGS_API_VERSION,
+				)
+			);
+		}
 		if ( ! empty( $response['error'] ) ) {
 			return $response;
 		}

@@ -73,10 +73,15 @@ class Handik_Booking_App_Admin_People {
 			__( 'One row per customer — addresses, requests and bookings consolidated.', 'handik-booking-app' )
 		);
 
-		// Top toolbar: Add person + filter chips + search.
+		// Top toolbar: Add person + filter chips + search + (optional)
+		// "Select" toggle for bulk-delete cleanup.
 		$add_url = Handik_Booking_App_Admin_Helpers::admin_url_for( 'handik-booking-app-crm', array( 'action' => 'add' ) );
+		$can_bulk_delete = current_user_can( Handik_Booking_App_Capabilities::MANAGE_DELETE );
 		echo '<div class="handik-admin-toolbar">';
 		echo '<a class="button button-primary" href="' . esc_url( $add_url ) . '">+ ' . esc_html__( 'Add person', 'handik-booking-app' ) . '</a>';
+		if ( $can_bulk_delete ) {
+			echo '<button type="button" class="button" data-handik-bulk-toggle data-handik-bulk-target=".handik-admin-people-list">' . esc_html__( 'Select', 'handik-booking-app' ) . '</button>';
+		}
 		echo '</div>';
 
 		// Filter chips.
@@ -134,10 +139,20 @@ class Handik_Booking_App_Admin_People {
 
 	protected function people_filter_chips( $active ) {
 		$page = 'handik-booking-app-crm';
+		// 2.1.26.3 — drafts consolidation: a single "Drafts" view
+		// reachable from BOTH the dashboard "drafts" chip AND from
+		// People & Requests. The chip used to point at
+		// `?filter=drafts_only` which rendered the contacts-list
+		// filtered to people with at least one draft — a different
+		// view from the dashboard's `?filter=drafts_old` which renders
+		// the FOCUS LIST of abandoned request rows. Owner-reported
+		// confusion ("какие-то ДРУГИЕ Drafts отображаются"). Now both
+		// chips route to the same `drafts_old` focus list — one
+		// consistent definition of "Drafts".
 		$chips = array(
 			'all'           => __( 'All people', 'handik-booking-app' ),
 			'with_bookings' => __( 'With bookings', 'handik-booking-app' ),
-			'drafts_only'   => __( 'Drafts only', 'handik-booking-app' ),
+			'drafts_old'    => __( 'Drafts', 'handik-booking-app' ),
 			'no_address'    => __( 'No address', 'handik-booking-app' ),
 		);
 		// Sprint 11 fix: preserve the search query + show_spam toggle on
@@ -180,11 +195,37 @@ class Handik_Booking_App_Admin_People {
 	}
 
 	protected function people_list_markup( array $rows ) {
+		$rest_base       = trailingslashit( rest_url( 'handik-booking-app/v1' ) );
+		$bulk_endpoint   = $rest_base . 'admin/contacts/bulk-delete';
+		$can_bulk_delete = current_user_can( Handik_Booking_App_Capabilities::MANAGE_DELETE );
 		ob_start();
 		?>
-		<div class="handik-admin-people-list">
+		<div class="handik-admin-people-list"
+			<?php if ( $can_bulk_delete ) : ?>
+				data-handik-bulk-section
+				data-bulk-endpoint="<?php echo esc_attr( esc_url_raw( $bulk_endpoint ) ); ?>"
+				data-rest-nonce="<?php echo esc_attr( wp_create_nonce( 'wp_rest' ) ); ?>"
+				data-bulk-kind="contacts"
+			<?php endif; ?>>
+			<?php if ( $can_bulk_delete ) : ?>
+				<div class="handik-admin-bulk-bar" data-handik-bulk-bar hidden>
+					<label class="handik-admin-bulk-bar__check"><input type="checkbox" data-handik-bulk-toggle-all /></label>
+					<span class="handik-admin-bulk-bar__count" data-handik-bulk-count>0 <?php esc_html_e( 'selected', 'handik-booking-app' ); ?></span>
+					<button type="button" class="button button-secondary handik-admin-bulk-bar__delete" data-handik-bulk-apply disabled><?php esc_html_e( 'Delete selected', 'handik-booking-app' ); ?></button>
+				</div>
+			<?php endif; ?>
 			<?php foreach ( $rows as $row ) : ?>
-				<?php echo $this->person_row_markup( $row ); ?>
+				<?php
+				if ( $can_bulk_delete ) {
+					$pid = (int) ( $row['id'] ?? 0 );
+					echo '<div class="handik-admin-person-row-wrap" data-row-id="' . esc_attr( (string) $pid ) . '">';
+					echo '<input type="checkbox" data-handik-bulk-row value="' . esc_attr( (string) $pid ) . '" class="handik-admin-bulk-cb" aria-label="' . esc_attr__( 'Select person', 'handik-booking-app' ) . '" />';
+				}
+				echo $this->person_row_markup( $row );
+				if ( $can_bulk_delete ) {
+					echo '</div>';
+				}
+				?>
 			<?php endforeach; ?>
 		</div>
 		<?php
