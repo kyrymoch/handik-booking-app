@@ -445,8 +445,11 @@ class Handik_Booking_App_Admin {
 					'bulkDone'            => __( 'Done', 'handik-booking-app' ),
 					'bulkDeleteBookingsConfirm' => __( 'Delete %d bookings? This is irreversible. Cal.com bookings are NOT cancelled — only the local rows are dropped.', 'handik-booking-app' ),
 					'bulkDeleteBookingsDone'    => __( 'Deleted %d bookings.', 'handik-booking-app' ),
+					'bulkDeleteBookingsPrompt'  => __( 'About to delete %1$s of %2$s bookings (the local rows; Cal.com bookings are NOT cancelled). This is irreversible. Type %3$s to confirm.', 'handik-booking-app' ),
 					'bulkDeleteContactsConfirm' => __( 'Delete %d contacts AND all their requests, bookings, addresses, photos and messages? This is irreversible.', 'handik-booking-app' ),
 					'bulkDeleteContactsDone'    => __( 'Deleted %d contacts.', 'handik-booking-app' ),
+					'bulkDeleteContactsPrompt'  => __( 'About to delete %1$s of %2$s contacts AND all their requests, bookings, addresses, photos and messages. This is irreversible. Type %3$s to confirm.', 'handik-booking-app' ),
+					'bulkDeleteMismatch'        => __( 'Confirmation text did not match. Nothing deleted.', 'handik-booking-app' ),
 				),
 			)
 		);

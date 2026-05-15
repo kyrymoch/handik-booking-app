@@ -845,6 +845,14 @@ class Handik_Booking_App_REST_API {
 	 * matches the per-row admin delete path. NOT cancelled on
 	 * Cal.com (matching single-row behaviour — owner cleans local
 	 * DB without touching Cal). Capped at 200 per call.
+	 *
+	 * 2.1.26.4 — audit log every call so any future "I deleted X
+	 * but Y went missing too" report has a server-side record of
+	 * the exact id list submitted, who submitted, and how many
+	 * rows the cascade actually dropped. Owner-reported critical
+	 * data-loss in 2.1.26.3 traced to a JS duplicate-checkbox
+	 * desync; the fix lives in `initBulkMode()` but the audit log
+	 * here gives us evidence if it ever happens again.
 	 */
 	public function admin_bookings_bulk_delete( WP_REST_Request $request ) {
 		if ( ! $this->cascade_delete ) {
@@ -861,6 +869,16 @@ class Handik_Booking_App_REST_API {
 		if ( count( $ids ) > 200 ) {
 			return new WP_Error( 'handik_bulk_delete_too_many', __( 'Bulk delete is capped at 200 bookings per call.', 'handik-booking-app' ), array( 'status' => 413 ) );
 		}
+		if ( $this->logger ) {
+			$this->logger->warning(
+				'Admin bulk-delete bookings — incoming request.',
+				array(
+					'user_id'  => get_current_user_id(),
+					'id_count' => count( $ids ),
+					'ids'      => $ids,
+				)
+			);
+		}
 		$deleted = 0;
 		$failed  = array();
 		foreach ( $ids as $id ) {
@@ -870,6 +888,17 @@ class Handik_Booking_App_REST_API {
 			} else {
 				$failed[] = (int) $id;
 			}
+		}
+		if ( $this->logger ) {
+			$this->logger->info(
+				'Admin bulk-delete bookings — completed.',
+				array(
+					'user_id'   => get_current_user_id(),
+					'requested' => count( $ids ),
+					'deleted'   => $deleted,
+					'failed'    => $failed,
+				)
+			);
 		}
 		return rest_ensure_response( array(
 			'success'  => true,
@@ -901,6 +930,16 @@ class Handik_Booking_App_REST_API {
 		if ( count( $ids ) > 100 ) {
 			return new WP_Error( 'handik_bulk_delete_too_many', __( 'Bulk delete is capped at 100 contacts per call.', 'handik-booking-app' ), array( 'status' => 413 ) );
 		}
+		if ( $this->logger ) {
+			$this->logger->warning(
+				'Admin bulk-delete contacts — incoming request.',
+				array(
+					'user_id'  => get_current_user_id(),
+					'id_count' => count( $ids ),
+					'ids'      => $ids,
+				)
+			);
+		}
 		$deleted = 0;
 		$failed  = array();
 		foreach ( $ids as $id ) {
@@ -910,6 +949,17 @@ class Handik_Booking_App_REST_API {
 			} else {
 				$failed[] = (int) $id;
 			}
+		}
+		if ( $this->logger ) {
+			$this->logger->info(
+				'Admin bulk-delete contacts — completed.',
+				array(
+					'user_id'   => get_current_user_id(),
+					'requested' => count( $ids ),
+					'deleted'   => $deleted,
+					'failed'    => $failed,
+				)
+			);
 		}
 		return rest_ensure_response( array(
 			'success'  => true,

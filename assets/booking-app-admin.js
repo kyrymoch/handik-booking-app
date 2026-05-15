@@ -295,16 +295,30 @@
 			body.className = 'handik-admin-modal__body';
 
 			let textarea = null;
+			let textInput = null;
+			if ( opts.body ) {
+				const p = document.createElement( 'p' );
+				p.textContent = opts.body;
+				body.appendChild( p );
+			}
 			if ( opts.textarea ) {
 				textarea = document.createElement( 'textarea' );
 				textarea.placeholder = opts.placeholder || i18n.placeholder || '';
 				textarea.value = opts.defaultValue || '';
 				body.appendChild( textarea );
-			}
-			if ( opts.body ) {
-				const p = document.createElement( 'p' );
-				p.textContent = opts.body;
-				body.appendChild( p );
+			} else if ( opts.input ) {
+				// 2.1.26.4 — single-line text input for type-to-confirm
+				// modals (bulk-delete safety). User must type a token
+				// matching `opts.placeholder` exactly before the
+				// caller treats the modal result as confirmation.
+				textInput = document.createElement( 'input' );
+				textInput.type = 'text';
+				textInput.placeholder = opts.placeholder || '';
+				textInput.value = opts.defaultValue || '';
+				textInput.className = 'handik-admin-modal__input';
+				textInput.autocomplete = 'off';
+				textInput.spellcheck = false;
+				body.appendChild( textInput );
 			}
 			modal.appendChild( body );
 
@@ -324,7 +338,13 @@
 			confirm.className = 'button button-primary';
 			confirm.textContent = opts.confirmLabel || i18n.confirm || 'Confirm';
 			confirm.addEventListener( 'click', function() {
-				close( textarea ? textarea.value : true );
+				if ( textarea ) {
+					close( textarea.value );
+				} else if ( textInput ) {
+					close( textInput.value );
+				} else {
+					close( true );
+				}
 			} );
 
 			actions.appendChild( cancel );
@@ -1793,10 +1813,58 @@
 				return Array.from( container.querySelectorAll( '[data-handik-bulk-row]' ) );
 			}
 
+			// 2.1.26.4 critical-data-loss fix: cards-view and table-
+			// view both render their own copy of each row's checkbox
+			// with the same `value=<id>`. Toggle-all checks both
+			// copies, but a manual uncheck only flips the one the
+			// user clicked. When the user "selected all and un-
+			// checked 15 to keep", the cards-view copies of those 15
+			// went unchecked but the table-view copies stayed
+			// checked. JS's :checked collection still included them,
+			// the apply payload had every id, and the server deleted
+			// everything. Sync all duplicates whenever any single
+			// checkbox changes — the visible state in cards/table
+			// stays consistent regardless of which view the user
+			// interacted with.
+			function syncDuplicates( target ) {
+				if ( ! target || ! target.value ) { return; }
+				const newState = target.checked;
+				const valNum   = parseInt( target.value, 10 );
+				if ( ! ( valNum > 0 ) ) { return; }
+				// Build the selector with the integer value — no need to
+				// CSS-escape since booking/contact ids are always positive
+				// integers parsed above.
+				container.querySelectorAll( '[data-handik-bulk-row][value="' + valNum + '"]' ).forEach( function( c ) {
+					if ( c !== target ) { c.checked = newState; }
+				} );
+			}
+
+			function getUniqueCheckedIds() {
+				const boxes = getCheckboxes();
+				const ids   = new Set();
+				boxes.forEach( function( c ) {
+					if ( c.checked ) {
+						const v = parseInt( c.value, 10 );
+						if ( v > 0 ) { ids.add( v ); }
+					}
+				} );
+				return Array.from( ids );
+			}
+
+			function getUniqueIds() {
+				const boxes = getCheckboxes();
+				const ids   = new Set();
+				boxes.forEach( function( c ) {
+					const v = parseInt( c.value, 10 );
+					if ( v > 0 ) { ids.add( v ); }
+				} );
+				return ids.size;
+			}
+
 			function refresh() {
-				const boxes  = getCheckboxes();
-				const checked = boxes.filter( function( c ) { return c.checked; } );
-				const n = checked.length;
+				const checkedIds = getUniqueCheckedIds();
+				const totalIds   = getUniqueIds();
+				const n = checkedIds.length;
 				if ( countEl ) {
 					countEl.textContent = String( n ) + ' ' + ( i18n.selected || 'selected' );
 				}
@@ -1804,8 +1872,8 @@
 					applyBtn.disabled = 0 === n;
 				}
 				if ( toggleAll ) {
-					toggleAll.checked = n > 0 && n === boxes.length;
-					toggleAll.indeterminate = n > 0 && n < boxes.length;
+					toggleAll.checked = n > 0 && n === totalIds;
+					toggleAll.indeterminate = n > 0 && n < totalIds;
 				}
 			}
 
@@ -1850,6 +1918,7 @@
 			container.addEventListener( 'change', function( event ) {
 				const target = event.target;
 				if ( target && target.matches && target.matches( '[data-handik-bulk-row]' ) ) {
+					syncDuplicates( target );
 					refresh();
 				}
 			} );
@@ -1868,18 +1937,37 @@
 			if ( applyBtn ) {
 				applyBtn.addEventListener( 'click', async function( event ) {
 					event.preventDefault();
-					const boxes  = getCheckboxes();
-					const checked = boxes.filter( function( c ) { return c.checked; } );
-					if ( 0 === checked.length ) { return; }
-					const ids = checked.map( function( c ) { return parseInt( c.value, 10 ); } ).filter( function( v ) { return v > 0; } );
-					const confirmTpl = 'contacts' === kind
-						? ( i18n.bulkDeleteContactsConfirm || 'Delete %d contacts AND all their requests, bookings, addresses? This is irreversible.' )
-						: ( i18n.bulkDeleteBookingsConfirm || 'Delete %d bookings? This is irreversible.' );
-					const ok = await openModal( {
+					const ids = getUniqueCheckedIds();
+					if ( 0 === ids.length ) { return; }
+					// 2.1.26.4 critical-data-loss safety: type-to-confirm
+					// modal — owner must type "DELETE <count>" literally
+					// before the destructive POST goes out. Same pattern
+					// the danger-zone single-row delete uses. Prevents the
+					// "I clicked Select All by mistake → wiped everything"
+					// scenario the owner reported.
+					const totalIds   = getUniqueIds();
+					const sel        = String( ids.length );
+					const tot        = String( totalIds );
+					const requireToken = 'DELETE ' + sel;
+					const promptTpl = 'contacts' === kind
+						? ( i18n.bulkDeleteContactsPrompt || 'About to delete %1$s of %2$s contacts AND all their requests, bookings, addresses, photos and messages. This is irreversible. Type %3$s to confirm.' )
+						: ( i18n.bulkDeleteBookingsPrompt || 'About to delete %1$s of %2$s bookings (the local rows; Cal.com bookings are NOT cancelled). This is irreversible. Type %3$s to confirm.' );
+					const body = promptTpl
+						.replace( '%1$s', sel )
+						.replace( '%2$s', tot )
+						.replace( '%3$s', requireToken );
+					const typed = await openModal( {
 						title: i18n.bulkDeleteTitle || 'Delete',
-						body: confirmTpl.replace( '%d', String( ids.length ) ),
+						body: body,
+						input: true,
+						placeholder: requireToken,
 					} );
-					if ( ! ok ) { return; }
+					if ( null === typed || typed.trim() !== requireToken ) {
+						if ( typed !== null ) {
+							toast( i18n.bulkDeleteMismatch || 'Confirmation text did not match. Nothing deleted.', 'warning', 3500 );
+						}
+						return;
+					}
 					try {
 						const result = await withButtonLoading( applyBtn, function() {
 							return window.fetch( endpoint, {

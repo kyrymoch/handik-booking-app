@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.1.26.3
+Stable tag: 2.1.26.4
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, silent returning-client recognition, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,17 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.1.26.4 =
+* **P0 fix — Project Work Days form confirm now succeeds on the first tap.** 2.1.26.3 introduced a retry-with-`lengthInMinutes` path to handle Cal v2's mutually-exclusive length rules (fixed-length event types REJECT it, variable-length event types REQUIRE it). The worst-case retry path doubled the time per day to 24s (12s Cal HTTP timeout × 2 attempts) and on multi-day project schedules the cumulative request time exceeded PHP `max_execution_time` on the owner's environment, producing a WSOD fatal on the first confirm tap. The SECOND tap then completed instantly because Cal-Idempotency-Key replayed the cached partial-attempts from the first run. Owner observed "long thinking, error, second tap success" + browser-side 500 with WP critical-error page.
+* Fix: remove the retry entirely. `Cal_Api_Service::create_booking()` sends neither `end` nor `lengthInMinutes` — Cal v2 derives the end-time server-side from `start + event-type-configured-duration`. Works for FIXED-length event types (the common case + the owner's setup). VARIABLE-length event types would 400 here; that's a future-feature gate (pre-fetch event-type metadata, conditionally include `lengthInMinutes`) and ships separately if/when a preset actually needs it.
+* **Critical data-loss fix — bulk-delete on the Bookings list.** Owner-reported: "I clicked Select all, then manually unchecked the 15 I wanted to keep, clicked Delete — and EVERY booking got erased including the 15 unchecked ones." Root cause: the Bookings list renders TWO checkboxes per row — one in the cards view, one in the table view — both with the same `value=<id>`. Toggle-all set BOTH copies of every row to checked. Then a manual uncheck only flipped the ONE copy the user clicked (the cards-view one on mobile); the table-view duplicate stayed checked. The Delete handler collected every `:checked` checkbox without dedup-by-value, so the table-view copies of the unchecked-in-cards-view ids ended up in the payload, and the server cascade-deleted them too.
+* Fix in `initBulkMode()` (booking-app-admin.js): on any per-row checkbox change, sync ALL `[data-handik-bulk-row][value="<that id>"]` siblings to the same state. The visible state in cards/table stays consistent regardless of which view the user interacted with. Counts + apply payload now use a `Set` of unique ids, deduping any double-counted duplicates as a belt-and-suspenders.
+* **Bulk-delete safety — type-to-confirm modal.** Even with the dedup fix above, an accidental Select-all could still wipe everything in one tap. Same pattern the single-row danger-zone delete already uses: confirmation modal shows "About to delete 47 of 200 bookings... Type DELETE 47 to confirm" and the request only fires if the typed text matches exactly. Cancel or Esc returns null and aborts silently; a typed-but-wrong value toasts "Confirmation text did not match. Nothing deleted." Applied to both Bookings and Contacts bulk-delete.
+* **Server-side audit log** on `POST /admin/bookings/bulk-delete` and `POST /admin/contacts/bulk-delete` — every call logs the user_id + incoming id list + final deleted/failed counts via `Handik_Logger::warning` (incoming) + `::info` (completed). If any future "I deleted X but Y went missing too" report comes in, the log has the exact id payload the server received from the client so we can prove whether the bug was JS-side or server-side.
+* **`openModal()` helper** in `booking-app-admin.js` gains a new `input: true` option for single-line text input (in addition to the existing `textarea: true`). The new bulk-delete prompt uses it; future type-to-confirm flows can reuse the same shape.
+* Five new HandikAdmin.i18n strings: `bulkDeleteBookingsPrompt`, `bulkDeleteContactsPrompt`, `bulkDeleteMismatch`.
+* No DB change. No migration.
 
 = 2.1.26.3 =
 * **P0 fix — Project Work Days form still failing after 2.1.26.2.** Owner-reported with server log: `Can't specify 'lengthInMinutes' because event type does not have multiple possible lengths. Please, remove the 'lengthInMinutes' field from the request.` Cal v2 has two mutually-exclusive length rules — FIXED-length event types REJECT `lengthInMinutes`, VARIABLE-length event types REQUIRE it. 2.1.26.2 removed the forbidden `end` field but always sent `lengthInMinutes`, which then broke the fixed-length case (the owner's setup). Fix: try the POST WITHOUT `lengthInMinutes` first (matches the common fixed-length path — Cal derives the end from the event-type config). If Cal returns a 400 mentioning `lengthInMinutes` is needed, retry once WITH the computed length value, bumping the `Cal-Idempotency-Key` suffix so Cal doesn't serve the cached 400. Direct booking form remains unaffected (uses the iframe, not server-side `create_booking`).
