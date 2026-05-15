@@ -174,35 +174,25 @@ class Handik_Booking_App_Cal_Api_Service {
 				'status' => 400,
 			);
 		}
-		// 2.1.26.3 P0 fix: Cal API v2 has TWO mutually-exclusive
-		// length rules depending on the event type:
-		//   - FIXED-length event type → REJECTS lengthInMinutes
-		//     ("Can't specify 'lengthInMinutes' because event type
-		//     does not have multiple possible lengths. Please,
-		//     remove the 'lengthInMinutes' field from the request.")
-		//   - VARIABLE-length event type → REQUIRES lengthInMinutes
+		// 2.1.26.4 P0 fix: Cal API v2 derives end-time from `start +
+		// event-type-default-duration` server-side. We previously sent
+		// `end`, then `lengthInMinutes`, then both — Cal's schema
+		// tightened around 2.1.26.x and started rejecting whichever
+		// was redundant for the event type. 2.1.26.3 added retry-on-
+		// 400 logic to handle BOTH fixed- and variable-length event
+		// types, but the worst-case retry path (12s timeout × 2
+		// attempts × N days) exceeded PHP `max_execution_time` on
+		// the owner's environment and produced a WSOD fatal on the
+		// first confirm; the second tap completed instantly because
+		// Cal-Idempotency-Key replayed the cached partial-attempts.
 		//
-		// Since we don't have event-type metadata at request time,
-		// the only robust approach is: try without lengthInMinutes
-		// first (matches the common case — fixed-length event types),
-		// retry WITH lengthInMinutes if Cal indicates it's required
-		// (`lengthInMinutes` appears in a 400 response message).
-		//
-		// `end` is dropped entirely — Cal v2 doesn't accept it at
-		// all anymore (separate validation, "end property is wrong,
-		// property end should not exist"). It's derived server-side
-		// from start + event-type-length (or start + the retry's
-		// lengthInMinutes for variable-length).
-		$length_minutes = 0;
-		if ( ! empty( $args['duration_minutes'] ) ) {
-			$length_minutes = (int) $args['duration_minutes'];
-		} elseif ( ! empty( $args['end'] ) && ! empty( $args['start'] ) ) {
-			$start_ts = strtotime( (string) $args['start'] );
-			$end_ts   = strtotime( (string) $args['end'] );
-			if ( $start_ts && $end_ts && $end_ts > $start_ts ) {
-				$length_minutes = (int) round( ( $end_ts - $start_ts ) / 60 );
-			}
-		}
+		// Now: send neither `end` nor `lengthInMinutes`. Cal uses the
+		// event-type's configured duration. Works for FIXED-length
+		// event types (the common case + the owner's setup).
+		// VARIABLE-length event types would 400 here; that's a
+		// future-feature gate — pre-fetch the event-type metadata and
+		// conditionally include lengthInMinutes — not shipped today
+		// because no current preset uses variable-length.
 		if ( ! empty( $args['timezone'] ) ) {
 			$body['attendee']['timeZone'] = (string) $args['timezone'];
 		} elseif ( empty( $body['attendee']['timeZone'] ) ) {
@@ -235,34 +225,6 @@ class Handik_Booking_App_Cal_Api_Service {
 				'version' => self::BOOKINGS_API_VERSION,
 			)
 		);
-		// Retry-with-length: if Cal returned 400 mentioning
-		// `lengthInMinutes` (signal for a variable-length event type
-		// that requires the field), re-attempt the POST with the
-		// computed length. Single retry, no infinite loop.
-		if ( ! empty( $response['error'] )
-			&& isset( $response['status'] )
-			&& 400 === (int) $response['status']
-			&& $length_minutes > 0
-			&& stripos( (string) $response['error'], 'lengthInMinutes' ) !== false
-			&& stripos( (string) $response['error'], "Can't specify" ) === false
-		) {
-			$body['lengthInMinutes'] = $length_minutes;
-			// Bump idempotency key suffix so Cal doesn't return the
-			// cached 400. Append "-len" — still deterministic per
-			// caller, just a different key from the first attempt.
-			if ( ! empty( $headers['Cal-Idempotency-Key'] ) ) {
-				$headers['Cal-Idempotency-Key'] = $headers['Cal-Idempotency-Key'] . '-len';
-			}
-			$response = $this->request(
-				'POST',
-				'/bookings',
-				array(
-					'headers' => $headers,
-					'body'    => $body,
-					'version' => self::BOOKINGS_API_VERSION,
-				)
-			);
-		}
 		if ( ! empty( $response['error'] ) ) {
 			return $response;
 		}

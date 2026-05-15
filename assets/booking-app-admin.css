@@ -1723,6 +1723,16 @@ a.handik-admin-today-card-link:focus-visible .handik-admin-today-card {
 	min-height: 120px;
 }
 
+.handik-admin-modal__input {
+	width: 100%;
+	padding: 8px 10px;
+	font-size: 1rem;
+	font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+	border: 1px solid #cbd5e1;
+	border-radius: 6px;
+	box-sizing: border-box;
+}
+
 .handik-admin-modal__actions {
 	display: flex;
 	gap: 8px;
