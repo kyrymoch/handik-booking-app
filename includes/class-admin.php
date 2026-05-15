@@ -441,6 +441,12 @@ class Handik_Booking_App_Admin {
 					'pullFromCalFetching' => __( 'Fetching bookings from Cal.com…', 'handik-booking-app' ),
 					'pullFromCalDone'     => __( 'Fetched %1$d · %2$d new · %3$d already there', 'handik-booking-app' ),
 					'pullFromCalFailed'   => __( 'Pull from Cal.com failed. See server logs.', 'handik-booking-app' ),
+					'bulkSelect'          => __( 'Select', 'handik-booking-app' ),
+					'bulkDone'            => __( 'Done', 'handik-booking-app' ),
+					'bulkDeleteBookingsConfirm' => __( 'Delete %d bookings? This is irreversible. Cal.com bookings are NOT cancelled — only the local rows are dropped.', 'handik-booking-app' ),
+					'bulkDeleteBookingsDone'    => __( 'Deleted %d bookings.', 'handik-booking-app' ),
+					'bulkDeleteContactsConfirm' => __( 'Delete %d contacts AND all their requests, bookings, addresses, photos and messages? This is irreversible.', 'handik-booking-app' ),
+					'bulkDeleteContactsDone'    => __( 'Deleted %d contacts.', 'handik-booking-app' ),
 				),
 			)
 		);

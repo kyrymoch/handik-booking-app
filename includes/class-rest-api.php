@@ -158,6 +158,24 @@ class Handik_Booking_App_REST_API {
 			'callback'            => array( $this, 'admin_job_requests_bulk_delete' ),
 			'permission_callback' => array( $this, 'admin_delete_permission' ),
 		) );
+		// 2.1.26.3 — bulk-delete bookings (cleanup for owner after
+		// "Pull from Cal.com" backfills test bookings + cancellations
+		// they want to clear out of the local list without unbooking
+		// on Cal.com).
+		register_rest_route( $namespace, '/admin/bookings/bulk-delete', array(
+			'methods'             => WP_REST_Server::CREATABLE,
+			'callback'            => array( $this, 'admin_bookings_bulk_delete' ),
+			'permission_callback' => array( $this, 'admin_delete_permission' ),
+		) );
+		// 2.1.26.3 — bulk-delete contacts (cascade: contact + all
+		// requests + bookings + addresses). Gated on MANAGE_DELETE
+		// like the single-row delete. UI will require typed-confirm
+		// before posting.
+		register_rest_route( $namespace, '/admin/contacts/bulk-delete', array(
+			'methods'             => WP_REST_Server::CREATABLE,
+			'callback'            => array( $this, 'admin_contacts_bulk_delete' ),
+			'permission_callback' => array( $this, 'admin_delete_permission' ),
+		) );
 		register_rest_route( $namespace, '/admin/booking/(?P<id>\d+)', array(
 			'methods'             => WP_REST_Server::DELETABLE,
 			'callback'            => array( $this, 'admin_booking_delete' ),
@@ -732,7 +750,20 @@ class Handik_Booking_App_REST_API {
 		$pull_all  = (bool) $request->get_param( 'pull_all' );
 		$date_from = (string) $request->get_param( 'dateFrom' );
 		$date_to   = (string) $request->get_param( 'dateTo' );
-		$args      = array();
+		// 2.1.26.3: default to upcoming-only. Previously the button
+		// pulled everything including past cancelled bookings, which
+		// flooded the admin with test rows the owner had cancelled on
+		// Cal directly. `status` body param overrides; e.g. send
+		// `status=accepted` to include both upcoming and past
+		// non-cancelled bookings, or omit (default upcoming) to skip
+		// cancellations entirely.
+		$status_filter = $request->get_param( 'status' );
+		$args = array();
+		if ( null !== $status_filter && '' !== $status_filter ) {
+			$args['status'] = (string) $status_filter;
+		} else {
+			$args['status'] = 'upcoming';
+		}
 		if ( $pull_all ) {
 			// Cal accepts no-date-filter "give me everything" — capped
 			// at the API's hard limit per call, paginated up to our
@@ -774,6 +805,18 @@ class Handik_Booking_App_REST_API {
 				$skipped++;
 				continue;
 			}
+			// 2.1.26.3: defensive skip-cancelled — even with the
+			// `status=upcoming` API filter (set as default a few
+			// lines above), Cal occasionally returns cancelled rows
+			// when the booking was cancelled AFTER the upcoming-
+			// window started. Owner reported the previous build
+			// flooded with cancelled test bookings, so we belt-and-
+			// suspenders skip them here too.
+			$cal_status = isset( $payload['status'] ) ? strtolower( (string) $payload['status'] ) : '';
+			if ( 'cancelled' === $cal_status || 'rejected' === $cal_status ) {
+				$skipped++;
+				continue;
+			}
 			if ( isset( $existing_set[ $cal_id ] ) ) {
 				$already++;
 				continue;
@@ -793,6 +836,86 @@ class Handik_Booking_App_REST_API {
 			'already_present' => $already,
 			'inserted'        => $inserted,
 			'skipped'         => $skipped,
+		) );
+	}
+
+	/**
+	 * 2.1.26.3 — bulk-delete a list of bookings. Loops each id
+	 * through Cascade_Delete_Service::delete_booking so each drop
+	 * matches the per-row admin delete path. NOT cancelled on
+	 * Cal.com (matching single-row behaviour — owner cleans local
+	 * DB without touching Cal). Capped at 200 per call.
+	 */
+	public function admin_bookings_bulk_delete( WP_REST_Request $request ) {
+		if ( ! $this->cascade_delete ) {
+			return $this->admin_unavailable();
+		}
+		$raw_ids = $request->get_param( 'ids' );
+		if ( ! is_array( $raw_ids ) ) {
+			return new WP_Error( 'handik_bulk_delete_invalid', __( 'No booking ids provided.', 'handik-booking-app' ), array( 'status' => 400 ) );
+		}
+		$ids = array_values( array_unique( array_filter( array_map( 'absint', $raw_ids ) ) ) );
+		if ( empty( $ids ) ) {
+			return new WP_Error( 'handik_bulk_delete_invalid', __( 'No valid booking ids provided.', 'handik-booking-app' ), array( 'status' => 400 ) );
+		}
+		if ( count( $ids ) > 200 ) {
+			return new WP_Error( 'handik_bulk_delete_too_many', __( 'Bulk delete is capped at 200 bookings per call.', 'handik-booking-app' ), array( 'status' => 413 ) );
+		}
+		$deleted = 0;
+		$failed  = array();
+		foreach ( $ids as $id ) {
+			$res = $this->cascade_delete->delete_booking( (int) $id );
+			if ( ! empty( $res['deleted'] ) ) {
+				$deleted++;
+			} else {
+				$failed[] = (int) $id;
+			}
+		}
+		return rest_ensure_response( array(
+			'success'  => true,
+			'requested'=> count( $ids ),
+			'deleted'  => $deleted,
+			'failed'   => $failed,
+		) );
+	}
+
+	/**
+	 * 2.1.26.3 — bulk-delete a list of contacts (cascade: contact +
+	 * all requests + bookings + addresses). Gated on MANAGE_DELETE
+	 * (delete_permission). UI requires typed-confirm before
+	 * posting. Capped at 100 per call — contact cascade is much
+	 * heavier than booking delete.
+	 */
+	public function admin_contacts_bulk_delete( WP_REST_Request $request ) {
+		if ( ! $this->cascade_delete ) {
+			return $this->admin_unavailable();
+		}
+		$raw_ids = $request->get_param( 'ids' );
+		if ( ! is_array( $raw_ids ) ) {
+			return new WP_Error( 'handik_bulk_delete_invalid', __( 'No contact ids provided.', 'handik-booking-app' ), array( 'status' => 400 ) );
+		}
+		$ids = array_values( array_unique( array_filter( array_map( 'absint', $raw_ids ) ) ) );
+		if ( empty( $ids ) ) {
+			return new WP_Error( 'handik_bulk_delete_invalid', __( 'No valid contact ids provided.', 'handik-booking-app' ), array( 'status' => 400 ) );
+		}
+		if ( count( $ids ) > 100 ) {
+			return new WP_Error( 'handik_bulk_delete_too_many', __( 'Bulk delete is capped at 100 contacts per call.', 'handik-booking-app' ), array( 'status' => 413 ) );
+		}
+		$deleted = 0;
+		$failed  = array();
+		foreach ( $ids as $id ) {
+			$res = $this->cascade_delete->delete_contact( (int) $id );
+			if ( ! empty( $res['deleted'] ) ) {
+				$deleted++;
+			} else {
+				$failed[] = (int) $id;
+			}
+		}
+		return rest_ensure_response( array(
+			'success'  => true,
+			'requested'=> count( $ids ),
+			'deleted'  => $deleted,
+			'failed'   => $failed,
 		) );
 	}
 

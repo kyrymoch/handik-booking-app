@@ -126,8 +126,10 @@ class Handik_Booking_App_Admin_Bookings {
 		// on Cal but never reached us: pre-installation bookings, or
 		// bookings where the webhook delivery was dropped. Same
 		// admin_permission gate as the rest of the page.
-		$rest_base    = trailingslashit( rest_url( 'handik-booking-app/v1' ) );
-		$pull_endpoint = $rest_base . 'admin/bookings/pull-from-cal';
+		$rest_base       = trailingslashit( rest_url( 'handik-booking-app/v1' ) );
+		$pull_endpoint   = $rest_base . 'admin/bookings/pull-from-cal';
+		$bulk_endpoint   = $rest_base . 'admin/bookings/bulk-delete';
+		$can_bulk_delete = current_user_can( Handik_Booking_App_Capabilities::MANAGE_DELETE );
 		?>
 		<p class="handik-admin-bookings-list__cta">
 			<a class="button button-primary" href="<?php echo esc_url( $add_url ); ?>">+ <?php esc_html_e( 'Add booking', 'handik-booking-app' ); ?></a>
@@ -138,6 +140,14 @@ class Handik_Booking_App_Admin_Bookings {
 				data-rest-nonce="<?php echo esc_attr( wp_create_nonce( 'wp_rest' ) ); ?>">
 				<?php esc_html_e( 'Pull from Cal.com', 'handik-booking-app' ); ?>
 			</button>
+			<?php if ( $can_bulk_delete ) : ?>
+				<button type="button"
+					class="button"
+					data-handik-bulk-toggle
+					data-handik-bulk-target=".handik-admin-bookings-list">
+					<?php esc_html_e( 'Select', 'handik-booking-app' ); ?>
+				</button>
+			<?php endif; ?>
 			<span class="handik-admin-pull-from-cal-status" data-handik-pull-from-cal-status aria-live="polite"></span>
 		</p>
 		<?php
@@ -188,12 +198,37 @@ class Handik_Booking_App_Admin_Bookings {
 		// once and pass them down to the card + table loops.
 		$decorations = $this->decorate_bookings( array_merge( $upcoming, $past_page ) );
 
-		echo '<div class="handik-admin-bookings-list">';
+		echo '<div class="handik-admin-bookings-list"'
+			. ( $can_bulk_delete ? ' data-handik-bulk-section data-bulk-endpoint="' . esc_attr( esc_url_raw( $bulk_endpoint ) ) . '" data-rest-nonce="' . esc_attr( wp_create_nonce( 'wp_rest' ) ) . '" data-bulk-kind="bookings"' : '' )
+			. '>';
+
+		// 2.1.26.3 — bulk-delete toolbar (hidden by default, JS shows
+		// when bulk mode is toggled via the "Select" CTA above).
+		// Compact single-line strip so it doesn't eat viewport even
+		// when expanded.
+		if ( $can_bulk_delete ) {
+			echo '<div class="handik-admin-bulk-bar" data-handik-bulk-bar hidden>';
+			echo '<label class="handik-admin-bulk-bar__check"><input type="checkbox" data-handik-bulk-toggle-all /></label>';
+			echo '<span class="handik-admin-bulk-bar__count" data-handik-bulk-count>0 ' . esc_html__( 'selected', 'handik-booking-app' ) . '</span>';
+			echo '<button type="button" class="button button-secondary handik-admin-bulk-bar__delete" data-handik-bulk-apply disabled>' . esc_html__( 'Delete selected', 'handik-booking-app' ) . '</button>';
+			echo '</div>';
+		}
 
 		// Cards on mobile, table on desktop.
+		$cards_render = function ( $row, $is_past ) use ( $decorations, $can_bulk_delete ) {
+			if ( $can_bulk_delete ) {
+				$bid = (int) ( $row['id'] ?? 0 );
+				echo '<div class="handik-admin-booking-card-row" data-row-id="' . esc_attr( (string) $bid ) . '">';
+				echo '<input type="checkbox" data-handik-bulk-row value="' . esc_attr( (string) $bid ) . '" class="handik-admin-bulk-cb" aria-label="' . esc_attr__( 'Select booking', 'handik-booking-app' ) . '" />';
+			}
+			echo $this->booking_card( $row, $is_past, $decorations );
+			if ( $can_bulk_delete ) {
+				echo '</div>';
+			}
+		};
 		echo '<div class="handik-admin-bookings-cards" data-handik-bookings-cards>';
 		foreach ( $upcoming as $row ) {
-			echo $this->booking_card( $row, false, $decorations );
+			$cards_render( $row, false );
 		}
 		if ( $past_page ) {
 			$divider = sprintf(
@@ -204,12 +239,12 @@ class Handik_Booking_App_Admin_Bookings {
 			);
 			echo '<div class="handik-admin-divider"><span>' . esc_html( $divider ) . '</span></div>';
 			foreach ( $past_page as $row ) {
-				echo $this->booking_card( $row, true, $decorations );
+				$cards_render( $row, true );
 			}
 		}
 		echo '</div>';
 
-		echo $this->bookings_table_markup( $upcoming, $past_page, $decorations );
+		echo $this->bookings_table_markup( $upcoming, $past_page, $decorations, $can_bulk_delete );
 
 		echo $this->pagination_markup( $paged, $total_pages, $total_upcoming, $total_past );
 		echo '</div>';
@@ -811,7 +846,7 @@ class Handik_Booking_App_Admin_Bookings {
 	 * @param array<int, array<string, mixed>>                                                $past        Past rows.
 	 * @param array<int, array{request: ?array, contact: ?array, address: ?array}>|null      $decorations Bulk decorations keyed by booking id (Sprint 7 perf).
 	 */
-	protected function bookings_table_markup( array $upcoming, array $past, ?array $decorations = null ) {
+	protected function bookings_table_markup( array $upcoming, array $past, ?array $decorations = null, $bulk_enabled = false ) {
 		global $wpdb;
 		$rows = array_merge( $upcoming, $past );
 
@@ -821,6 +856,7 @@ class Handik_Booking_App_Admin_Bookings {
 			<table class="widefat striped handik-admin-bookings-table">
 				<thead>
 					<tr>
+						<?php if ( $bulk_enabled ) : ?><th class="handik-admin-bulk-th"></th><?php endif; ?>
 						<th><?php esc_html_e( 'When', 'handik-booking-app' ); ?></th>
 						<th><?php esc_html_e( 'Client', 'handik-booking-app' ); ?></th>
 						<th><?php esc_html_e( 'Task', 'handik-booking-app' ); ?></th>
@@ -886,7 +922,7 @@ class Handik_Booking_App_Admin_Bookings {
 						}
 						$is_past = empty( $row['start_time'] ) || $row['start_time'] < gmdate( 'Y-m-d H:i:s' );
 						if ( $is_past && ! $past_divider_inserted && ! empty( $past ) ) {
-							echo '<tr class="handik-admin-table-divider"><td colspan="6">' . esc_html__( 'Past bookings', 'handik-booking-app' ) . '</td></tr>';
+							echo '<tr class="handik-admin-table-divider"><td colspan="' . ( $bulk_enabled ? 7 : 6 ) . '">' . esc_html__( 'Past bookings', 'handik-booking-app' ) . '</td></tr>';
 							$past_divider_inserted = true;
 						}
 						$status = $this->bookings ? $this->bookings->effective_status( $row ) : (string) ( $row['status'] ?? '' );
@@ -926,7 +962,12 @@ class Handik_Booking_App_Admin_Bookings {
 							? (string) ( $contact['full_name'] ?? '' )
 							: ( '' !== $external_name ? $external_name : ( '' !== $external_email ? $external_email : __( 'Unknown', 'handik-booking-app' ) ) );
 					?>
-					<tr class="handik-admin-row-link" tabindex="0" data-href="<?php echo esc_url( $detail_url ); ?>">
+					<tr class="handik-admin-row-link" tabindex="0" data-href="<?php echo esc_url( $detail_url ); ?>" data-row-id="<?php echo esc_attr( (string) (int) $row['id'] ); ?>">
+						<?php if ( $bulk_enabled ) : ?>
+							<td class="handik-admin-bulk-td">
+								<input type="checkbox" data-handik-bulk-row value="<?php echo esc_attr( (string) (int) $row['id'] ); ?>" class="handik-admin-bulk-cb" aria-label="<?php esc_attr_e( 'Select booking', 'handik-booking-app' ); ?>" />
+							</td>
+						<?php endif; ?>
 						<td><?php echo esc_html( Handik_Booking_App_Admin_Helpers::format_booking_window( $row, 'compact' ) ); ?></td>
 						<td><?php echo esc_html( $client_label ); ?></td>
 						<td><?php echo esc_html( $tasks ); ?></td>
