@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.1.26.7
+Stable tag: 2.1.27.0
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, silent returning-client recognition, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,21 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.1.27.0 =
+* **Sprint 18 — unified booking lifecycle: cancel + delete in the plugin now propagate to Cal.com automatically.** Owner-reported: every test booking required manual cleanup in three places — local plugin, Cal.com dashboard, and the resulting Apple Calendar event. Now there is ONE source of truth: do it in the plugin, the rest follows.
+* **How Cal.com → Apple Calendar / Google Calendar sync works** (background context for the architecture): when Cal creates a booking it sends an `.ics` invite email to the attendees + organizer. Apple Calendar / Google Calendar / Outlook receive that invite and add the event. When a booking is *cancelled* on Cal.com (via the API or the Cal dashboard), Cal sends a `METHOD:CANCEL` `.ics` update via email — the receiving calendar app picks that up and removes/marks the event as cancelled automatically. We don't need a direct integration with Apple Calendar — Cal is the bridge. The plugin just has to cancel on Cal, and the calendar invite handles the rest.
+* **What changed (server side):**
+  * New REST_API helper `extract_cal_uid_for_booking($booking)` — resolves the Cal.com booking UID for a local handik_bookings row by walking the four possible sources in priority order: (1) `project_work_days.cal_booking_uid`, (2) `direct_booking_requests.cal_booking_uid`, (3) `raw_webhook_json` parsed for `uid` / `bookingUid` (covers main-SPA Cal flow + external bookings), (4) `cal_booking_id` only if it doesn't look like a numeric id (defensive — older rows that picked Cal's numeric id over its uid).
+  * New REST_API helper `cancel_on_cal_for_booking($booking, $reason)` — calls `Cal_Api_Service::cancel_booking($uid, $reason)` and returns a structured result (`success` / `skipped: 'no_cal_api' | 'no_uid'` / `error: '<cal message>'`). Wired into three places: `admin_booking_status` when the status transition is `→ cancelled`, `admin_booking_delete` (single-row danger-zone), and `admin_bookings_bulk_delete` (looped, with a single reason applied to all in the batch). Cal failures are logged but never block the local action — the operator's cleanup succeeds even if Cal is unreachable or the booking was already cancelled there.
+  * REST response shape gains `cal_cancelled: bool`, `cal_skipped: bool`, and (for bulk) per-id `cal_errors: []` so the UI can surface what happened on the Cal side.
+* **What changed (admin UI):**
+  * The "Cancelled" action (admin Bookings detail) now opens a textarea modal asking for an optional cancellation reason. Reason is forwarded to Cal as the cancellation message → customer sees it in the cancellation email + the calendar invite update. Empty reason → server defaults to "Cancelled by admin".
+  * The danger-zone "Delete this booking" action now also prompts for the reason after the type-to-confirm input. Modal body copy reworded: "The local row will be removed and the booking will be cancelled on Cal.com — the customer will get a cancel-notification email and the event will disappear from their calendar." (Previously said the Cal side was NOT cancelled — that's no longer true.)
+  * Bulk-delete (Bookings list) gains a second modal after the type-to-confirm: optional reason applied to every booking in the batch. Prompt copy updated to set expectations about per-booking Cal cancellation.
+  * Contact bulk-delete inherits the same behavior on the server side (each cascaded booking is Cal-cancelled before the local cascade deletes it); the user-facing modal hints at this in its body copy.
+* **Reschedule** — out of scope for this release. Requires a date-and-time picker UI inside the booking-detail page + a `Cal_Api_Service::reschedule_booking()` method that hits `POST /v2/bookings/{uid}/reschedule`. Booked as a separate Sprint 18 / Part 2 because the picker UI is the bulk of the work.
+* No DB change. No migration. No customer-facing flow change (their side: just receives a cancel email + their calendar updates).
 
 = 2.1.26.7 =
 * **Project Work Days form: loading spinner + async email dispatch.** Owner-reported (after 2.1.26.6 ended the wp_tempnam fatal): the Confirm-selected-days flow works, but the customer waits 4-9 seconds for "You're all set" to appear with no visual signal that the request is in flight. Two coordinated improvements:

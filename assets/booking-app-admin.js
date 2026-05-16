@@ -474,9 +474,20 @@
 						}
 					}
 					if ( 'mark-cancelled' === action ) {
-						const ok = await openModal( { title: i18n.cancelTitle || 'Cancel booking', body: i18n.confirmCancel || 'Are you sure?' } );
-						if ( ! ok ) { return; }
-						await adminFetch( ctx, 'admin/booking/' + bookingId + '/status', { body: { status: 'cancelled' } } );
+						// 2.1.27.0 — prompt for an optional cancellation
+						// reason. The server forwards it to Cal.com as the
+						// cancellation message; the customer sees it in
+						// their cancel-notification email + calendar
+						// invite update (Apple, Google, etc.). Empty
+						// reason → server defaults to "Cancelled by admin".
+						const reason = await openModal( {
+							title: i18n.cancelTitle || 'Cancel booking',
+							body: i18n.confirmCancelWithCal || 'This cancels the booking on Cal.com too — the customer will get a cancellation email and the event will disappear from their calendar. Optional reason below is included in the cancellation email.',
+							textarea: true,
+							placeholder: i18n.cancelReasonPlaceholder || 'e.g. Schedule conflict — rebooking next week.'
+						} );
+						if ( null === reason ) { return; }
+						await adminFetch( ctx, 'admin/booking/' + bookingId + '/status', { body: { status: 'cancelled', reason: reason || '' } } );
 						toast( i18n.saved || 'Saved', 'success' );
 						// Sprint 10 fix: patch DOM instead of full reload.
 						// Was P1 — owner on the truck waited 2-5s for a
@@ -1150,7 +1161,12 @@
 			booking: {
 				path: 'admin/booking/',
 				title: i18n.deleteBookingTitle || 'Permanently delete this booking?',
-				body:  i18n.deleteBookingBody  || 'The local row will be removed. The Cal.com booking on the contractor calendar is NOT cancelled.',
+				// 2.1.27.0 — Cal.com side is now cancelled too as
+				// part of the delete flow, so the customer's invite
+				// gets the cancel notification and disappears from
+				// Apple / Google calendars automatically. Body copy
+				// updated to reflect the unified-cancel behavior.
+				body:  i18n.deleteBookingBody  || 'The local row will be removed and the booking will be cancelled on Cal.com — the customer will get a cancel-notification email and the event will disappear from their calendar.',
 				confirm: i18n.deleteBookingCta || 'Yes, delete this booking',
 			},
 			'job-request': {
@@ -1198,9 +1214,30 @@
 				} );
 				if ( ! ok ) { return; }
 
+				// 2.1.27.0 — for booking deletes, chain a reason
+				// prompt so the Cal.com cancellation notification +
+				// customer's calendar invite update carry context.
+				// Other entities (job-request, contact) skip this —
+				// they don't have a single Cal booking to cancel.
+				let deleteReason = '';
+				if ( 'booking' === kind ) {
+					const r2 = await openModal( {
+						title:       i18n.deleteBookingReasonTitle || 'Cancellation reason (optional)',
+						body:        i18n.deleteBookingReasonBody  || 'Sent to the customer via the Cal.com cancellation email + included in the calendar invite update. Leave blank for a generic "Cancelled by admin" notice.',
+						textarea:    true,
+						placeholder: i18n.cancelReasonPlaceholder || 'e.g. Schedule conflict — rebooking next week.'
+					} );
+					if ( null === r2 ) { return; }
+					deleteReason = r2 || '';
+				}
+
 				try {
 					await withButtonLoading( btn, async function () {
-						const r = await adminFetch( null, cfg.path + id, { method: 'DELETE' } );
+						const fetchOpts = { method: 'DELETE' };
+						if ( 'booking' === kind && deleteReason ) {
+							fetchOpts.body = { reason: deleteReason };
+						}
+						const r = await adminFetch( null, cfg.path + id, fetchOpts );
 						const sumLines = [];
 						if ( r && r.summary ) {
 							for ( const k in r.summary ) {
@@ -1949,9 +1986,17 @@
 					const sel        = String( ids.length );
 					const tot        = String( totalIds );
 					const requireToken = 'DELETE ' + sel;
+					// 2.1.27.0 — booking bulk-delete now cancels each
+					// booking on Cal.com first so the customer's invite
+					// disappears from their calendar. Contact bulk-
+					// delete cascades through cascade_delete which
+					// also drops each contact's bookings, so the same
+					// per-booking Cal cancel logic applies on the
+					// server-side. Update the prompt copy to set
+					// expectations.
 					const promptTpl = 'contacts' === kind
-						? ( i18n.bulkDeleteContactsPrompt || 'About to delete %1$s of %2$s contacts AND all their requests, bookings, addresses, photos and messages. This is irreversible. Type %3$s to confirm.' )
-						: ( i18n.bulkDeleteBookingsPrompt || 'About to delete %1$s of %2$s bookings (the local rows; Cal.com bookings are NOT cancelled). This is irreversible. Type %3$s to confirm.' );
+						? ( i18n.bulkDeleteContactsPrompt || 'About to delete %1$s of %2$s contacts AND all their requests, bookings, addresses, photos and messages. Bookings will also be cancelled on Cal.com. This is irreversible. Type %3$s to confirm.' )
+						: ( i18n.bulkDeleteBookingsPrompt || 'About to delete %1$s of %2$s bookings. Each will be cancelled on Cal.com — customers will get cancellation emails and the events will disappear from their calendars. This is irreversible. Type %3$s to confirm.' );
 					const body = promptTpl
 						.replace( '%1$s', sel )
 						.replace( '%2$s', tot )
@@ -1968,6 +2013,21 @@
 						}
 						return;
 					}
+					// 2.1.27.0 — second modal: optional reason text
+					// (applied to every Cal cancellation in this bulk).
+					// Skip for contact-bulk since the typed-confirm
+					// modal copy already hints at the cascade scope.
+					let bulkReason = '';
+					if ( 'bookings' === kind ) {
+						const r3 = await openModal( {
+							title:       i18n.bulkCancelReasonTitle || 'Cancellation reason (optional)',
+							body:        i18n.bulkCancelReasonBody  || 'Applied to every booking in this batch. Sent to customers via the Cal.com cancellation email. Leave blank for a generic "Cancelled by admin" notice.',
+							textarea:    true,
+							placeholder: i18n.cancelReasonPlaceholder || 'e.g. Schedule conflict — rebooking next week.'
+						} );
+						if ( null === r3 ) { return; }
+						bulkReason = r3 || '';
+					}
 					try {
 						const result = await withButtonLoading( applyBtn, function() {
 							return window.fetch( endpoint, {
@@ -1977,7 +2037,7 @@
 									'X-WP-Nonce': nonce,
 									'Content-Type': 'application/json',
 								},
-								body: JSON.stringify( { ids: ids } ),
+								body: JSON.stringify( { ids: ids, reason: bulkReason } ),
 							} ).then( function( response ) {
 								return response.json().catch( function() { return {}; } ).then( function( payload ) {
 									if ( ! response.ok ) {
