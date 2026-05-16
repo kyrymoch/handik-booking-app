@@ -657,8 +657,33 @@ class Handik_Booking_App_Project_Schedule_Service {
 		// Sprint 14a — single email per schedule (not per day); the
 		// .ics attachment carries one VEVENT per day so the customer
 		// gets the full picture in one calendar invite.
+		// 2.1.26.5 — wrap in try/catch so an exception inside the
+		// notification handler (template rendering, .ics builder,
+		// wp_mail SMTP timeout) doesn't fatal the customer's confirm
+		// request. The booking is already committed to handik_*
+		// tables at this point — failing the email shouldn't
+		// invalidate the user's success path. Owner-reported a 500
+		// after "Project schedule confirmed" log fired in 2.1.26.4
+		// without any error log captured; the symptom matches a
+		// fatal during dispatch (PHP dies before our logger reaches
+		// the wpdb write). The catch logs file + line so the next
+		// failure has a forensic breadcrumb to fix the root cause.
 		if ( class_exists( 'Handik_Booking_App_Notifications_Service' ) ) {
-			Handik_Booking_App_Notifications_Service::dispatch_for_project( (int) $schedule_id );
+			try {
+				Handik_Booking_App_Notifications_Service::dispatch_for_project( (int) $schedule_id );
+			} catch ( \Throwable $e ) {
+				if ( $this->logger ) {
+					$this->logger->error(
+						'Project email dispatch threw — booking saved, email skipped.',
+						array(
+							'schedule_id' => $schedule_id,
+							'message'     => $e->getMessage(),
+							'file'        => $e->getFile(),
+							'line'        => $e->getLine(),
+						)
+					);
+				}
+			}
 		}
 
 		return array( 'success' => true, 'status' => self::STATUS_CONFIRMED );

@@ -75,16 +75,63 @@ class Handik_Booking_App_Notifications_Service {
 		$this->settings = $settings;
 		$this->logger   = $logger;
 
-		add_action( self::ACTION_BOOKING_CONFIRMED, array( $this, 'handle_booking_confirmed' ), 10, 1 );
+		// 2.1.26.5 — wrap each action handler so a fatal inside email
+		// rendering / .ics building / wp_mail SMTP doesn't take down
+		// the booking-flow request that fired the action. Booking is
+		// already committed by the time these run; email is best-
+		// effort. Throwables get logged with file + line so we have
+		// a forensic breadcrumb the next time this fires. Plus the
+		// caller-side try/catch in confirm_schedule etc. is a second
+		// belt-and-suspenders.
+		add_action( self::ACTION_BOOKING_CONFIRMED, function ( $context ) {
+			try { $this->handle_booking_confirmed( $context ); }
+			catch ( \Throwable $e ) { $this->log_handler_throwable( 'handle_booking_confirmed', $e, $context ); }
+		}, 10, 1 );
+		add_action( self::ACTION_BOOKING_CANCELLED, function ( $context ) {
+			try { $this->handle_booking_cancelled( $context ); }
+			catch ( \Throwable $e ) { $this->log_handler_throwable( 'handle_booking_cancelled', $e, $context ); }
+		}, 10, 1 );
+		add_action( self::ACTION_BOOKING_RESCHEDULED, function ( $context ) {
+			try { $this->handle_booking_rescheduled( $context ); }
+			catch ( \Throwable $e ) { $this->log_handler_throwable( 'handle_booking_rescheduled', $e, $context ); }
+		}, 10, 1 );
+	}
 
-		// Sprint 14c — cancellation + reschedule listeners. Each event is
-		// dispatched separately because the templates differ (cancel has
-		// no .ics; reschedule needs an updated .ics with SEQUENCE bumped
-		// + METHOD:REQUEST so calendar apps update the existing event
-		// rather than creating a duplicate). Idempotency uses the new
-		// `last_status_emailed` column from Migration 1.5.2.
-		add_action( self::ACTION_BOOKING_CANCELLED, array( $this, 'handle_booking_cancelled' ), 10, 1 );
-		add_action( self::ACTION_BOOKING_RESCHEDULED, array( $this, 'handle_booking_rescheduled' ), 10, 1 );
+	/**
+	 * 2.1.26.5 — shared throwable-logger for the wrapped action
+	 * handlers. Records the action name + the throwable's message,
+	 * file, line, and a small slice of the context (enough to
+	 * identify which booking, not so much that we leak template
+	 * data into the log). Action handlers swallow the throwable
+	 * after this — booking flow returns success.
+	 *
+	 * @param string         $handler_name Action handler method name.
+	 * @param \Throwable     $e            The thrown error / exception.
+	 * @param mixed          $context      Original action context (forensic identifiers).
+	 * @return void
+	 */
+	protected function log_handler_throwable( $handler_name, \Throwable $e, $context ) {
+		if ( ! $this->logger ) {
+			return;
+		}
+		$slim = array();
+		if ( is_array( $context ) ) {
+			$slim['source']     = (string) ( $context['source']     ?? '' );
+			$slim['request_id'] = (int)    ( $context['request_id'] ?? 0 );
+			$slim['booking_id'] = (int)    ( $context['booking_id'] ?? 0 );
+			$idem               = isset( $context['idempotency'] ) && is_array( $context['idempotency'] ) ? $context['idempotency'] : array();
+			$slim['idempotency_table']  = (string) ( $idem['table']  ?? '' );
+			$slim['idempotency_row_id'] = (int)    ( $idem['row_id'] ?? 0 );
+		}
+		$this->logger->error(
+			sprintf( 'Notifications: %s threw — email skipped, booking flow continues.', $handler_name ),
+			array(
+				'message' => $e->getMessage(),
+				'file'    => $e->getFile(),
+				'line'    => $e->getLine(),
+				'context' => $slim,
+			)
+		);
 	}
 
 	/**
@@ -1978,6 +2025,19 @@ class Handik_Booking_App_Notifications_Service {
 		$plugin = function_exists( 'handik_booking_app' ) ? handik_booking_app() : null;
 		if ( ! $plugin || ! $plugin->project_schedule || ! $plugin->contacts || ! $plugin->addresses ) {
 			return;
+		}
+		// 2.1.26.5 — diagnostic breadcrumb so we know dispatch_for_project
+		// actually started running. The owner-reported 500 in 2.1.26.4
+		// fatals SOMEWHERE between this call and the email actually
+		// going out, but PHP dies before any later log line writes.
+		// Pairing this trace entry with the existing "Project schedule
+		// confirmed" entry tells us whether we even reached this method
+		// (vs. fatal'ing before).
+		if ( $plugin->logger ) {
+			$plugin->logger->info(
+				'Project email dispatch starting.',
+				array( 'schedule_id' => (int) $schedule_id )
+			);
 		}
 		$schedule = $plugin->project_schedule->get( (int) $schedule_id );
 		if ( ! $schedule ) {

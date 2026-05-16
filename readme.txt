@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.1.26.4
+Stable tag: 2.1.26.5
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, silent returning-client recognition, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,13 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.1.26.5 =
+* **P0 fix — Project Work Days form: confirm STILL returns 500 after 2.1.26.4 even though Cal bookings get created and the schedule is marked confirmed.** Owner-reported with logs showing the "Project schedule confirmed" entry firing (so the work-day creation loop completed) but no error log captured before the WSOD critical-error page. The fatal happens between the "confirmed" log line and the success return — exactly where the synchronous customer-confirmation email dispatch fires (`Notifications_Service::dispatch_for_project($schedule_id)` → `do_action(handik_booking_confirmed)` → `handle_booking_confirmed` → template render + .ics build + `wp_mail`). Any throwable in that chain (template parse error, .ics builder edge case, wp_mail SMTP timeout, plugin host max_execution_time) takes down the booking-flow request that's still holding the HTTP connection open, even though the booking is already committed to the database.
+* Fix: wrap every action handler (`handle_booking_confirmed`, `handle_booking_cancelled`, `handle_booking_rescheduled`) in a try/catch closure registered as the actual `add_action` callback. Throwables are caught by a new shared `log_handler_throwable()` helper that records the action name + the throwable's message + file + line + a slim slice of the context (source / request_id / booking_id / idempotency table+row). Booking flow continues — the user gets a success response, and email failures become loggable problems rather than user-visible 500s.
+* Belt-and-suspenders: the `confirm_schedule()` callsite of `dispatch_for_project()` is also wrapped in try/catch (covers throws DURING context build, before `do_action` even fires).
+* Diagnostic breadcrumb: `dispatch_for_project()` now logs an info entry "Project email dispatch starting." right after entering the method. Pairing this with the existing "Project schedule confirmed." entry tells us whether the dispatch even reached its body. The next time this fatals (if at all), the throwable's file + line will be in the error log, and we can fix the root cause precisely instead of guessing.
+* No DB change. No migration. No user-visible UI change. Defensive-only patch — the next test should either succeed silently OR surface a specific error log entry that names the broken file.
 
 = 2.1.26.4 =
 * **P0 fix — Project Work Days form confirm now succeeds on the first tap.** 2.1.26.3 introduced a retry-with-`lengthInMinutes` path to handle Cal v2's mutually-exclusive length rules (fixed-length event types REJECT it, variable-length event types REQUIRE it). The worst-case retry path doubled the time per day to 24s (12s Cal HTTP timeout × 2 attempts) and on multi-day project schedules the cumulative request time exceeded PHP `max_execution_time` on the owner's environment, producing a WSOD fatal on the first confirm tap. The SECOND tap then completed instantly because Cal-Idempotency-Key replayed the cached partial-attempts from the first run. Owner observed "long thinking, error, second tap success" + browser-side 500 with WP critical-error page.
