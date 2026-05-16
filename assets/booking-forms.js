@@ -382,11 +382,28 @@
 		html += this.progressMarkup();
 		html += this.disclaimerMarkup();
 		html += this.restartModalMarkup();
+		// 2.1.26.7 — busy-state loading overlay. Owner-reported that
+		// the Project Work Days confirm flow stays unresponsive for
+		// 4-12 seconds (N sequential Cal API calls + wp_mail) without
+		// any visual signal that the request is in flight. Reuses the
+		// main app's `.handik-booking-app__loading-overlay` + `sp
+		// sp-loadbar` styles from booking-app.css (the Forms SPA
+		// inherits the whole main-app stylesheet). Overlay positions
+		// absolute inside the relative-positioned shell, so the
+		// existing step content stays in the DOM behind the spinner
+		// — the screen doesn't flash empty.
+		if ( this.state.busy ) {
+			html += '<div class="handik-booking-app__loading-overlay" aria-live="polite">' + this.loaderMarkup( this.t( 'loadingLabel' ) ) + '</div>';
+		}
 
 		this.shell.innerHTML = html;
 
 		this.bindEvents();
 		this.afterRender();
+	};
+
+	HandikBookingForm.prototype.loaderMarkup = function ( message ) {
+		return '<div class="sp sp-loadbar" aria-hidden="true"></div><h5>' + escapeHtml( message || 'Loading' ) + '</h5>';
 	};
 
 	HandikBookingForm.prototype.afterRender = function () {

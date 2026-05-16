@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.1.26.6
+Stable tag: 2.1.26.7
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, silent returning-client recognition, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,13 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.1.26.7 =
+* **Project Work Days form: loading spinner + async email dispatch.** Owner-reported (after 2.1.26.6 ended the wp_tempnam fatal): the Confirm-selected-days flow works, but the customer waits 4-9 seconds for "You're all set" to appear with no visual signal that the request is in flight. Two coordinated improvements:
+* **Loading overlay** in the Forms SPA (`booking-forms.js::render`): when `state.busy === true` (set by every `api()` call — confirm, OTP verify, save-selection, etc.), an absolutely-positioned `.handik-booking-app__loading-overlay` is layered over the shell with the same `<div class="sp sp-loadbar">` spinner + "Loading" label the main `[handik_booking_app]` form has used since Sprint 1. Forms SPA inherits `booking-app.css`, so the spinner + overlay styles come for free — this is markup-only. The previous behaviour was "Continue button greys out, nothing else happens" — easy to misread as a frozen page.
+* **Async email dispatch** for project bookings: `Project_Schedule_Service::confirm_schedule()` now schedules `Notifications_Service::dispatch_for_project()` via `wp_schedule_single_event( time(), 'handik_booking_app_dispatch_project_email', [ $schedule_id ] )` instead of calling it synchronously. The cron event fires on the next page request — typically the success-page asset load, within seconds on any active site — so the customer-confirm endpoint returns ~1-3 seconds faster (we no longer block on wp_mail + SMTP). Falls back to synchronous dispatch when `wp_schedule_single_event` returns false (cron disabled OR duplicate-event guard kicked in) so the email is never silently dropped. The 2.1.26.5 try/catch around the action handler is still in place — it's a separate safety net for throwables inside the dispatch chain regardless of which path (cron vs. sync) hits it.
+* **i18n** — new `loadingLabel` key on the Forms SPA's localized strings (defaults to "Loading"). Audit: full repo scan confirms no Russian (or any non-English) text leaks into user-facing markup, settings defaults, or `__()` strings — the only Cyrillic-containing files are `class-direct-booking-service.php` (intentional input normalizer that replaces "США" → "USA" before sending the address to Cal) and developer comments. No customer-facing copy regressions.
+* No DB change. No migration. No new REST endpoint.
 
 = 2.1.26.6 =
 * **P0 root-cause fix — Project Work Days form email-dispatch fatal that 2.1.26.5's try/catch caught.** 2.1.26.5 added a `try { ... } catch ( \Throwable $e )` around the action handler so the customer-confirm flow no longer 500s on email failure; the catch logged the specific throwable. Owner's next test surfaced it:
