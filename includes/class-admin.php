@@ -450,6 +450,15 @@ class Handik_Booking_App_Admin {
 					'bulkDeleteContactsDone'    => __( 'Deleted %d contacts.', 'handik-booking-app' ),
 					'bulkDeleteContactsPrompt'  => __( 'About to delete %1$s of %2$s contacts AND all their requests, bookings, addresses, photos and messages. This is irreversible. Type %3$s to confirm.', 'handik-booking-app' ),
 					'bulkDeleteMismatch'        => __( 'Confirmation text did not match. Nothing deleted.', 'handik-booking-app' ),
+					// 2.1.27.0 — unified Cal.com cancel prompts.
+					'confirmCancelWithCal'      => __( 'This cancels the booking on Cal.com too — the customer will get a cancellation email and the event will disappear from their calendar. Optional reason below is included in the cancellation email.', 'handik-booking-app' ),
+					'cancelReasonPlaceholder'   => __( 'e.g. Schedule conflict — rebooking next week.', 'handik-booking-app' ),
+					'deleteBookingReasonTitle'  => __( 'Cancellation reason (optional)', 'handik-booking-app' ),
+					'deleteBookingReasonBody'   => __( 'Sent to the customer via the Cal.com cancellation email + included in the calendar invite update. Leave blank for a generic "Cancelled by admin" notice.', 'handik-booking-app' ),
+					'bulkDeleteBookingsPrompt'  => __( 'About to delete %1$s of %2$s bookings. Each will be cancelled on Cal.com — customers will get cancellation emails and the events will disappear from their calendars. This is irreversible. Type %3$s to confirm.', 'handik-booking-app' ),
+					'bulkDeleteContactsPrompt'  => __( 'About to delete %1$s of %2$s contacts AND all their requests, bookings, addresses, photos and messages. Bookings will also be cancelled on Cal.com. This is irreversible. Type %3$s to confirm.', 'handik-booking-app' ),
+					'bulkCancelReasonTitle'     => __( 'Cancellation reason (optional)', 'handik-booking-app' ),
+					'bulkCancelReasonBody'      => __( 'Applied to every booking in this batch. Sent to customers via the Cal.com cancellation email. Leave blank for a generic "Cancelled by admin" notice.', 'handik-booking-app' ),
 				),
 			)
 		);

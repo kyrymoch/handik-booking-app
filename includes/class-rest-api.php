@@ -479,12 +479,152 @@ class Handik_Booking_App_REST_API {
 		}
 		$id      = absint( $request['id'] );
 		$status  = sanitize_key( (string) $request->get_param( 'status' ) );
+		$reason  = sanitize_text_field( (string) $request->get_param( 'reason' ) );
 		$allowed = array( 'cancelled', 'completed', 'rescheduled', 'no_show', '' );
 		if ( ! in_array( $status, $allowed, true ) ) {
 			return new WP_Error( 'handik_invalid_status', __( 'Status not allowed.', 'handik-booking-app' ), array( 'status' => 400 ) );
 		}
+		// 2.1.27.0 — when transitioning to cancelled, propagate the
+		// cancellation to Cal.com so the customer's email + calendar
+		// invite (Apple / Google) get the cancel notification. Local
+		// mark proceeds regardless of Cal outcome — the operator
+		// shouldn't be blocked by a Cal API outage.
+		$cal_result = array( 'skipped' => true, 'reason' => 'not_cancel' );
+		if ( 'cancelled' === $status ) {
+			$booking = $this->bookings->get( $id );
+			if ( $booking ) {
+				$cal_result = $this->cancel_on_cal_for_booking( $booking, $reason );
+			}
+		}
 		$ok = $this->bookings->update_admin_fields( $id, array( 'admin_status_override' => '' === $status ? null : $status ) );
-		return rest_ensure_response( array( 'success' => $ok, 'status' => $status ) );
+		return rest_ensure_response( array(
+			'success'       => $ok,
+			'status'        => $status,
+			'cal_cancelled' => ! empty( $cal_result['success'] ),
+			'cal_skipped'   => ! empty( $cal_result['skipped'] ),
+		) );
+	}
+
+	/**
+	 * 2.1.27.0 — extract the Cal.com booking UID for a local booking
+	 * row. Needed for the Cal `/bookings/{uid}/cancel` API. Sources,
+	 * in priority order:
+	 *
+	 *   1. project_work_days.cal_booking_uid (most authoritative for
+	 *      project rows — the project flow always stores the uid here)
+	 *   2. direct_booking_requests.cal_booking_uid (same for direct
+	 *      bookings)
+	 *   3. raw_webhook_json parsed for `uid` / `bookingUid` (covers
+	 *      main-SPA Cal flow + external bookings pulled from Cal)
+	 *   4. handik_bookings.cal_booking_id — but ONLY if it looks like
+	 *      a UID (non-numeric); for older rows where extract_booking_id
+	 *      picked the numeric id we'd just return empty rather than
+	 *      send a bad value to Cal.
+	 *
+	 * @param array<string, mixed> $booking handik_bookings row.
+	 * @return string Cal UID, '' if not resolvable.
+	 */
+	protected function extract_cal_uid_for_booking( array $booking ) {
+		global $wpdb;
+		if ( ! empty( $booking['project_work_day_id'] ) ) {
+			$uid = (string) $wpdb->get_var( $wpdb->prepare(
+				'SELECT cal_booking_uid FROM ' . Handik_Booking_App_DB::table( 'project_work_days' ) . ' WHERE id = %d LIMIT 1',
+				(int) $booking['project_work_day_id']
+			) );
+			if ( '' !== $uid ) {
+				return $uid;
+			}
+		}
+		if ( ! empty( $booking['direct_request_id'] ) ) {
+			$uid = (string) $wpdb->get_var( $wpdb->prepare(
+				'SELECT cal_booking_uid FROM ' . Handik_Booking_App_DB::table( 'direct_booking_requests' ) . ' WHERE id = %d LIMIT 1',
+				(int) $booking['direct_request_id']
+			) );
+			if ( '' !== $uid ) {
+				return $uid;
+			}
+		}
+		if ( ! empty( $booking['raw_webhook_json'] ) ) {
+			$raw = json_decode( (string) $booking['raw_webhook_json'], true );
+			if ( is_array( $raw ) ) {
+				foreach ( array( 'uid', 'bookingUid' ) as $key ) {
+					if ( ! empty( $raw[ $key ] ) ) {
+						return (string) $raw[ $key ];
+					}
+				}
+				if ( isset( $raw['booking']['uid'] ) ) {
+					return (string) $raw['booking']['uid'];
+				}
+				if ( isset( $raw['booking']['bookingUid'] ) ) {
+					return (string) $raw['booking']['bookingUid'];
+				}
+			}
+		}
+		$cal_booking_id = (string) ( $booking['cal_booking_id'] ?? '' );
+		if ( '' !== $cal_booking_id && ! ctype_digit( $cal_booking_id ) ) {
+			return $cal_booking_id;
+		}
+		return '';
+	}
+
+	/**
+	 * 2.1.27.0 — cancel the Cal.com side of a local booking so the
+	 * customer's email + calendar invite (Apple, Google, etc.) get
+	 * the cancel notification. Wired into admin_booking_status (on
+	 * status=cancelled), admin_booking_delete, and admin_bookings_
+	 * bulk_delete so every local-side cancel/delete propagates to
+	 * Cal automatically — owner no longer has to clean up Cal
+	 * separately after each test booking.
+	 *
+	 * Returns one of:
+	 *   { 'success' => true, 'uid' => 'abc...' }
+	 *   { 'skipped' => true, 'reason' => 'no_cal_api' | 'no_uid' }
+	 *   { 'skipped' => false, 'error' => '<cal message>', 'uid' => '...' }
+	 *
+	 * The caller proceeds with the local action regardless — a Cal
+	 * outage or already-cancelled booking shouldn't block the
+	 * operator from cleaning up locally.
+	 */
+	protected function cancel_on_cal_for_booking( array $booking, $reason = '' ) {
+		if ( ! $this->cal_api ) {
+			return array( 'skipped' => true, 'reason' => 'no_cal_api' );
+		}
+		$uid = $this->extract_cal_uid_for_booking( $booking );
+		if ( '' === $uid ) {
+			if ( $this->logger ) {
+				$this->logger->info(
+					'Skipped Cal cancel — no booking UID resolvable.',
+					array( 'booking_id' => (int) ( $booking['id'] ?? 0 ) )
+				);
+			}
+			return array( 'skipped' => true, 'reason' => 'no_uid' );
+		}
+		$resolved_reason = '' !== trim( (string) $reason ) ? (string) $reason : __( 'Cancelled by admin', 'handik-booking-app' );
+		$result = $this->cal_api->cancel_booking( $uid, $resolved_reason );
+		if ( ! empty( $result['error'] ) ) {
+			if ( $this->logger ) {
+				$this->logger->warning(
+					'Cal cancel failed; proceeding with local action.',
+					array(
+						'booking_id' => (int) ( $booking['id'] ?? 0 ),
+						'uid'        => $uid,
+						'error'      => (string) $result['error'],
+					)
+				);
+			}
+			return array( 'skipped' => false, 'error' => (string) $result['error'], 'uid' => $uid );
+		}
+		if ( $this->logger ) {
+			$this->logger->info(
+				'Cal booking cancelled.',
+				array(
+					'booking_id' => (int) ( $booking['id'] ?? 0 ),
+					'uid'        => $uid,
+					'reason'     => $resolved_reason,
+				)
+			);
+		}
+		return array( 'success' => true, 'uid' => $uid );
 	}
 
 	/**
@@ -869,6 +1009,10 @@ class Handik_Booking_App_REST_API {
 		if ( count( $ids ) > 200 ) {
 			return new WP_Error( 'handik_bulk_delete_too_many', __( 'Bulk delete is capped at 200 bookings per call.', 'handik-booking-app' ), array( 'status' => 413 ) );
 		}
+		// 2.1.27.0 — single reason for the whole bulk; passed to each
+		// Cal cancel so the customer's notification email carries
+		// consistent context.
+		$reason = sanitize_text_field( (string) $request->get_param( 'reason' ) );
 		if ( $this->logger ) {
 			$this->logger->warning(
 				'Admin bulk-delete bookings — incoming request.',
@@ -879,9 +1023,30 @@ class Handik_Booking_App_REST_API {
 				)
 			);
 		}
-		$deleted = 0;
-		$failed  = array();
+		$deleted          = 0;
+		$failed           = array();
+		$cal_cancelled    = 0;
+		$cal_skipped      = 0;
+		$cal_errors       = array();
 		foreach ( $ids as $id ) {
+			// 2.1.27.0 — propagate to Cal BEFORE the local cascade so
+			// the customer gets the cancel notification + their
+			// calendar invite is updated. Cal-side failures don't
+			// abort the local delete — we want the operator's cleanup
+			// to succeed even if Cal is unreachable.
+			if ( $this->bookings ) {
+				$booking = $this->bookings->get( (int) $id );
+				if ( $booking ) {
+					$cal_res = $this->cancel_on_cal_for_booking( $booking, $reason );
+					if ( ! empty( $cal_res['success'] ) ) {
+						$cal_cancelled++;
+					} elseif ( ! empty( $cal_res['skipped'] ) ) {
+						$cal_skipped++;
+					} elseif ( ! empty( $cal_res['error'] ) ) {
+						$cal_errors[] = array( 'id' => (int) $id, 'error' => (string) $cal_res['error'] );
+					}
+				}
+			}
 			$res = $this->cascade_delete->delete_booking( (int) $id );
 			if ( ! empty( $res['deleted'] ) ) {
 				$deleted++;
@@ -893,18 +1058,24 @@ class Handik_Booking_App_REST_API {
 			$this->logger->info(
 				'Admin bulk-delete bookings — completed.',
 				array(
-					'user_id'   => get_current_user_id(),
-					'requested' => count( $ids ),
-					'deleted'   => $deleted,
-					'failed'    => $failed,
+					'user_id'        => get_current_user_id(),
+					'requested'      => count( $ids ),
+					'deleted'        => $deleted,
+					'failed'         => $failed,
+					'cal_cancelled'  => $cal_cancelled,
+					'cal_skipped'    => $cal_skipped,
+					'cal_error_count'=> count( $cal_errors ),
 				)
 			);
 		}
 		return rest_ensure_response( array(
-			'success'  => true,
-			'requested'=> count( $ids ),
-			'deleted'  => $deleted,
-			'failed'   => $failed,
+			'success'       => true,
+			'requested'     => count( $ids ),
+			'deleted'       => $deleted,
+			'failed'        => $failed,
+			'cal_cancelled' => $cal_cancelled,
+			'cal_skipped'   => $cal_skipped,
+			'cal_errors'    => $cal_errors,
 		) );
 	}
 
@@ -1006,14 +1177,31 @@ class Handik_Booking_App_REST_API {
 		if ( ! $this->cascade_delete ) {
 			return $this->admin_unavailable();
 		}
-		$id  = absint( $request['id'] );
+		$id     = absint( $request['id'] );
+		$reason = sanitize_text_field( (string) $request->get_param( 'reason' ) );
+		// 2.1.27.0 — cancel on Cal BEFORE the local cascade delete so
+		// the customer's email + calendar invite get the cancel
+		// notification. Cal cancel + local delete are both best-effort;
+		// neither blocks the other. If Cal failed but local delete
+		// succeeds, the response surfaces `cal_cancelled: false` so
+		// the operator can re-cancel manually if needed.
+		$cal_result = array( 'skipped' => true );
+		if ( $this->bookings ) {
+			$booking = $this->bookings->get( $id );
+			if ( $booking ) {
+				$cal_result = $this->cancel_on_cal_for_booking( $booking, $reason );
+			}
+		}
 		$res = $this->cascade_delete->delete_booking( $id );
 		if ( empty( $res['deleted'] ) ) {
 			return new WP_Error( 'handik_delete_failed', __( 'Could not delete that booking.', 'handik-booking-app' ), array( 'status' => 404 ) );
 		}
 		return rest_ensure_response( array(
-			'success' => true,
-			'summary' => $res['summary'] ?? array(),
+			'success'       => true,
+			'summary'       => $res['summary'] ?? array(),
+			'cal_cancelled' => ! empty( $cal_result['success'] ),
+			'cal_skipped'   => ! empty( $cal_result['skipped'] ),
+			'cal_error'     => isset( $cal_result['error'] ) ? (string) $cal_result['error'] : '',
 		) );
 	}
 
