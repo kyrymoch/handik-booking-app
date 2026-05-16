@@ -95,7 +95,35 @@ class Handik_Booking_App_Notifications_Service {
 			try { $this->handle_booking_rescheduled( $context ); }
 			catch ( \Throwable $e ) { $this->log_handler_throwable( 'handle_booking_rescheduled', $e, $context ); }
 		}, 10, 1 );
+
+		// 2.1.26.7 — cron-deferred dispatch hook for the Project Work
+		// Days form. confirm_schedule() now schedules this event with
+		// `wp_schedule_single_event( time(), ... )` instead of calling
+		// dispatch_for_project() synchronously, so the customer's
+		// "You're all set" screen appears immediately after the Cal
+		// API loop completes (saving 1-3s of synchronous wp_mail /
+		// SMTP per confirm). The cron event fires on the next page
+		// request (typically the success-page asset load, within
+		// seconds on any active site).
+		add_action( self::CRON_HOOK_DISPATCH_PROJECT, function ( $schedule_id ) {
+			try { self::dispatch_for_project( (int) $schedule_id ); }
+			catch ( \Throwable $e ) {
+				if ( $this->logger ) {
+					$this->logger->error(
+						'Cron dispatch_for_project threw.',
+						array(
+							'schedule_id' => (int) $schedule_id,
+							'message'     => $e->getMessage(),
+							'file'        => $e->getFile(),
+							'line'        => $e->getLine(),
+						)
+					);
+				}
+			}
+		}, 10, 1 );
 	}
+
+	const CRON_HOOK_DISPATCH_PROJECT = 'handik_booking_app_dispatch_project_email';
 
 	/**
 	 * 2.1.26.5 — shared throwable-logger for the wrapped action

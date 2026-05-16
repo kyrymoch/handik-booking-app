@@ -264,6 +264,11 @@ class Handik_Booking_App_Forms_Router {
 			'backLabel'         => __( 'Back', 'handik-booking-app' ),
 			'sendCodeCta'       => __( 'Send code', 'handik-booking-app' ),
 			'verifyCta'         => __( 'Verify', 'handik-booking-app' ),
+			// 2.1.26.7 — busy-state spinner label. Owner-requested
+			// visual feedback during the multi-second confirm flow
+			// (N sequential Cal API calls). Matches the main app's
+			// "Loading" copy verbatim.
+			'loadingLabel'      => __( 'Loading', 'handik-booking-app' ),
 
 			// Sprint 5 — phone-first flow step titles + intros.
 			'phoneStepTitle'    => __( 'Your phone', 'handik-booking-app' ),
