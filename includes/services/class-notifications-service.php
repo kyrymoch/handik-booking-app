@@ -1253,6 +1253,18 @@ class Handik_Booking_App_Notifications_Service {
 		}
 
 		$tmp_dir  = sys_get_temp_dir();
+		// 2.1.26.6 P0 fix: wp_tempnam() is defined in
+		// wp-admin/includes/file.php which is NOT loaded on REST API
+		// requests (or front-end / cron contexts). Calling it from a
+		// REST endpoint produces "Call to undefined function
+		// wp_tempnam()" → request 500. Owner-reported in 2.1.26.5
+		// where our defensive try/catch caught the throw, logged
+		// `file=class-notifications-service.php, line=1782, message=
+		// Call to undefined function wp_tempnam()`. Load the file
+		// just-in-time. require_once is cheap on subsequent calls.
+		if ( ! function_exists( 'wp_tempnam' ) ) {
+			require_once ABSPATH . 'wp-admin/includes/file.php';
+		}
 		$path     = wp_tempnam( 'handik-booking-' . wp_generate_uuid4() . '.ics', $tmp_dir );
 		if ( ! $path ) {
 			return '';
@@ -1779,6 +1791,12 @@ class Handik_Booking_App_Notifications_Service {
 		}
 
 		$tmp_dir = sys_get_temp_dir();
+		// 2.1.26.6 P0 fix — see write_ics_temp_file_for_status above.
+		// wp_tempnam() lives in wp-admin/includes/file.php which the
+		// REST API doesn't auto-load.
+		if ( ! function_exists( 'wp_tempnam' ) ) {
+			require_once ABSPATH . 'wp-admin/includes/file.php';
+		}
 		$path    = wp_tempnam( 'handik-booking-' . wp_generate_uuid4() . '.ics', $tmp_dir );
 		if ( ! $path ) {
 			return '';

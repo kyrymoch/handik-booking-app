@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.1.26.5
+Stable tag: 2.1.26.6
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, silent returning-client recognition, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,18 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.1.26.6 =
+* **P0 root-cause fix — Project Work Days form email-dispatch fatal that 2.1.26.5's try/catch caught.** 2.1.26.5 added a `try { ... } catch ( \Throwable $e )` around the action handler so the customer-confirm flow no longer 500s on email failure; the catch logged the specific throwable. Owner's next test surfaced it:
+  ```
+  message: "Call to undefined function wp_tempnam()"
+  file:    "...class-notifications-service.php"
+  line:    1782
+  ```
+* `wp_tempnam()` is defined in `wp-admin/includes/file.php`, which WordPress loads only for `/wp-admin` requests. REST API requests (and cron / front-end paths) don't auto-load it — calling the function there is a fatal. This is a long-standing WordPress gotcha for any plugin that writes temp files outside the admin context. The fatal was caught by 2.1.26.5's wrapper so the booking still succeeded, but the email + .ics attachment never went out.
+* Fix: just-in-time `require_once ABSPATH . 'wp-admin/includes/file.php';` immediately before each `wp_tempnam()` call (guarded by `function_exists()` so it's a no-op on admin contexts where the file is already loaded, and on subsequent calls within the same request). Applied to both `write_ics_temp_file()` (regular confirmation) and `write_ics_temp_file_for_status()` (cancellation / reschedule). Customer + owner emails with the .ics calendar attachment now go through on project bookings.
+* No DB change. No migration. No UI change. The 2.1.26.5 try/catch + diagnostic logging stays — it's the safety net that surfaced this fatal with file + line + message in 30 seconds instead of guessing for weeks. If any future throwable lands in the notification path it'll show up the same way.
+* **Known limitation (not in this release):** the customer-confirm endpoint stays open for the full duration of `confirm_schedule` — N sequential Cal API calls (1-3s each typically, up to 12s timeout per call) + the wp_mail dispatch. For a 3-day project this is 4-12 seconds before the customer sees "You're all set." Async email dispatch (defer to wp_cron, return success immediately after the Cal API loop) is queued as a follow-up perf patch but ships separately so this P0 lands clean.
 
 = 2.1.26.5 =
 * **P0 fix — Project Work Days form: confirm STILL returns 500 after 2.1.26.4 even though Cal bookings get created and the schedule is marked confirmed.** Owner-reported with logs showing the "Project schedule confirmed" entry firing (so the work-day creation loop completed) but no error log captured before the WSOD critical-error page. The fatal happens between the "confirmed" log line and the success return — exactly where the synchronous customer-confirmation email dispatch fires (`Notifications_Service::dispatch_for_project($schedule_id)` → `do_action(handik_booking_confirmed)` → `handle_booking_confirmed` → template render + .ics build + `wp_mail`). Any throwable in that chain (template parse error, .ics builder edge case, wp_mail SMTP timeout, plugin host max_execution_time) takes down the booking-flow request that's still holding the HTTP connection open, even though the booking is already committed to the database.
