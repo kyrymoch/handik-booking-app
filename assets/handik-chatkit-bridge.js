@@ -244,6 +244,12 @@
 			element: null,
 			session: null,
 			lastStructuredPayload: null,
+			// 2.1.29.2 — in-flight POST promise for the current
+			// structured-result signature. Concurrent saveStructuredResult
+			// calls with the same signature chain onto this rather than
+			// dedup-returning a potentially stale lastStructuredPayload
+			// from a previous turn.
+			pendingStructuredPromise: null,
 			cachedSession: null
 		};
 
@@ -358,13 +364,26 @@
 			const signature = JSON.stringify( normalized );
 			if ( record.handledSignature === signature ) {
 				log( 'debug', 'Structured result skipped as duplicate.', { source: source || 'unknown' } );
-				// 2.1.29.1 P0 fix: skip the server round-trip on a duplicate
-				// payload, but STILL notify the caller that the assistant
-				// turn ended. Without this, follow-up turns where the model
-				// returns the same booking_type/duration leave the booking-app
-				// SPA's per-turn status block running until 50s and never
-				// re-enable the booking CTA (assistantReadyForBooking is set
-				// inside applySavedAssistantRouting → onComplete).
+				// 2.1.29.2 P0 fix: if a POST for this exact signature is still
+				// in flight, chain onto its promise so the caller awaits the
+				// FRESH server response. Without this, the dedup fast path
+				// returns record.lastStructuredPayload — but that payload is
+				// from the previous turn whenever the in-flight POST hasn't
+				// resolved yet, so callers (the save_assistant_routing_result
+				// client-tool handler in particular) get standard_visit /
+				// ready=true rendered from a totally different prior turn,
+				// and the SPA's applySavedAssistantRouting overwrites local
+				// state with the stale payload. Chaining preserves the
+				// dedup goal (no double network round-trip) without lying
+				// about the result.
+				if ( record.pendingStructuredPromise ) {
+					return record.pendingStructuredPromise;
+				}
+				// No POST in flight → cached payload IS the one corresponding
+				// to this signature (it was stored when the original POST
+				// resolved). Safe to re-fire onComplete with it so the SPA
+				// can re-clear its per-turn status block / re-enable CTA on a
+				// follow-up turn that produced an identical signature.
 				const cached = record.lastStructuredPayload;
 				if ( cached ) {
 					try {
@@ -397,7 +416,7 @@
 				unsafe: normalized.unsafe
 			} );
 
-			return requestJson( endpoints.saveAssistantResult, {
+			const pending = requestJson( endpoints.saveAssistantResult, {
 				request_id: record.options.requestId,
 				draft_token: record.options.draftToken,
 				assistant_result: normalized
@@ -422,6 +441,16 @@
 				log( 'error', 'Failed to store structured result.', { source: source || 'unknown', error: summarizeError( error ) } );
 				throw error;
 			} );
+
+			record.pendingStructuredPromise = pending;
+			const clearPending = function() {
+				if ( record.pendingStructuredPromise === pending ) {
+					record.pendingStructuredPromise = null;
+				}
+			};
+			pending.then( clearPending, clearPending );
+
+			return pending;
 		};
 
 		const associateThread = function( threadId ) {
@@ -825,6 +854,23 @@
 					name: detail.name || '',
 					data: detail.data || {}
 				} );
+				if ( 'composer.submit' === detail.name ) {
+					// 2.1.29.2 P0 fix: the user starting a new turn invalidates
+					// the prior turn's structured-result cache. Without this
+					// reset, saveStructuredResult's signature-dedup path can
+					// hit on the new turn (any one of the chatkit.log / .effect
+					// / .message / client-tool entry points runs first, sets
+					// handledSignature for the new payload, starts a POST; a
+					// concurrent re-entry then matches the new signature, falls
+					// into the dedup fast path, and resolves with the STILL-
+					// cached previous turn's payload — including the booking_type
+					// and assistant_ready_for_booking from the wrong turn). The
+					// dedup is only meaningful within a single turn (same payload
+					// arriving via two ChatKit event channels); cross-turn we
+					// always want the next call to round-trip.
+					record.handledSignature = null;
+					record.lastStructuredPayload = null;
+				}
 				if ( 'composer.submit' === detail.name && typeof record.options.onComposerSubmit === 'function' ) {
 					record.options.onComposerSubmit( {
 						attachmentsCount: detail.data && detail.data.attachmentsCount ? detail.data.attachmentsCount : 0
