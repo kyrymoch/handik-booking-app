@@ -3,7 +3,7 @@ Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.1.28.0
+Stable tag: 2.1.28.1
 License: Proprietary
 
 Single-page booking application with AI-assisted intake, multi-day project scheduling, and end-to-end Cal.com calendar sync.
@@ -65,6 +65,9 @@ The booking shortcodes work in any WordPress page / post / block. An Elementor w
 
 == Upgrade Notice ==
 
+= 2.1.28.1 =
+Documentation refresh — no functional change. The plugin is identical to 2.1.28.0 at runtime; this release exists to publish the updated README, ARCHITECTURE.md, RELEASE_CHECKLIST.md, and an expanded readme.txt so a fresh `git pull` / WordPress auto-update brings the new docs to anyone running an earlier 2.1.x build. Safe upgrade — no DB migration, no settings touched.
+
 = 2.1.28.0 =
 Adds Reschedule from the admin Bookings detail. Pick a new date/time and the customer's calendar invite moves in place via Cal.com. Completes the unified booking lifecycle started in 2.1.27.0 (cancel + delete already propagate to Cal). No DB migration; safe upgrade.
 
@@ -78,6 +81,14 @@ Schema migration 1.6.1 adds `external_contact_id` for backfilling bookings made 
 Schema migration 1.6.0 adds `project_work_day_id` so multi-day project bookings show up in the unified admin Bookings list. Migrates automatically.
 
 == Changelog ==
+
+= 2.1.28.1 =
+* **Documentation refresh.** No code changes — the plugin behaves identically to 2.1.28.0 at runtime. Ships an updated developer/contributor documentation set so a fresh `git pull` or WordPress auto-update brings the new docs along:
+  * **README.md** — rewritten as a short developer entry point. Quick-start, repo layout, conventions (versioning, branches, commits, migrations), and common contributor tasks (add endpoint, add column, cut release). Points at the deeper docs below instead of duplicating them.
+  * **ARCHITECTURE.md** (new) — 400-line detailed module map. Top-level layer diagram, DI boot order, full REST API catalog (public + Additional Forms + admin, one-line description per route), main SPA flow + ChatKit assistant step, Additional Forms flows (direct + project), Cal.com lifecycle (creation, cancellation, reschedule, webhook idempotency, UID resolution priority), notifications pipeline (action handlers + try/catch wrappers + idempotency columns + ICS builder), admin areas table, DB schema + migration history through 1.6.1, background wp_cron jobs, settings + integrations.
+  * **RELEASE_CHECKLIST.md** (new) — 10-step actionable checklist for cutting a release: version-bump matrix, three-file lockstep, changelog convention, branch merge, tag with `v` prefix, GitHub release asset naming (`handik-booking-app.zip` — the WordPress updater regex matches that exact filename), updater verification, smoke-test.
+  * **readme.txt** — Description block reworked to cover the actual current feature surface (was still describing the early-Sprint single-page wizard with no mention of Additional Forms, Cal lifecycle, AI assistant, or the operator tools). Added Requirements + Upgrade Notice sections.
+* No DB change. No new endpoint. No setting touched.
 
 = 2.1.28.0 =
 * **Sprint 18 / Part 2 — reschedule from the admin booking detail propagates to Cal.com and the customer's calendar.** Follow-up to 2.1.27.0 which wired cancel + delete through to Cal. Same architecture: the plugin is the source of truth for the operator's intent; Cal.com bridges to the customer's calendar via the standard `.ics` invite-update mechanism. POST a new start time to Cal, Cal sends an updated invite, Apple / Google / Outlook Calendar moves the event in place — no manual fixup needed on the customer's side.
