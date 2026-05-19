@@ -2,33 +2,80 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
+Tested up to: 6.6
 Stable tag: 2.1.28.0
 License: Proprietary
 
-Single-page booking application for Handik with local CRM, hosted ChatKit, silent returning-client recognition, Cal.com booking orchestration, and GitHub-powered plugin updates.
+Single-page booking application with AI-assisted intake, multi-day project scheduling, and end-to-end Cal.com calendar sync.
 
 == Description ==
 
-Handik Booking App turns the plugin itself into the booking experience.
+Handik Booking App owns the entire booking experience. The plugin renders the customer-facing flow itself, persists everything to a local CRM, and stays in lockstep with Cal.com — so a cancel or reschedule in the admin propagates to the customer's calendar automatically.
 
-Features:
+= Customer-facing flows =
 
-* single-page multi-step booking wizard
-* shortcode and Elementor widget embedding
-* hosted ChatKit assistant step
-* local CRM tables for contacts, addresses, requests, bookings, and login tokens
-* silent returning-client recognition by phone number
-* Cal.com booking URL routing and webhook sync
-* GitHub release-based plugin updates with WordPress auto-update support
+* `[handik_booking_app]` shortcode (or Elementor widget) — single-page wizard with an OpenAI ChatKit AI assistant. Customer chats through their job, the assistant produces a structured intake result, and the plugin routes them to the right Cal.com event for slot selection.
+* `[handik_direct_booking_form preset_slug="..."]` — Additional Forms direct preset. Phone OTP → contact + address → Cal embed → booked.
+* `[handik_project_day_form preset_slug="..."]` — Additional Forms project preset. Phone OTP → contact + address → pick N work days → server creates N Cal bookings sequentially with rollback on partial failure.
+
+= Operator-facing admin =
+
+* Unified Bookings list — every booking source (main SPA, direct form, project form, external Cal-only) lands in one place
+* People & Requests — contacts, addresses, transcript persistence, drafts focus list with bulk-delete
+* Bookings detail — at-a-glance + actions bar (Note, Reschedule, Completed, Cancelled), cancellation/delete auto-propagates to Cal.com
+* Reschedule from the booking detail — pick a new date/time, the customer's Apple / Google / Outlook calendar moves the event in place
+* "Pull from Cal.com" — backfill bookings that were made directly on Cal.com (e.g. customer used the "Open the booking page directly" fallback link) or that arrived during a webhook outage
+* Bulk actions on every list — select multiple, cancel-on-Cal + cascade delete locally with a typed confirmation + optional Cal reason
+* OpenAI-powered "Load chat from OpenAI" — backfill the chat transcript from ChatKit's authoritative thread storage when the in-browser bridge missed events
+* Dashboard with action-needed chips — drafts older than 24h, ready-but-not-booked, unsafe, errors today
+
+= Integrations =
+
+* OpenAI ChatKit (assistant flow + transcript backfill)
+* Cal.com v2 API (booking create / cancel / reschedule + webhook receiver with HMAC signature verification)
+* Google Maps Places (address autocomplete on the customer forms)
+* Twilio Verify (phone OTP on Additional Forms)
+* wp_mail with branded HTML templates + `.ics` calendar invite attachment for customer + owner confirmation, cancellation, and reschedule emails
+
+= Embedding =
+
+The booking shortcodes work in any WordPress page / post / block. An Elementor widget is registered for drag-drop placement. The main SPA + Additional Forms share a stylesheet, so visual customization via the admin Appearance tab applies to both.
 
 == Installation ==
 
 1. Upload the plugin folder to `/wp-content/plugins/`.
-2. Activate the plugin.
-3. Open `Handik Booking > App Settings`.
-4. Configure OpenAI, Google Maps, Cal.com, email sender, and GitHub updater settings.
-5. Add `[handik_booking_app]` to a page or use the Elementor widget.
-6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
+2. Activate the plugin. Migrations run automatically on the first admin page load.
+3. Open `Handik Booking → Settings` and configure:
+   * **OpenAI** — API key + workflow id for the AI assistant
+   * **Cal.com** — API key, webhook secret, and the event-type slugs / IDs for each booking type
+   * **Google Maps** — Places API key for address autocomplete
+   * **Twilio Verify** — for phone OTP on Additional Forms
+   * **Email** — from-address + from-name for customer / owner notifications
+   * **Updater** — GitHub repo and (for private repos) personal access token so the WordPress auto-update system can find new releases
+4. Add `[handik_booking_app]` to a page, or use the Elementor widget. For Additional Forms, configure presets under `Handik Booking → Additional Forms` and embed via `[handik_direct_booking_form preset_slug="..."]` or `[handik_project_day_form preset_slug="..."]`.
+5. (Optional) Enable auto-updates on the WordPress Plugins screen so future GitHub releases land automatically.
+
+== Requirements ==
+
+* WordPress 6.4+
+* PHP 7.4+ (tested through PHP 8.2)
+* Active Cal.com account with API access (Cal Atoms or Cal.com Cloud Pro+) — required for the booking-creation, cancel, reschedule, and webhook lifecycle
+* OpenAI API key + ChatKit workflow — required for the main SPA assistant flow. The Additional Forms presets work without OpenAI.
+* MariaDB 10.3+ / MySQL 5.7+
+
+== Upgrade Notice ==
+
+= 2.1.28.0 =
+Adds Reschedule from the admin Bookings detail. Pick a new date/time and the customer's calendar invite moves in place via Cal.com. Completes the unified booking lifecycle started in 2.1.27.0 (cancel + delete already propagate to Cal). No DB migration; safe upgrade.
+
+= 2.1.27.0 =
+Cancel + delete in the plugin now auto-cancel on Cal.com so the customer's Apple / Google / Outlook calendar invite updates without manual cleanup. Adds reason prompts on cancel/delete flows. No DB migration.
+
+= 2.1.26.0 =
+Schema migration 1.6.1 adds `external_contact_id` for backfilling bookings made directly on Cal.com. Adds "Pull from Cal.com" button. Migrates automatically on first admin page load after upgrade.
+
+= 2.1.23.0 =
+Schema migration 1.6.0 adds `project_work_day_id` so multi-day project bookings show up in the unified admin Bookings list. Migrates automatically.
 
 == Changelog ==
 

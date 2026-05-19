@@ -1,319 +1,131 @@
 # Handik Booking App
 
-## Architecture Summary
+WordPress plugin that owns the entire Handik booking experience: a customer-facing booking SPA + standalone "Additional Forms" + Cal.com sync + a full admin operations dashboard.
 
-Handik Booking App is a standalone WordPress plugin application. The plugin renders the booking experience itself as a single-page multi-step wizard and can be embedded via shortcode or Elementor widget.
+> **Looking for plugin features, install steps, or the changelog?** See [`readme.txt`](readme.txt) — that's the WordPress-format release-facing doc.
+>
+> **Working on the code?** Keep reading.
 
-Core layers:
+---
 
-1. Frontend booking app
-   - single-page step engine
-   - hosted ChatKit assistant step
-   - returning-client verification
-   - final Cal.com booking step
+## Quick start (development)
 
-2. Backend services
-   - local CRM tables
-   - routing / booking-type selection
-   - hosted ChatKit session endpoint
-   - one-time code / magic-link auth
-   - Cal.com booking URL builder
-   - Cal webhook sync
+```bash
+# 1. Clone into a WordPress site's plugins directory
+git clone <repo-url> wp-content/plugins/handik-booking-app
 
-3. Admin app
-   - top-level `Handik Booking` menu
-   - dashboard, requests, contacts, addresses, bookings
-   - app settings, integrations, logs, changelog
+# 2. Install lint tooling (JS/CSS only — no build step for prod)
+cd wp-content/plugins/handik-booking-app
+npm install
 
-## Plugin Tree
+# 3. Activate the plugin via wp-admin → Plugins
+#    Migrations run automatically on first admin page load.
 
-```text
-handik-booking-app/
-  handik-booking-app.php
-  README.md
-  uninstall.php
-  assets/
-    booking-app.css
-    booking-app.js
-    booking-app-admin.css
-    booking-app-admin.js
-    handik-chatkit-bridge.js
-  includes/
-    class-admin.php
-    class-assets.php
-    class-frontend-app.php
-    class-loader.php
-    class-logger.php
-    class-plugin.php
-    class-rest-api.php
-    class-settings.php
-    class-shortcode.php
-    class-widget-registry.php
-    app/
-      class-app-controller.php
-      class-app-schema.php
-      class-app-state.php
-      class-upload-service.php
-    db/
-      class-db.php
-      class-migrations.php
-      migrations/
-        class-migration-100.php
-        class-migration-110.php
-    services/
-      class-addresses-service.php
-      class-appearance-service.php
-      class-auth-service.php
-      class-bookings-service.php
-      class-cal-service.php
-      class-changelog-service.php
-      class-chatkit-service.php
-      class-contacts-service.php
-      class-job-requests-service.php
-      class-routing-service.php
-      class-webhook-service.php
-  views/
-    frontend-app.php
-  widgets/
-    class-elementor-booking-app-widget.php
+# 4. Configure credentials at Handik Booking → Settings:
+#    - OpenAI (API key + workflow id) for the AI assistant
+#    - Cal.com (API key + webhook secret) for booking sync
+#    - Google Maps (API key) for address autocomplete
+#    - Twilio Verify (SID + auth) for phone OTP on Additional Forms
+#    - Email From-address for customer / owner notifications
 ```
 
-## Frontend App Flow
+The plugin ships zero build artifacts — JS and CSS are loaded directly from `assets/`. `npm` is only for ESLint + Prettier.
 
-The app runs on one page and moves through these screens:
+---
 
-1. Welcome / Entry
-2. Client Type
-3. Returning Client Verification
-4. Task Selection
-5. Address + Photos
-6. Assistant Step
-7. Contact Details
-8. Booking
-9. Success
-10. Unsafe / Stop
+## Repository layout
 
-## Booking Types
+```
+handik-booking-app.php           Plugin bootstrap (version + DB version constants)
+README.md                        This file — developer entry point
+readme.txt                       WordPress release-facing doc + changelog
+ARCHITECTURE.md                  Module map, REST catalog, DB schema, flows
+RELEASE_CHECKLIST.md             Release process
 
-- `standard_visit`
-- `extended_visit`
-- `large_visit`
-- `project_consultation`
+assets/
+  booking-app.js / .css          Main SPA (assistant flow)
+  booking-forms.js / .css        Additional Forms SPA (direct + project)
+  booking-app-admin.js / .css    Admin pages (Bookings, People, etc.)
+  handik-chatkit-bridge.js       <openai-chatkit> web-component bridge
 
-## Duration Buckets
+includes/
+  class-plugin.php               Service container — single source of truth for DI
+  class-loader.php               Static autoloader (every class-*.php manually listed)
+  class-rest-api.php             Main SPA + admin REST endpoints
+  class-frontend-app.php         Server-side render of the SPA shell
+  class-admin.php                Top-level menu + i18n + asset enqueue for admin
 
-- `1_2_hours`
-- `3_5_hours`
-- `6_8_hours`
-- `project_consult`
+  admin/                         Admin page renderers (Dashboard, Bookings, etc.)
+  app/                           Main-SPA app controller, state, schema
+  db/                            Migration runner + versioned migration classes
+  forms/                         Additional Forms module (REST, services, router)
+  services/                      Domain services (CRM, Cal, ChatKit, Notifications)
 
-## Local CRM Tables
-
-- `wp_handik_contacts`
-- `wp_handik_addresses`
-- `wp_handik_job_requests`
-- `wp_handik_bookings`
-- `wp_handik_login_tokens`
-
-The migration framework stores the current DB schema version in:
-
-- `handik_booking_app_db_version`
-
-## Migration Strategy From The Old Plugin
-
-This plugin keeps the useful foundation from the previous Handik Booking Hub:
-
-- table names and CRM concepts
-- returning-client auth
-- hosted ChatKit session exchange
-- routing logic
-- Cal.com helpers
-- webhook sync structure
-
-What changed:
-
-- Elementor forms are no longer the main flow engine
-- the plugin now owns the full booking wizard
-- shortcode and Elementor widget render the plugin app UI directly
-- admin moved to a top-level menu
-- migrations are versioned for future schema changes
-
-## Embedding
-
-### Shortcode
-
-```text
-[handik_booking_app]
+views/                           Server-side PHP templates
+widgets/                         Elementor widget registration
 ```
 
-Optional shortcode attributes:
+The plugin has **no** Composer dependencies. Every PHP class autoloads through `class-loader.php`. Adding a new class? Append it to the `$files` array there.
 
-- `title`
-- `accent`
-- `max_width`
-- `display`
+---
 
-### Elementor Widget
+## Booking flows (high level)
 
-Widget name:
+Three customer-facing entry points:
 
-- `Handik Booking App`
+* **`[handik_booking_app]`** — main SPA with the OpenAI ChatKit assistant. Customer chats through their job → assistant produces a structured result → routing picks the right Cal event slug → Cal embed for slot selection.
+* **`[handik_direct_booking_form preset_slug="...]`** — Additional Forms direct preset. Phone OTP → contact + address → Cal embed → done.
+* **`[handik_project_day_form preset_slug="...]`** — Additional Forms project preset. Phone OTP → contact + address → pick N work days → server creates N Cal bookings sequentially.
 
-Controls:
+Every customer-facing booking ends up as a row in the unified `handik_bookings` table, surfaced in the admin Bookings list regardless of origin.
 
-- title
-- accent override
-- max width
+For everything else (REST endpoints, ChatKit / assistant flow, Cal lifecycle, notifications, DB schema, admin areas, migrations) — see [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
-## Hosted ChatKit
+---
 
-The plugin uses hosted ChatKit, not advanced self-hosted ChatKit.
+## Conventions
 
-Backend endpoint:
+* **Versioning.** Three places must stay in lockstep: `handik-booking-app.php` (`Version:` header + `HANDIK_BOOKING_APP_VERSION` constant), `package.json` (`version`), and `readme.txt` (`Stable tag`). The [release checklist](RELEASE_CHECKLIST.md) lists the order.
+* **Branches.** Feature branches are `claude/<short-feature-name>`. Hotfix branches keep the same convention. PR → review → merge into `main`. `main` is always shippable.
+* **Commits.** Conventional one-line subject + multi-paragraph body explaining WHY (not WHAT — the diff already shows that). When a release commit lands, the subject is `X.Y.Z: <one-line description>`.
+* **Comments in code.** Header docblock on every class + method explains purpose + non-obvious design decisions. Inline comments explain "why this is here" not "what this does". When a fix references a previous bug, prefix the comment with the version that introduced the fix (e.g. `// 2.1.26.6 P0 fix:`).
+* **Migrations.** Each schema change ships a new versioned migration class. Bump `HANDIK_BOOKING_APP_DB_VERSION` in the plugin bootstrap; register the class in `includes/db/class-migrations.php`; add to the loader's `$files` array. Migrations must be idempotent — re-running must not throw on duplicate column / index errors.
+* **REST endpoints.** Public routes use the `route()` helper (rate-limited via the same wrapper); admin routes go through `register_rest_route` directly with an `admin_permission` / `admin_delete_permission` permission callback.
+* **JS.** No bundler, no transpilation. Plain ES2015+ that runs in modern browsers (the public form supports iOS Safari 14+). Admin JS is jQuery-light (uses `window.fetch` directly).
+* **CSS.** No preprocessor. `assets/booking-app.css` is the shared front-end stylesheet (the Forms SPA inherits it).
 
-- `POST /wp-json/handik-booking-app/v1/chatkit-session`
+---
 
-OpenAI session request:
+## Common tasks
 
-- `workflow.id`
-- `user`
+### Add a new REST endpoint
 
-The bundled bridge:
+1. Decide the route shape + permission (`admin_permission` for admin, `__return_true` + nonce for public).
+2. Register in `includes/class-rest-api.php::register_routes()` (or `includes/forms/class-forms-rest-api.php` for Additional Forms).
+3. Implement the handler method on the same class.
+4. Add to the catalog in [`ARCHITECTURE.md`](ARCHITECTURE.md#3-rest-api-catalog) so the next contributor sees it.
 
-- mounts the hosted `openai-chatkit` web component
-- fetches the session from the WordPress backend
-- associates the current thread with the draft request
-- posts normalized structured results to `/assistant-result`
-- emits detailed diagnostics for session fetch, mount, ready, thread changes, message/effect events, and runtime errors
+### Add a schema column
 
-Important compatibility note:
+1. Write a new `class-migration-XYZ.php` in `includes/db/migrations/` (copy a recent one for the idempotent-ALTER pattern).
+2. Register it in `includes/db/class-migrations.php`'s `$map`.
+3. Add the file to the `$files` array in `includes/class-loader.php`.
+4. Bump `HANDIK_BOOKING_APP_DB_VERSION` in `handik-booking-app.php`.
+5. Update services that read/write the new column.
+6. Document in the migration history table in [`ARCHITECTURE.md`](ARCHITECTURE.md#9-db-schema--migrations).
 
-- the current hosted ChatKit session endpoint accepts `workflow.id` and `user`
-- attempted `state_variables` were rejected by the upstream API with `Unknown parameter: 'state_variables'`
-- the plugin still preserves draft context locally and returns it to the frontend bridge, but does not send `state_variables` upstream until OpenAI exposes a compatible hosted-session context field
+### Cut a release
 
-Completion signals expected from the workflow:
+See [`RELEASE_CHECKLIST.md`](RELEASE_CHECKLIST.md).
 
-- effect names: `handik.assistant_complete`, `handik.complete`, `assistant.complete`
-- deeplink names: `handik-submit-result`, `handik-complete`
+---
 
-## Admin Pages
+## Testing
 
-- Dashboard
-- Requests
-- Contacts
-- Addresses
-- Bookings
-- App Settings
-- Integrations
-- Logs
-- Changelog
+The plugin doesn't ship automated tests. QA is manual via the admin tools:
 
-## Settings
+* **Logs** (`Handik Booking → Logs`) — server-side errors, Cal webhook attempts, email dispatch results
+* **System info** (`Handik Booking → System`) — DB version, last migration run, plugin update status
+* **Bookings list** — every booking source lands here; missing rows usually mean a webhook delivery was dropped (use the "Pull from Cal.com" button to backfill)
 
-App Settings include:
-
-- OpenAI API key
-- OpenAI workflow ID
-- OpenAI API base
-- OpenAI project ID
-- OpenAI organization ID
-- custom ChatKit bridge URL
-- Google Maps API key
-- Google Maps country bias
-- GitHub repo URL
-- GitHub release branch
-- GitHub access token for private-repo updates
-- GitHub release asset regex
-- Cal.com URLs for all 4 booking types
-- Cal.com webhook secret
-- email sender settings
-- debug mode
-- appearance settings
-
-## GitHub Auto-Updates
-
-The plugin now includes a built-in GitHub updater powered by Plugin Update Checker.
-
-Release flow:
-
-1. Bump the `Version` header in `handik-booking-app.php`.
-2. Commit and push to `main`.
-3. Publish a GitHub Release in `kyrymoch/handik-booking-app`.
-4. The included GitHub Actions workflow uploads `handik-booking-app.zip` to the release automatically.
-5. WordPress detects the new version from GitHub.
-6. Enable auto-updates for the plugin on the WordPress Plugins screen if you want unattended upgrades.
-
-Important notes:
-
-- For private repositories, the WordPress site needs a GitHub token with repository read access.
-- The plugin is configured to prefer a release asset that matches `/handik-booking-app\.zip($|[?&#])/i`.
-- `readme.txt` is included so the WordPress update modal can show changelog/details.
-
-## Diagnostics
-
-For assistant troubleshooting, the plugin now logs both backend and frontend ChatKit stages.
-
-Examples:
-
-- session requested
-- session fetched
-- client secret normalized
-- custom element defined
-- mounted into container
-- ready event fired
-- thread associated
-- effect/deeplink received
-- runtime error
-
-The admin logs screen now includes serialized `context` so you can see request ids, thread ids, OpenAI request ids, and mount-stage details.
-
-## wp-config Constant Overrides
-
-- `HANDIK_BOOKING_APP_OPENAI_API_KEY`
-- `HANDIK_BOOKING_APP_OPENAI_WORKFLOW_ID`
-- `HANDIK_BOOKING_APP_OPENAI_API_BASE`
-- `HANDIK_BOOKING_APP_OPENAI_PROJECT_ID`
-- `HANDIK_BOOKING_APP_OPENAI_ORGANIZATION_ID`
-- `HANDIK_BOOKING_APP_CHATKIT_SCRIPT_URL`
-- `HANDIK_BOOKING_APP_GOOGLE_MAPS_API_KEY`
-- `HANDIK_BOOKING_APP_GOOGLE_MAPS_COUNTRY`
-- `HANDIK_BOOKING_APP_GITHUB_REPO_URL`
-- `HANDIK_BOOKING_APP_GITHUB_REPO_BRANCH`
-- `HANDIK_BOOKING_APP_GITHUB_ACCESS_TOKEN`
-- `HANDIK_BOOKING_APP_GITHUB_RELEASE_ASSET_PATTERN`
-- `HANDIK_BOOKING_APP_CAL_STANDARD_EVENT_URL`
-- `HANDIK_BOOKING_APP_CAL_EXTENDED_EVENT_URL`
-- `HANDIK_BOOKING_APP_CAL_LARGE_EVENT_URL`
-- `HANDIK_BOOKING_APP_CAL_PROJECT_EVENT_URL`
-- `HANDIK_BOOKING_APP_CAL_WEBHOOK_SECRET`
-- `HANDIK_BOOKING_APP_EMAIL_FROM_NAME`
-- `HANDIK_BOOKING_APP_EMAIL_FROM_ADDRESS`
-- `HANDIK_BOOKING_APP_DEBUG_MODE`
-
-## Installation
-
-1. Copy `handik-booking-app` into `wp-content/plugins/`.
-2. Activate the plugin.
-3. Open `Handik Booking > App Settings`.
-4. Configure OpenAI, ChatKit, Google Maps, Cal.com, GitHub updater, email sender, and appearance settings.
-5. Add the shortcode or Elementor widget to the desired page.
-6. Register the Cal webhook URL:
-   - `https://your-site.com/wp-json/handik-booking-app/v1/cal-webhook`
-
-## Testing Checklist
-
-1. Plugin activation creates or upgrades local CRM tables.
-2. Shortcode renders the booking app.
-3. Elementor widget renders the same booking app.
-4. New client can move through all steps without page reloads.
-5. Returning client can request and verify one-time code.
-6. Saved addresses prefill after returning-client verification.
-7. Draft request is created after address + photos step.
-8. Hosted ChatKit session endpoint returns `client_secret`.
-9. Assistant result updates routing fields and unsafe state when applicable.
-10. Contact details save before Cal.com booking step.
-11. Correct Cal.com URL is built for each booking type.
-12. Booking completion step moves the app into success state.
-13. Cal webhook sync updates local booking status.
-14. Admin pages show requests, contacts, addresses, bookings, logs, and changelog.
+When debugging a customer-side issue, the SPA's `/client-log` endpoint mirrors browser console errors into the same Logs view.
