@@ -358,7 +358,27 @@
 			const signature = JSON.stringify( normalized );
 			if ( record.handledSignature === signature ) {
 				log( 'debug', 'Structured result skipped as duplicate.', { source: source || 'unknown' } );
-				return Promise.resolve( record.lastStructuredPayload || {
+				// 2.1.29.1 P0 fix: skip the server round-trip on a duplicate
+				// payload, but STILL notify the caller that the assistant
+				// turn ended. Without this, follow-up turns where the model
+				// returns the same booking_type/duration leave the booking-app
+				// SPA's per-turn status block running until 50s and never
+				// re-enable the booking CTA (assistantReadyForBooking is set
+				// inside applySavedAssistantRouting → onComplete).
+				const cached = record.lastStructuredPayload;
+				if ( cached ) {
+					try {
+						if ( typeof record.options.onStructuredResult === 'function' ) {
+							record.options.onStructuredResult( normalized, cached );
+						}
+						if ( typeof record.options.onComplete === 'function' ) {
+							record.options.onComplete( normalized, cached );
+						}
+					} catch ( callbackError ) {
+						log( 'error', 'onComplete re-fire on duplicate structured result threw.', { source: source || 'unknown', error: summarizeError( callbackError ) } );
+					}
+				}
+				return Promise.resolve( cached || {
 					success: true,
 					assistant_result: normalized,
 					routing: normalized

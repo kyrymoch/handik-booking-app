@@ -3,7 +3,7 @@ Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.1.29.0
+Stable tag: 2.1.29.1
 License: Proprietary
 
 Single-page booking application with AI-assisted intake, multi-day project scheduling, and end-to-end Cal.com calendar sync.
@@ -81,6 +81,12 @@ Schema migration 1.6.1 adds `external_contact_id` for backfilling bookings made 
 Schema migration 1.6.0 adds `project_work_day_id` so multi-day project bookings show up in the unified admin Bookings list. Migrates automatically.
 
 == Changelog ==
+
+= 2.1.29.1 =
+* **P0 fix — virtual-assistant status block stuck at the 50s stage on follow-up turns AND booking CTA stuck disabled after the second message.** Owner-reported on the 2.1.29.0 rollout: first user message worked (status block animated through the early stages, assistant replied, CTA enabled). Second user message: the status block ran all the way to the 50s "Open the booking page directly" fallback even though the assistant actually replied in the chat, and the booking CTA stayed disabled with the log line "Assistant continue blocked: assistant_ready_for_booking false". Two pre-existing bugs that the new prominent status block surfaced — both fixed in lockstep.
+* **Fix 1 (`assets/booking-app.js` — `onMessageActivity`):** the "contains" checks for the message role were written as `false !== messageType.indexOf( 'user' )`. `String.prototype.indexOf` returns `-1` (not `false`) when the needle is missing, so `false !== -1` evaluates to `true` for every non-empty messageType — both `isUserLike` AND `isAssistantLike` were always `true`, the `if`/`else if` always picked the user branch, and assistant message events never made it into the assistant-like branch. Result: the per-turn status block never cleared on assistant tokens, and `assistantReadyForBooking` was never restored from message activity. Fix: use the canonical `-1 !== messageType.indexOf( ... )` "contains" pattern. Bug predates the 2.1.29.0 status-block rewrite — the old "Thinking…" pill just hid via `onComplete` so the misclassification was invisible until the new system relied on assistant-side message activity to keep the block in sync.
+* **Fix 2 (`assets/handik-chatkit-bridge.js` — `saveStructuredResult`):** when the model returned the same `booking_type` / `duration_bucket` / pricing payload on a follow-up turn (the common case for clarification turns or "yes, please book" turns), the bridge dedup-fast-pathed on the JSON signature and returned early WITHOUT invoking `onComplete`. The booking-app SPA wires the per-turn status-block clear AND the `applySavedAssistantRouting` call (which is the only place `assistantReadyForBooking` gets set back to `true`) through `onComplete` — so dedup left both stuck. Fix: skip the server round-trip on a duplicate signature (it's pointless — the server already has this routing saved) but still invoke `onStructuredResult` + `onComplete` with the cached payload so the SPA can clear the status block and re-enable the CTA. Wrapped in try/catch + error-log so a buggy caller can never break the bridge's fast path.
+* No DB change. No new endpoint. No setting touched. Front-end only — `assets/booking-app.js` + `assets/handik-chatkit-bridge.js`.
 
 = 2.1.29.0 =
 * **Virtual-assistant "thinking" UX.** Owner-reported: real assistant first-token latency lands in the 20–60s range, and the old "Thinking…" pill at the bottom-left of the chat host was too small to read on mobile and felt static enough that customers thought the page had frozen. Replaced with a single, prominent status block layered over the chat host that rotates its copy on a wall-clock timeline so the wait reads as in-progress, not broken.

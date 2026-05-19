@@ -3011,8 +3011,17 @@
 						const messageType = detail && ( detail.type || detail.message_type || ( detail.message && detail.message.type ) ) ? String( detail.type || detail.message_type || detail.message.type ).toLowerCase() : '';
 						const direction = detail && ( detail.direction || ( detail.message && detail.message.direction ) ) ? String( detail.direction || detail.message.direction ).toLowerCase() : '';
 						const source = detail && ( detail.source || detail.origin || ( detail.message && ( detail.message.source || detail.message.origin ) ) ) ? String( detail.source || detail.origin || detail.message.source || detail.message.origin ).toLowerCase() : '';
-						const isUserLike = 'user' === role || false !== messageType.indexOf( 'user' ) || 'outgoing' === direction || 'user' === source || 'client' === source;
-						const isAssistantLike = 'assistant' === role || false !== messageType.indexOf( 'assistant' ) || false !== messageType.indexOf( 'output' ) || 'incoming' === direction || 'assistant' === source;
+						// 2.1.29.1 P0 fix: the original "contains" checks were
+						// `false !== messageType.indexOf( 'user' )`. String.indexOf
+						// returns -1 (not false) when the needle is missing, so
+						// `false !== -1` evaluates to true for every messageType
+						// value — both isUserLike AND isAssistantLike were always
+						// true, the if/else-if always picked the user branch, and
+						// assistant message events never cleared the status block
+						// or restored assistantReadyForBooking. Fix: use the
+						// canonical `-1 !== indexOf` "contains" check.
+						const isUserLike = 'user' === role || -1 !== messageType.indexOf( 'user' ) || 'outgoing' === direction || 'user' === source || 'client' === source;
+						const isAssistantLike = 'assistant' === role || -1 !== messageType.indexOf( 'assistant' ) || -1 !== messageType.indexOf( 'output' ) || 'incoming' === direction || 'assistant' === source;
 						if ( isUserLike ) {
 							this.startAssistantStatusBlock();
 							this.state.assistantUserMessageSent = true;
