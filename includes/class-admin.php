@@ -459,6 +459,15 @@ class Handik_Booking_App_Admin {
 					'bulkDeleteContactsPrompt'  => __( 'About to delete %1$s of %2$s contacts AND all their requests, bookings, addresses, photos and messages. Bookings will also be cancelled on Cal.com. This is irreversible. Type %3$s to confirm.', 'handik-booking-app' ),
 					'bulkCancelReasonTitle'     => __( 'Cancellation reason (optional)', 'handik-booking-app' ),
 					'bulkCancelReasonBody'      => __( 'Applied to every booking in this batch. Sent to customers via the Cal.com cancellation email. Leave blank for a generic "Cancelled by admin" notice.', 'handik-booking-app' ),
+					// 2.1.28.0 — Sprint 18 / Part 2: reschedule modal copy.
+					'rescheduleTitle'           => __( 'Reschedule booking', 'handik-booking-app' ),
+					'rescheduleBody'            => __( 'Pick a new date and time. The customer will get an updated calendar invite — Apple / Google / Outlook Calendar will move the event in place.', 'handik-booking-app' ),
+					'rescheduleNewStartLabel'   => __( 'New start time', 'handik-booking-app' ),
+					'rescheduleReasonLabel'     => __( 'Reason (optional)', 'handik-booking-app' ),
+					'rescheduleReasonPlaceholder' => __( 'e.g. Schedule conflict, customer requested earlier slot.', 'handik-booking-app' ),
+					'rescheduleCta'             => __( 'Reschedule', 'handik-booking-app' ),
+					'rescheduleDone'            => __( 'Rescheduled. Customer\'s calendar invite was updated.', 'handik-booking-app' ),
+					'rescheduleFailed'          => __( 'Reschedule failed', 'handik-booking-app' ),
 				),
 			)
 		);

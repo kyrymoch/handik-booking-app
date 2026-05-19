@@ -2,7 +2,7 @@
 Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 2.1.27.0
+Stable tag: 2.1.28.0
 License: Proprietary
 
 Single-page booking application for Handik with local CRM, hosted ChatKit, silent returning-client recognition, Cal.com booking orchestration, and GitHub-powered plugin updates.
@@ -31,6 +31,16 @@ Features:
 6. Enable auto-updates for the plugin on the WordPress Plugins screen if desired.
 
 == Changelog ==
+
+= 2.1.28.0 =
+* **Sprint 18 / Part 2 — reschedule from the admin booking detail propagates to Cal.com and the customer's calendar.** Follow-up to 2.1.27.0 which wired cancel + delete through to Cal. Same architecture: the plugin is the source of truth for the operator's intent; Cal.com bridges to the customer's calendar via the standard `.ics` invite-update mechanism. POST a new start time to Cal, Cal sends an updated invite, Apple / Google / Outlook Calendar moves the event in place — no manual fixup needed on the customer's side.
+* **New service method** `Cal_Api_Service::reschedule_booking($uid, $new_start_iso, $reason)`. POSTs to `/v2/bookings/{uid}/reschedule` with `start` (ISO 8601 with timezone offset) + optional `reschedulingReason`. Cal recomputes `end` server-side from the event-type's configured duration — same fixed-vs-variable rule as `create_booking`, so we never send `lengthInMinutes` here either. `Cal-Idempotency-Key` hash includes the new start so a legitimate "actually pick a different time" retry isn't collapsed into the previous attempt. Returns the normalized booking shape (uid / id / start / end / url / raw) so the caller can mirror the new times locally.
+* **New REST endpoint** `POST /admin/booking/{id}/reschedule`. Admin-only (existing `admin_permission` gate). Accepts `new_start` (datetime-local string from the admin modal) + optional `reason`. Server converts the datetime-local value to ISO 8601 in the configured `cal_api_timezone` (default `America/New_York`) before posting to Cal. Refuses if the new time is in the past, if the booking has no resolvable Cal UID (admin-only / external bookings), or if Cal returns an error. On success, mirrors `start_time` + `end_time` + `raw_webhook_json` into the local `handik_bookings` row and clears any `admin_status_override` that was previously set to `cancelled` or `rescheduled` (so the row shows back up as live).
+* **Admin UI — "Reschedule" button** on the Bookings detail actions bar, between "Note" and "Completed". Only rendered for FUTURE bookings (past ones are a data-quality red flag for reschedule; admin can edit the time via the catalog tool if really needed). Carries `data-current-start="YYYY-MM-DDTHH:MM"` in the org timezone so the modal can pre-fill the picker to the existing slot — operator only changes the bit they're moving.
+* **Reschedule modal** in `booking-app-admin.js` (`openRescheduleModal`). Renders an `<input type="datetime-local">` (pre-filled with the current start, `min` set to "now") + a `<textarea>` for the optional reason. On submit posts to the new endpoint; on success toasts "Rescheduled. Customer's calendar invite was updated." and reloads the page after 800ms so the at-a-glance bar + when-text reflect the new time.
+* **i18n** — eight new `HandikAdmin.i18n` keys: `rescheduleTitle`, `rescheduleBody`, `rescheduleNewStartLabel`, `rescheduleReasonLabel`, `rescheduleReasonPlaceholder`, `rescheduleCta`, `rescheduleDone`, `rescheduleFailed`.
+* **Trailing-edge sync**: when Cal.com fires its own `BOOKING_RESCHEDULED` webhook back to us (which it always does on a successful reschedule API call), the existing `Webhook_Service::dispatch_to_standard` / `dispatch_direct` / `dispatch_project` path already wires through to `Bookings_Service` and `Notifications_Service::dispatch_for_cal_reschedule` / `dispatch_for_direct_reschedule` (Sprint 14c). So the customer gets both Cal's updated `.ics` invite AND our branded reschedule notification — and any local-side fields the synchronous mirror missed (project_work_days.start_iso, direct_booking_requests metadata) get backfilled by the webhook within seconds of Cal accepting our reschedule.
+* No DB change. No migration.
 
 = 2.1.27.0 =
 * **Sprint 18 — unified booking lifecycle: cancel + delete in the plugin now propagate to Cal.com automatically.** Owner-reported: every test booking required manual cleanup in three places — local plugin, Cal.com dashboard, and the resulting Apple Calendar event. Now there is ONE source of truth: do it in the plugin, the rest follows.

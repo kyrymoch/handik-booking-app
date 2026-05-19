@@ -290,6 +290,96 @@ class Handik_Booking_App_Cal_Api_Service {
 		return array( 'success' => true );
 	}
 
+	/**
+	 * 2.1.28.0 — Sprint 18 / Part 2: reschedule an existing booking to
+	 * a new start time. POST /v2/bookings/{uid}/reschedule with a
+	 * fresh `start` (ISO 8601) and an optional reason. Cal v2
+	 * recomputes `end` server-side from the event-type's configured
+	 * duration (same fixed-vs-variable rule as create_booking — we
+	 * never send `lengthInMinutes` here either).
+	 *
+	 * Cal's behavior on a successful reschedule: keeps the booking
+	 * record (same database row Cal-side, same booker token), updates
+	 * `start` + recomputed `end`, AND sends fresh `.ics` invite emails
+	 * to both attendee and organizer. Apple / Google / Outlook
+	 * Calendar receives the updated invite and moves the event in
+	 * place — no manual fixup required from the customer.
+	 *
+	 * Returns the normalized booking shape (uid / id / start / end /
+	 * url / raw) so the caller can update the local handik_bookings
+	 * row's `start_time` and `end_time` columns to match.
+	 *
+	 * @param string $uid           Existing Cal booking UID.
+	 * @param string $new_start_iso New start time in ISO 8601 (with timezone offset).
+	 * @param string $reason        Optional rescheduling reason — included in the
+	 *                              update notification email + the `.ics` description.
+	 * @return array{booking?: array<string,mixed>, error?: string, status?: int}
+	 */
+	public function reschedule_booking( $uid, $new_start_iso, $reason = '' ) {
+		$uid = (string) $uid;
+		if ( '' === $uid ) {
+			return array(
+				'error'  => __( 'Cal.com booking UID required for reschedule.', 'handik-booking-app' ),
+				'status' => 400,
+			);
+		}
+		$new_start_iso = (string) $new_start_iso;
+		if ( '' === $new_start_iso ) {
+			return array(
+				'error'  => __( 'New start time required for reschedule.', 'handik-booking-app' ),
+				'status' => 400,
+			);
+		}
+		if ( ! $this->is_configured() ) {
+			return array(
+				'error'  => __( 'Cal.com API key is not configured.', 'handik-booking-app' ),
+				'status' => 500,
+			);
+		}
+
+		$body = array(
+			'start' => $new_start_iso,
+		);
+		if ( '' !== trim( (string) $reason ) ) {
+			$body['reschedulingReason'] = (string) $reason;
+		}
+
+		// Idempotency key prevents a retried POST from creating a
+		// duplicate reschedule cycle. Combined with the uid + new
+		// start so a legitimate "actually pick a different time"
+		// retry isn't collapsed into the previous attempt.
+		$idempotency = 'handik-reschedule-' . $uid . '-' . substr( md5( $new_start_iso ), 0, 12 );
+
+		$response = $this->request(
+			'POST',
+			'/bookings/' . rawurlencode( $uid ) . '/reschedule',
+			array(
+				'body'    => $body,
+				'headers' => array(
+					'Cal-Idempotency-Key' => $idempotency,
+				),
+				'version' => self::BOOKINGS_API_VERSION,
+			)
+		);
+		if ( ! empty( $response['error'] ) ) {
+			return $response;
+		}
+
+		$payload = isset( $response['data']['data'] ) && is_array( $response['data']['data'] )
+			? $response['data']['data']
+			: ( isset( $response['data'] ) && is_array( $response['data'] ) ? $response['data'] : array() );
+
+		$booking = $this->normalize_booking( $payload );
+		if ( empty( $booking['uid'] ) && empty( $booking['id'] ) ) {
+			return array(
+				'error'  => __( 'Cal.com did not return a booking identifier after reschedule.', 'handik-booking-app' ),
+				'status' => 502,
+			);
+		}
+
+		return array( 'booking' => $booking );
+	}
+
 	// ---------- normalization --------------------------------------------
 
 	/**

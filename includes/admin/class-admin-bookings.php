@@ -1509,6 +1509,34 @@ class Handik_Booking_App_Admin_Bookings {
 			data-rest-base="<?php echo esc_attr( esc_url_raw( $rest ) ); ?>"
 			data-rest-nonce="<?php echo esc_attr( wp_create_nonce( 'wp_rest' ) ); ?>">
 			<button type="button" class="button" data-handik-action="add-note">📝 <?php esc_html_e( 'Note', 'handik-booking-app' ); ?></button>
+			<?php
+			// 2.1.28.0 — Reschedule button. Only shown when the
+			// booking has a resolvable Cal UID; admin-only / external
+			// bookings without one would 422 on the API. Best-effort
+			// detection at render time: project / direct / main-SPA
+			// rows all carry a UID via raw_webhook_json or the
+			// linked source table. The button is hidden for past
+			// bookings — rescheduling something that already
+			// happened is a data-quality red flag.
+			$is_past = ! empty( $booking['start_time'] ) && $booking['start_time'] < gmdate( 'Y-m-d H:i:s' );
+			$show_reschedule = ! $is_past;
+			$current_start_local = '';
+			if ( ! empty( $booking['start_time'] ) ) {
+				$dt_obj = Handik_Booking_App_Admin_Helpers::utc_to_eastern( (string) $booking['start_time'] );
+				if ( $dt_obj ) {
+					// HTML5 datetime-local input format ("YYYY-MM-DDTHH:MM") in the org timezone.
+					$current_start_local = $dt_obj->format( 'Y-m-d\TH:i' );
+				}
+			}
+			if ( $show_reschedule ) :
+			?>
+				<button type="button"
+					class="button"
+					data-handik-action="reschedule"
+					data-current-start="<?php echo esc_attr( $current_start_local ); ?>">
+					🔁 <?php esc_html_e( 'Reschedule', 'handik-booking-app' ); ?>
+				</button>
+			<?php endif; ?>
 			<button type="button" class="button" data-handik-action="mark-completed">✅ <?php esc_html_e( 'Completed', 'handik-booking-app' ); ?></button>
 			<button type="button" class="button" data-handik-action="mark-cancelled">⛔ <?php esc_html_e( 'Cancelled', 'handik-booking-app' ); ?></button>
 			<?php if ( $has_admin_status_override ) : ?>

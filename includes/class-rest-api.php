@@ -114,6 +114,15 @@ class Handik_Booking_App_REST_API {
 			'callback'            => array( $this, 'admin_booking_fetch_chat' ),
 			'permission_callback' => array( $this, 'admin_permission' ),
 		) );
+		// 2.1.28.0 — Sprint 18 / Part 2: reschedule a booking to a
+		// new start time. POST /v2/bookings/{uid}/reschedule on the
+		// Cal side, then mirror the new start/end into the local
+		// handik_bookings row.
+		register_rest_route( $namespace, '/admin/booking/(?P<id>\d+)/reschedule', array(
+			'methods'             => WP_REST_Server::CREATABLE,
+			'callback'            => array( $this, 'admin_booking_reschedule' ),
+			'permission_callback' => array( $this, 'admin_permission' ),
+		) );
 		register_rest_route( $namespace, '/admin/contact', array(
 			'methods'             => WP_REST_Server::CREATABLE,
 			'callback'            => array( $this, 'admin_contact_create' ),
@@ -1203,6 +1212,165 @@ class Handik_Booking_App_REST_API {
 			'cal_skipped'   => ! empty( $cal_result['skipped'] ),
 			'cal_error'     => isset( $cal_result['error'] ) ? (string) $cal_result['error'] : '',
 		) );
+	}
+
+	/**
+	 * 2.1.28.0 — Sprint 18 / Part 2: reschedule a booking. Cal.com
+	 * propagates the new time to the customer's calendar
+	 * automatically — its reschedule endpoint sends an updated
+	 * `.ics` invite to the attendee, Apple / Google / Outlook
+	 * Calendar receives it and moves the event in place.
+	 *
+	 * Input body (JSON):
+	 *   - new_start (required) — datetime-local string from the
+	 *     admin modal's `<input type="datetime-local">`, e.g.
+	 *     "2026-05-20T14:30". Server interprets it in the Cal org's
+	 *     configured timezone (cal_api_timezone setting, default
+	 *     America/New_York) and converts to ISO 8601 with offset
+	 *     before posting to Cal.
+	 *   - reason (optional) — included in Cal's update notification
+	 *     email and the `.ics` description.
+	 *
+	 * Local-side mirror happens AFTER Cal succeeds: the booking row's
+	 * start_time + end_time + raw_webhook_json get updated to match
+	 * the normalized booking Cal returned. If the Cal call fails the
+	 * local row is NOT touched — operator gets the Cal error message
+	 * back and can retry without partial state.
+	 */
+	public function admin_booking_reschedule( WP_REST_Request $request ) {
+		if ( ! $this->cal_api || ! $this->bookings ) {
+			return $this->admin_unavailable();
+		}
+		$id = absint( $request['id'] );
+		$booking = $this->bookings->get( $id );
+		if ( ! $booking ) {
+			return new WP_Error( 'handik_booking_not_found', __( 'Booking not found.', 'handik-booking-app' ), array( 'status' => 404 ) );
+		}
+
+		$new_start_input = sanitize_text_field( (string) $request->get_param( 'new_start' ) );
+		$reason          = sanitize_text_field( (string) $request->get_param( 'reason' ) );
+		if ( '' === $new_start_input ) {
+			return new WP_Error( 'handik_reschedule_missing_time', __( 'New start time is required.', 'handik-booking-app' ), array( 'status' => 400 ) );
+		}
+
+		// Convert datetime-local input to ISO 8601 in the configured
+		// org timezone. datetime-local has no timezone in its value
+		// ("2026-05-20T14:30"), so we attach the org timezone explicitly.
+		$org_tz_name = method_exists( $this->cal_api, 'timezone' ) ? $this->cal_api->timezone() : 'America/New_York';
+		try {
+			$org_tz = new DateTimeZone( $org_tz_name );
+			$dt     = new DateTime( $new_start_input, $org_tz );
+		} catch ( \Throwable $e ) {
+			return new WP_Error(
+				'handik_reschedule_invalid_time',
+				sprintf(
+					/* translators: %s: parsing error message */
+					__( 'Could not parse the new start time: %s', 'handik-booking-app' ),
+					$e->getMessage()
+				),
+				array( 'status' => 400 )
+			);
+		}
+		// Guard against scheduling in the past — Cal would reject
+		// anyway but a 400 from us is faster + clearer.
+		if ( $dt->getTimestamp() <= time() - 60 ) {
+			return new WP_Error(
+				'handik_reschedule_in_past',
+				__( 'New start time must be in the future.', 'handik-booking-app' ),
+				array( 'status' => 400 )
+			);
+		}
+		$new_start_iso = $dt->format( 'c' ); // ISO 8601 with offset
+
+		$uid = $this->extract_cal_uid_for_booking( $booking );
+		if ( '' === $uid ) {
+			return new WP_Error(
+				'handik_reschedule_no_uid',
+				__( 'This booking has no Cal.com UID — cannot reschedule via Cal. (Likely an admin-only or external booking with missing metadata.)', 'handik-booking-app' ),
+				array( 'status' => 422 )
+			);
+		}
+
+		$result = $this->cal_api->reschedule_booking( $uid, $new_start_iso, $reason );
+		if ( ! empty( $result['error'] ) ) {
+			if ( $this->logger ) {
+				$this->logger->error(
+					'Cal reschedule failed.',
+					array(
+						'booking_id' => $id,
+						'uid'        => $uid,
+						'new_start'  => $new_start_iso,
+						'error'      => (string) $result['error'],
+					)
+				);
+			}
+			return new WP_Error(
+				'handik_reschedule_cal_failed',
+				(string) $result['error'],
+				array( 'status' => isset( $result['status'] ) ? (int) $result['status'] : 502 )
+			);
+		}
+
+		// Cal accepted — mirror the new time into the local row.
+		$cal_booking = $result['booking'] ?? array();
+		$new_start_db = ! empty( $cal_booking['start'] ) ? $this->iso_to_mysql_utc( (string) $cal_booking['start'] ) : null;
+		$new_end_db   = ! empty( $cal_booking['end'] )   ? $this->iso_to_mysql_utc( (string) $cal_booking['end'] )   : null;
+
+		global $wpdb;
+		$table  = Handik_Booking_App_DB::table( 'bookings' );
+		$patch  = array();
+		if ( $new_start_db ) { $patch['start_time'] = $new_start_db; }
+		if ( $new_end_db )   { $patch['end_time']   = $new_end_db; }
+		if ( ! empty( $cal_booking['raw'] ) && is_array( $cal_booking['raw'] ) ) {
+			$patch['raw_webhook_json'] = wp_json_encode( $cal_booking['raw'] );
+		}
+		if ( ! empty( $patch ) ) {
+			$wpdb->update( $table, $patch, array( 'id' => $id ) );
+		}
+
+		// Also clear any admin_status_override == 'cancelled' so the
+		// rescheduled booking shows back up as live. Bookings that
+		// were COMPLETED stay completed (you wouldn't reschedule one
+		// of those in practice, but defensively don't override that).
+		$current_override = (string) ( $booking['admin_status_override'] ?? '' );
+		if ( 'cancelled' === $current_override || 'rescheduled' === $current_override ) {
+			$wpdb->update( $table, array( 'admin_status_override' => null ), array( 'id' => $id ) );
+		}
+
+		if ( $this->logger ) {
+			$this->logger->info(
+				'Booking rescheduled.',
+				array(
+					'booking_id' => $id,
+					'uid'        => $uid,
+					'new_start'  => $new_start_iso,
+					'cal_uid'    => (string) ( $cal_booking['uid'] ?? '' ),
+				)
+			);
+		}
+
+		return rest_ensure_response( array(
+			'success'    => true,
+			'new_start'  => $new_start_db,
+			'new_end'    => $new_end_db,
+			'cal_uid'    => (string) ( $cal_booking['uid'] ?? '' ),
+		) );
+	}
+
+	/**
+	 * Convert an ISO 8601 string (any offset) to MySQL UTC datetime
+	 * for storage in handik_bookings.start_time / end_time, which
+	 * are DATETIME columns expected to hold UTC.
+	 *
+	 * @param string $iso ISO 8601 datetime.
+	 * @return string|null UTC datetime "Y-m-d H:i:s", or null on parse failure.
+	 */
+	protected function iso_to_mysql_utc( $iso ) {
+		$ts = strtotime( (string) $iso );
+		if ( ! $ts ) {
+			return null;
+		}
+		return gmdate( 'Y-m-d H:i:s', $ts );
 	}
 
 	/**

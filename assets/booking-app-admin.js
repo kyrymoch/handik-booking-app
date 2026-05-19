@@ -449,6 +449,108 @@
 	}
 
 	// ============================================================
+	// 2.1.28.0 — Sprint 18 / Part 2: reschedule modal
+	// ============================================================
+	function openRescheduleModal( opts ) {
+		opts = opts || {};
+		const currentStart = opts.currentStart || '';
+		return new Promise( function ( resolve ) {
+			const backdrop = document.createElement( 'div' );
+			backdrop.className = 'handik-admin-modal-backdrop';
+			const modal = document.createElement( 'div' );
+			modal.className = 'handik-admin-modal';
+			modal.setAttribute( 'role', 'dialog' );
+			modal.setAttribute( 'aria-modal', 'true' );
+
+			const title = document.createElement( 'h3' );
+			title.textContent = i18n.rescheduleTitle || 'Reschedule booking';
+			modal.appendChild( title );
+
+			const body = document.createElement( 'div' );
+			body.className = 'handik-admin-modal__body';
+
+			const description = document.createElement( 'p' );
+			description.textContent = i18n.rescheduleBody || 'Pick a new date and time. The customer will get an updated calendar invite — Apple / Google / Outlook Calendar will move the event in place.';
+			body.appendChild( description );
+
+			const dateLabel = document.createElement( 'label' );
+			dateLabel.className = 'handik-admin-field';
+			const dateLabelSpan = document.createElement( 'span' );
+			dateLabelSpan.textContent = i18n.rescheduleNewStartLabel || 'New start time';
+			dateLabel.appendChild( dateLabelSpan );
+			const dateInput = document.createElement( 'input' );
+			dateInput.type = 'datetime-local';
+			dateInput.value = currentStart;
+			dateInput.className = 'handik-admin-modal__input';
+			dateInput.required = true;
+			// Set min to "now" so the picker UI nudges away from past times.
+			const nowDt = new Date();
+			nowDt.setMinutes( nowDt.getMinutes() - nowDt.getTimezoneOffset() );
+			dateInput.min = nowDt.toISOString().slice( 0, 16 );
+			dateLabel.appendChild( dateInput );
+			body.appendChild( dateLabel );
+
+			const reasonLabel = document.createElement( 'label' );
+			reasonLabel.className = 'handik-admin-field';
+			const reasonLabelSpan = document.createElement( 'span' );
+			reasonLabelSpan.textContent = i18n.rescheduleReasonLabel || 'Reason (optional)';
+			reasonLabel.appendChild( reasonLabelSpan );
+			const reasonInput = document.createElement( 'textarea' );
+			reasonInput.placeholder = i18n.rescheduleReasonPlaceholder || 'e.g. Schedule conflict, customer requested earlier slot.';
+			reasonInput.rows = 3;
+			reasonLabel.appendChild( reasonInput );
+			body.appendChild( reasonLabel );
+
+			modal.appendChild( body );
+
+			const actions = document.createElement( 'div' );
+			actions.className = 'handik-admin-modal__actions';
+			const cancel = document.createElement( 'button' );
+			cancel.type = 'button';
+			cancel.className = 'button';
+			cancel.textContent = i18n.cancel || 'Cancel';
+			const confirm = document.createElement( 'button' );
+			confirm.type = 'button';
+			confirm.className = 'button button-primary';
+			confirm.textContent = i18n.rescheduleCta || 'Reschedule';
+			actions.appendChild( cancel );
+			actions.appendChild( confirm );
+			modal.appendChild( actions );
+			backdrop.appendChild( modal );
+
+			let releaseFocusTrap = function () {};
+			function close( value ) {
+				releaseFocusTrap();
+				if ( backdrop.parentNode ) { backdrop.parentNode.removeChild( backdrop ); }
+				document.removeEventListener( 'keydown', onKey, true );
+				resolve( value );
+			}
+			function onKey( event ) {
+				if ( 'Escape' === event.key ) { close( null ); }
+			}
+			document.addEventListener( 'keydown', onKey, true );
+			cancel.addEventListener( 'click', function () { close( null ); } );
+			confirm.addEventListener( 'click', function () {
+				const v = dateInput.value;
+				if ( ! v ) {
+					dateInput.focus();
+					return;
+				}
+				close( { newStart: v, reason: reasonInput.value } );
+			} );
+			backdrop.addEventListener( 'click', function ( event ) {
+				if ( event.target === backdrop ) { close( null ); }
+			} );
+
+			document.body.appendChild( backdrop );
+			if ( typeof trapModalFocus === 'function' ) {
+				releaseFocusTrap = trapModalFocus( modal );
+			}
+			window.setTimeout( function () { dateInput.focus(); }, 0 );
+		} );
+	}
+
+	// ============================================================
 	// Booking detail actions (B4)
 	// ============================================================
 
@@ -505,6 +607,39 @@
 						await adminFetch( ctx, 'admin/booking/' + bookingId + '/status', { body: { status: '' } } );
 						toast( i18n.saved || 'Saved', 'success' );
 						window.location.reload();
+					}
+					if ( 'reschedule' === action ) {
+						// 2.1.28.0 — Sprint 18 / Part 2: reschedule
+						// to a new start time. Modal collects a
+						// datetime-local value (pre-filled with the
+						// current start so the operator only has to
+						// change the bit they're moving) + an
+						// optional reason. Server posts to Cal which
+						// sends the updated calendar invite — Apple
+						// / Google / Outlook moves the event in
+						// place. We reload the page on success so
+						// the at-a-glance bar + when-text reflect
+						// the new time.
+						const currentStart = target.dataset.currentStart || '';
+						const res = await openRescheduleModal( {
+							currentStart: currentStart,
+						} );
+						if ( null === res ) { return; }
+						try {
+							const result = await adminFetch( ctx, 'admin/booking/' + bookingId + '/reschedule', {
+								body: { new_start: res.newStart, reason: res.reason || '' }
+							} );
+							toast(
+								( i18n.rescheduleDone || 'Rescheduled. Customer\'s calendar invite was updated.' ),
+								'success'
+							);
+							window.setTimeout( function () {
+								window.location.reload();
+							}, 800 );
+						} catch ( err ) {
+							const msg = ( err && err.message ) ? err.message : ( i18n.rescheduleFailed || 'Reschedule failed' );
+							toast( msg, 'error', 4500 );
+						}
 					}
 				} catch ( err ) {
 					toast( i18n.saveFailed || 'Save failed', 'error', 3500 );
