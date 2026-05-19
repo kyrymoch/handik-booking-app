@@ -133,8 +133,7 @@ class Handik_Booking_App_Settings {
 			'ui_assistant_greeting'     => 'Describe the job.',
 			'ui_assistant_ready_notice' => 'The virtual assistant has enough information. Continue when you are ready.',
 			'ui_assistant_continue_button' => 'Book a time',
-			// v2.1.8.9: thinking indicator + Plan-B (assistant stuck) copy.
-			'ui_assistant_thinking'     => 'Thinking…',
+			// Plan-B (assistant stuck) copy — fires on mount-failed / preparing-timeout.
 			'ui_assistant_stuck_title'  => 'The assistant is taking longer than usual',
 			'ui_assistant_stuck_body'   => 'You can keep waiting, or open the booking page directly and Alex will sort out the details on site.',
 			'ui_assistant_stuck_cta'    => 'Open the booking page directly →',

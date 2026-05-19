@@ -153,14 +153,13 @@ class Handik_Booking_App_Admin_Settings {
 			<div class="handik-admin-grid">
 				<?php Handik_Booking_App_Admin_Helpers::field( 'ui_assistant_title', __( 'Title', 'handik-booking-app' ), $s['ui_assistant_title'] ); ?>
 				<?php Handik_Booking_App_Admin_Helpers::field( 'ui_assistant_continue_button', __( 'Continue button', 'handik-booking-app' ), $s['ui_assistant_continue_button'] ); ?>
-				<?php Handik_Booking_App_Admin_Helpers::field( 'ui_assistant_thinking', __( '"Thinking…" label', 'handik-booking-app' ), $s['ui_assistant_thinking'] ); ?>
 			</div>
 			<?php Handik_Booking_App_Admin_Helpers::textarea_field( 'ui_assistant_intro', __( 'Intro copy', 'handik-booking-app' ), $s['ui_assistant_intro'] ); ?>
 			<?php Handik_Booking_App_Admin_Helpers::textarea_field( 'ui_assistant_greeting', __( 'Greeting', 'handik-booking-app' ), $s['ui_assistant_greeting'] ); ?>
 			<?php Handik_Booking_App_Admin_Helpers::textarea_field( 'ui_assistant_ready_notice', __( 'Ready notice', 'handik-booking-app' ), $s['ui_assistant_ready_notice'] ); ?>
 			<?php Handik_Booking_App_Admin_Helpers::textarea_field( 'ui_error_assistant_required', __( 'Validation message', 'handik-booking-app' ), $s['ui_error_assistant_required'] ); ?>
-			<h4 style="margin-top:14px"><?php esc_html_e( 'Plan B — assistant taking too long', 'handik-booking-app' ); ?></h4>
-			<p class="handik-admin-muted" style="margin:-6px 0 8px"><?php esc_html_e( 'Shown after ~30 seconds without an assistant reply, with a direct booking link as a fallback.', 'handik-booking-app' ); ?></p>
+			<h4 style="margin-top:14px"><?php esc_html_e( 'Plan B — assistant could not load', 'handik-booking-app' ); ?></h4>
+			<p class="handik-admin-muted" style="margin:-6px 0 8px"><?php esc_html_e( 'Shown when the ChatKit assistant fails to mount or stays stuck on the loading state for ~14 seconds. The per-turn slow-reply timeline (1s / 5s / 10s / 20s / 30s / 40s / 50s) is built in and not customizable here.', 'handik-booking-app' ); ?></p>
 			<?php Handik_Booking_App_Admin_Helpers::field( 'ui_assistant_stuck_title', __( 'Stuck banner title', 'handik-booking-app' ), $s['ui_assistant_stuck_title'] ); ?>
 			<?php Handik_Booking_App_Admin_Helpers::textarea_field( 'ui_assistant_stuck_body', __( 'Stuck banner body', 'handik-booking-app' ), $s['ui_assistant_stuck_body'] ); ?>
 			<?php Handik_Booking_App_Admin_Helpers::field( 'ui_assistant_stuck_cta', __( 'Stuck banner CTA', 'handik-booking-app' ), $s['ui_assistant_stuck_cta'] ); ?>

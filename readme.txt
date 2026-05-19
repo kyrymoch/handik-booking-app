@@ -3,7 +3,7 @@ Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.1.28.1
+Stable tag: 2.1.29.0
 License: Proprietary
 
 Single-page booking application with AI-assisted intake, multi-day project scheduling, and end-to-end Cal.com calendar sync.
@@ -81,6 +81,15 @@ Schema migration 1.6.1 adds `external_contact_id` for backfilling bookings made 
 Schema migration 1.6.0 adds `project_work_day_id` so multi-day project bookings show up in the unified admin Bookings list. Migrates automatically.
 
 == Changelog ==
+
+= 2.1.29.0 =
+* **Virtual-assistant "thinking" UX.** Owner-reported: real assistant first-token latency lands in the 20–60s range, and the old "Thinking…" pill at the bottom-left of the chat host was too small to read on mobile and felt static enough that customers thought the page had frozen. Replaced with a single, prominent status block layered over the chat host that rotates its copy on a wall-clock timeline so the wait reads as in-progress, not broken.
+* **One block, seven stages — not seven bubbles.** The block appears on `composer.submit` and on every detected user-like message activity event from the ChatKit bridge. Inside the SAME DOM node, the text updates at 1s ("Reviewing your request…"), 5s ("Checking the details, photos, pricing, and booking type…"), 10s ("Still working on it. The assistant is matching the job details to the right visit type."), 20s ("This is taking a little longer than usual. The tiny robot gears are still turning."), 30s ("Almost there. The assistant is preparing the time and cost recommendation."), 40s ("Still thinking. The robot has not given up, it is just being very careful."), and 50s ("This is taking too long. You can keep waiting, or open the booking page directly and Alex will review the details before the visit."). The 50s stage additionally reveals an "Open the booking page directly" pill that points at the direct Cal.com URL so the customer is never trapped. Tone is intentionally light without sounding broken.
+* **Cleared the moment the assistant responds.** Same DOM block is removed (fades out, then unmounts) on assistant-like message activity, structured-result-stored, `onComplete`, and `onError`. Restart also tears it down. Internal `assistantStatusTimers` array collects every scheduled `setTimeout` so a clear-call cancels every pending stage in one pass — no orphan stage fires after the assistant has already answered.
+* **No-leak guarantee.** None of these status strings ever leave the browser. They are not sent to OpenAI, not appended to the ChatKit thread, not recorded into `handik_messages`, and not posted to any REST endpoint. The block is DOM-only; the server doesn't know it exists.
+* **Visual prominence.** Larger card with a 4px accent-coloured left border, a subtle box-shadow pulse on a 2.4s loop, three bouncing dots, accent-coloured CTA pill (only at 50s). Centered with a 560px max-width on desktop; full-bleed on screens narrower than 540px so mobile customers can't miss it. Respects `prefers-reduced-motion`: pulse + dot bounce disabled, the block still appears but stays still.
+* **Retired** the standalone 30s `showAssistantStuckBanner('response-timeout')` path — its job is now the 50s stage of the new status block, which is in line with the longer P95 latencies we see in production. The mount-failure (`showAssistantStuckBanner('mount-failed')`) and the 14s prepare-timeout (`'preparing-timeout'`) banners remain — different concept ("the chat itself couldn't load") and still surface independently of the per-turn status block.
+* No DB change. No new endpoint. No setting touched. No server-side code change in this release — front-end only (`assets/booking-app.js` + `assets/booking-app.css`).
 
 = 2.1.28.1 =
 * **Documentation refresh.** No code changes — the plugin behaves identically to 2.1.28.0 at runtime. Ships an updated developer/contributor documentation set so a fresh `git pull` or WordPress auto-update brings the new docs along:

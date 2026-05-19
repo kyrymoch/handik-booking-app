@@ -654,64 +654,128 @@
 
 .handik-assistant-fallback-message { display: none !important; }
 
-.handik-assistant-typing-indicator {
+/* 2.1.29.0 — assistant per-turn status block.
+ *
+ * Single, prominent banner that sits over the chat host while the
+ * assistant is "thinking". Replaces the old small "Thinking…" pill
+ * AND the 30s stuck banner — one block, copy rotates on a timeline,
+ * 50s stage adds a Plan-B link. See ASSISTANT_STATUS_STAGES + the
+ * startAssistantStatusBlock method in booking-app.js. */
+.handik-assistant-status {
 	position: absolute;
-	left: 18px;
-	bottom: 18px;
-	z-index: 4;
-	display: inline-flex;
-	align-items: center;
-	gap: 8px;
-	padding: 10px 14px;
+	left: 12px;
+	right: 12px;
+	bottom: 14px;
+	z-index: 5;
+	margin: 0 auto;
+	max-width: 560px;
+	display: flex;
+	align-items: flex-start;
+	gap: 12px;
+	padding: 14px 16px;
+	background: #fff;
 	border: 1px solid var(--handik-border, #dbe3ea);
-	border-radius: 999px;
-	background: rgba(255, 255, 255, 0.96);
-	box-shadow: 0 10px 26px rgba(15, 23, 42, 0.12);
+	border-left: 4px solid var(--handik-accent, #283618);
+	border-radius: 14px;
+	box-shadow: 0 18px 36px rgba(15, 23, 42, 0.18);
+	color: var(--handik-text, #0f172a);
+	font-size: 14px;
+	line-height: 1.45;
 	opacity: 0;
 	transform: translateY(8px);
-	transition: opacity 0.16s ease, transform 0.16s ease;
+	transition: opacity 0.2s ease, transform 0.2s ease;
 	pointer-events: none;
-	font-size: 13px;
-	line-height: 1;
-	color: var(--handik-text, #0f172a);
+	animation: handik-status-pulse 2.4s ease-in-out infinite;
 }
 
-.handik-assistant-typing-indicator.is-visible {
+.handik-assistant-status.is-visible {
 	opacity: 1;
 	transform: translateY(0);
+	pointer-events: auto;
 }
 
-.handik-assistant-typing-indicator__dots {
+.handik-assistant-status__dots {
 	display: inline-flex;
 	gap: 5px;
 	align-items: center;
+	padding-top: 7px;
+	flex-shrink: 0;
 }
 
-.handik-assistant-typing-indicator__dots span {
-	width: 6px;
-	height: 6px;
+.handik-assistant-status__dots span {
+	width: 7px;
+	height: 7px;
 	border-radius: 999px;
 	background: var(--handik-accent, #283618);
 	animation: handik-typing-dot 0.9s ease-in-out infinite;
 }
 
-.handik-assistant-typing-indicator__dots span:nth-child(2) {
+.handik-assistant-status__dots span:nth-child(2) {
 	animation-delay: 0.12s;
 }
 
-.handik-assistant-typing-indicator__dots span:nth-child(3) {
+.handik-assistant-status__dots span:nth-child(3) {
 	animation-delay: 0.24s;
 }
 
-.handik-assistant-typing-indicator__label {
+.handik-assistant-status__content {
+	flex: 1;
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+}
+
+.handik-assistant-status__text {
+	margin: 0;
 	font-weight: 500;
-	letter-spacing: 0.01em;
-	color: var(--handik-muted-text, #475569);
+	color: var(--handik-text, #0f172a);
+}
+
+.handik-assistant-status__link {
+	display: inline-flex;
+	align-self: flex-start;
+	align-items: center;
+	justify-content: center;
+	padding: 10px 16px;
+	min-height: 44px;
+	border-radius: 999px;
+	background: var(--handik-accent, #283618);
+	color: #fff;
+	font-weight: 600;
+	font-size: 13px;
+	text-decoration: none;
+	transition: background-color 0.15s ease;
+}
+
+.handik-assistant-status__link:hover,
+.handik-assistant-status__link:focus-visible {
+	background: #1c2710;
+	outline: none;
 }
 
 @keyframes handik-typing-dot {
 	0%, 80%, 100% { transform: translateY(0); opacity: 0.45; }
 	40% { transform: translateY(-4px); opacity: 1; }
+}
+
+@keyframes handik-status-pulse {
+	0%, 100% { box-shadow: 0 14px 30px rgba(15, 23, 42, 0.14); }
+	50%      { box-shadow: 0 22px 46px rgba(15, 23, 42, 0.22); }
+}
+
+@media (max-width: 540px) {
+	.handik-assistant-status {
+		left: 8px;
+		right: 8px;
+		bottom: 10px;
+		padding: 12px 14px;
+		font-size: 13.5px;
+	}
+	.handik-assistant-status__link {
+		width: 100%;
+		align-self: stretch;
+	}
 }
 
 /* Issue 5 — Plan B "assistant stuck" banner. */
@@ -784,12 +848,13 @@
 
 /* Respect users who turn off motion. */
 @media (prefers-reduced-motion: reduce) {
-	.handik-assistant-typing-indicator__dots span {
+	.handik-assistant-status__dots span {
 		animation: none;
 		opacity: 0.7;
 	}
-	.handik-assistant-typing-indicator,
+	.handik-assistant-status,
 	.handik-assistant-stuck-banner {
+		animation: none;
 		transition: none;
 	}
 	.handik-task:active {

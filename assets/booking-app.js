@@ -94,6 +94,23 @@
 	}
 
 	const CAL_EMBED_TIMEOUT_MS = 15000;
+
+	// Single status block shown while the assistant is "thinking" between
+	// the user pressing Send and the assistant's first output token. The
+	// timeline below is wall-clock: each entry replaces the text inside
+	// the SAME block (we don't push 7 messages). At 50s the block also
+	// surfaces a soft Plan B link. None of these strings ever leave the
+	// browser — no API call, no chatkit thread, no handik_messages row.
+	const ASSISTANT_STATUS_STAGES = [
+		{ delay: 1000, text: 'Reviewing your request…' },
+		{ delay: 5000, text: 'Checking the details, photos, pricing, and booking type…' },
+		{ delay: 10000, text: 'Still working on it. The assistant is matching the job details to the right visit type.' },
+		{ delay: 20000, text: 'This is taking a little longer than usual. The tiny robot gears are still turning.' },
+		{ delay: 30000, text: 'Almost there. The assistant is preparing the time and cost recommendation.' },
+		{ delay: 40000, text: 'Still thinking. The robot has not given up, it is just being very careful.' },
+		{ delay: 50000, text: 'This is taking too long. You can keep waiting, or open the booking page directly and Alex will review the details before the visit.', showLink: true },
+	];
+
 	const PERSISTED_STATE_FIELDS = [
 		'step',
 		'isReturningClient',
@@ -145,10 +162,16 @@
 			this.photoAnalysisWarmPromiseRequestId = 0;
 			this.assistantContextDispatchPromise = null;
 			this.assistantUnlockTimer = null;
-			this.assistantTypingTimer = null;
-			// Issue 5: safety timers for the assistant pipeline.
+			// 2.1.29.0 — per-turn assistant status block. One DOM element
+			// whose copy is rotated by these timers (see startAssistantStatusBlock).
+			// Cleared on assistant message detected, structured result stored,
+			// onComplete, or onError.
+			this.assistantStatusTimers = [];
+			this.assistantStatusActive = false;
+			// Issue 5: safety timer for the assistant pipeline's mount phase
+			// (separate from the per-turn status block — this is "the bridge
+			// itself never loaded", not "the assistant is taking too long").
 			this.assistantPreparingSafetyTimer = null;
-			this.assistantResponseSafetyTimer = null;
 			this.savedAddressLoadingTimer = null;
 			this.savedAddressLoadingProfileKey = '';
 			this.state = {
@@ -1530,7 +1553,7 @@
 
 		executeRestart( opts ) {
 			this.stopBookingStatusPolling();
-			this.hideAssistantTypingIndicator();
+			this.clearAssistantStatusBlock();
 			// Sprint 10 fix: also clear the assistant "we got stuck" banner
 			// — if the customer recovered via Restart, the banner used to
 			// stay glued to the host element across the new session.
@@ -2123,80 +2146,119 @@
 			} );
 		}
 
-		showAssistantTypingIndicator() {
+		// 2.1.29.0 — Single assistant status block.
+		//
+		// Owner-reported: assistant first-token latency is 20-60s on real
+		// traffic and the old "Thinking…" pill felt static / easy to miss.
+		// This system shows ONE prominent block immediately after the user
+		// presses Send and rotates its copy on a timeline (1s, 5s, 10s, 20s,
+		// 30s, 40s, 50s — see ASSISTANT_STATUS_STAGES). At 50s the block
+		// adds a soft "Open the booking page directly" link so the customer
+		// is never trapped, but the wait itself is presented as in-progress,
+		// not broken.
+		//
+		// The block is DOM-only: nothing here calls the API, records to
+		// handik_messages, or feeds back into the ChatKit thread.
+
+		startAssistantStatusBlock() {
 			const host = this.root.querySelector( '.handik-booking-app__assistant-host' );
 			if ( ! host ) {
 				return;
 			}
-			let indicator = host.querySelector( '.handik-assistant-typing-indicator' );
-			const labelText = config.strings.assistantThinking || 'Thinking…';
-			if ( indicator ) {
-				const label = indicator.querySelector( '.handik-assistant-typing-indicator__label' );
-				if ( label ) {
-					label.textContent = labelText;
+			// Cancel any in-flight timers from the previous turn so this
+			// turn restarts cleanly from stage 0.
+			this.clearAssistantStatusTimers();
+			this.assistantStatusActive = true;
+
+			let block = host.querySelector( '.handik-assistant-status' );
+			if ( ! block ) {
+				block = document.createElement( 'aside' );
+				block.className = 'handik-assistant-status';
+				block.setAttribute( 'role', 'status' );
+				block.setAttribute( 'aria-live', 'polite' );
+				block.innerHTML =
+					'<span class="handik-assistant-status__dots" aria-hidden="true"><span></span><span></span><span></span></span>' +
+					'<div class="handik-assistant-status__content">' +
+						'<p class="handik-assistant-status__text"></p>' +
+						'<a class="handik-assistant-status__link" target="_blank" rel="noopener" hidden></a>' +
+					'</div>';
+				host.appendChild( block );
+			} else {
+				// Reset visual state on reuse so a fast second turn doesn't
+				// re-show the 50s "stuck" link from the previous turn.
+				block.classList.remove( 'has-link' );
+				const staleLink = block.querySelector( '.handik-assistant-status__link' );
+				if ( staleLink ) {
+					staleLink.hidden = true;
+					staleLink.removeAttribute( 'href' );
 				}
-				indicator.classList.add( 'is-visible' );
-				return;
 			}
-			indicator = document.createElement( 'div' );
-			indicator.className = 'handik-assistant-typing-indicator';
-			indicator.setAttribute( 'role', 'status' );
-			indicator.setAttribute( 'aria-live', 'polite' );
-			// Issue 4: positive "thinking" indicator with label, three bouncing
-			// dots, and ARIA-friendly status role. Visible after every user turn,
-			// hidden as soon as the assistant produces an output token.
-			indicator.innerHTML =
-				'<span class="handik-assistant-typing-indicator__dots" aria-hidden="true"><span></span><span></span><span></span></span>' +
-				'<span class="handik-assistant-typing-indicator__label">' + this.escape( labelText ) + '</span>';
-			host.appendChild( indicator );
+
 			window.requestAnimationFrame( () => {
-				indicator.classList.add( 'is-visible' );
+				if ( ! this.assistantStatusActive ) {
+					return;
+				}
+				block.classList.add( 'is-visible' );
+			} );
+
+			ASSISTANT_STATUS_STAGES.forEach( ( stage, index ) => {
+				const timer = window.setTimeout( () => {
+					this.setAssistantStatusStage( index );
+				}, stage.delay );
+				this.assistantStatusTimers.push( timer );
 			} );
 		}
 
-		hideAssistantTypingIndicator() {
+		setAssistantStatusStage( index ) {
 			const host = this.root.querySelector( '.handik-booking-app__assistant-host' );
-			const indicator = host ? host.querySelector( '.handik-assistant-typing-indicator' ) : null;
-			if ( ! indicator ) {
+			const block = host ? host.querySelector( '.handik-assistant-status' ) : null;
+			if ( ! block || ! this.assistantStatusActive ) {
 				return;
 			}
-			indicator.classList.remove( 'is-visible' );
-			if ( this.assistantTypingTimer ) {
-				window.clearTimeout( this.assistantTypingTimer );
+			const stage = ASSISTANT_STATUS_STAGES[ index ];
+			if ( ! stage ) {
+				return;
 			}
-			this.assistantTypingTimer = window.setTimeout( () => {
-				if ( indicator.parentNode ) {
-					indicator.parentNode.removeChild( indicator );
+			const text = block.querySelector( '.handik-assistant-status__text' );
+			const link = block.querySelector( '.handik-assistant-status__link' );
+			if ( text ) {
+				text.textContent = stage.text;
+			}
+			block.setAttribute( 'data-handik-status-stage', String( index ) );
+			if ( stage.showLink && link ) {
+				const url = this.directBookingUrl();
+				if ( url ) {
+					link.href = url;
+					link.textContent = 'Open the booking page directly';
+					link.hidden = false;
+					block.classList.add( 'has-link' );
 				}
-				this.assistantTypingTimer = null;
-			}, 180 );
+			}
 		}
 
-		// Issue 5 — assistant safety net.
-		//
-		// startAssistantResponseSafetyTimer fires shortly after the user sends a
-		// message. If the assistant has NOT produced an output token within the
-		// timeout window, we surface a Plan-B banner with a direct booking link.
-		// stopAssistantResponseSafetyTimer cancels it on every assistant token.
-		// clearAssistantStuckBanner removes any previously shown banner and
-		// resets the related state.
-
-		startAssistantResponseSafetyTimer() {
-			this.stopAssistantResponseSafetyTimer();
-			const grace = 30000; // 30s — typical first-token P95 is well under this
-			this.assistantResponseSafetyTimer = window.setTimeout( () => {
-				this.assistantResponseSafetyTimer = null;
-				if ( ! this.state.assistantResponseSeen && this.state.assistantAwaitingResponse ) {
-					this.showAssistantStuckBanner( 'response-timeout' );
+		clearAssistantStatusBlock() {
+			this.assistantStatusActive = false;
+			this.clearAssistantStatusTimers();
+			const host = this.root.querySelector( '.handik-booking-app__assistant-host' );
+			const block = host ? host.querySelector( '.handik-assistant-status' ) : null;
+			if ( ! block ) {
+				return;
+			}
+			block.classList.remove( 'is-visible' );
+			// Defer removal so the CSS fade-out runs and the block doesn't
+			// flash off-screen between two fast turns of the conversation.
+			window.setTimeout( () => {
+				if ( ! this.assistantStatusActive && block.parentNode ) {
+					block.parentNode.removeChild( block );
 				}
-			}, grace );
+			}, 220 );
 		}
 
-		stopAssistantResponseSafetyTimer() {
-			if ( this.assistantResponseSafetyTimer ) {
-				window.clearTimeout( this.assistantResponseSafetyTimer );
-				this.assistantResponseSafetyTimer = null;
+		clearAssistantStatusTimers() {
+			if ( Array.isArray( this.assistantStatusTimers ) ) {
+				this.assistantStatusTimers.forEach( ( id ) => window.clearTimeout( id ) );
 			}
+			this.assistantStatusTimers = [];
 		}
 
 		showAssistantStuckBanner( reason ) {
@@ -2952,7 +3014,7 @@
 						const isUserLike = 'user' === role || false !== messageType.indexOf( 'user' ) || 'outgoing' === direction || 'user' === source || 'client' === source;
 						const isAssistantLike = 'assistant' === role || false !== messageType.indexOf( 'assistant' ) || false !== messageType.indexOf( 'output' ) || 'incoming' === direction || 'assistant' === source;
 						if ( isUserLike ) {
-							this.showAssistantTypingIndicator();
+							this.startAssistantStatusBlock();
 							this.state.assistantUserMessageSent = true;
 							this.state.assistantRoutingPending = true;
 							this.state.assistantAwaitingResponse = true;
@@ -2960,14 +3022,13 @@
 							this.state.assistantReadyForBooking = false;
 							this.clearAssistantFallbackMessage();
 							this.clearAssistantStuckBanner();
-							this.startAssistantResponseSafetyTimer();
 							if ( this.assistantUnlockTimer ) {
 								window.clearTimeout( this.assistantUnlockTimer );
 								this.assistantUnlockTimer = null;
 							}
 							this.setAssistantContinueBusy( false );
 						} else if ( isAssistantLike ) {
-							this.hideAssistantTypingIndicator();
+							this.clearAssistantStatusBlock();
 							this.logClient( 'info', 'Assistant final message detected.', {
 								request_id: this.state.requestId
 							} );
@@ -2976,7 +3037,6 @@
 							this.state.assistantRoutingPending = ! this.state.assistantResultSaved;
 							this.clearAssistantFallbackMessage();
 							this.clearAssistantStuckBanner();
-							this.stopAssistantResponseSafetyTimer();
 							if ( this.assistantUnlockTimer ) {
 								window.clearTimeout( this.assistantUnlockTimer );
 								this.assistantUnlockTimer = null;
@@ -2985,7 +3045,7 @@
 						}
 					},
 					onComposerSubmit: () => {
-						this.showAssistantTypingIndicator();
+						this.startAssistantStatusBlock();
 						this.logClient( 'info', 'User submitted assistant message.', {
 							request_id: this.state.requestId
 						} );
@@ -2996,7 +3056,6 @@
 						this.state.assistantReadyForBooking = false;
 						this.clearAssistantFallbackMessage();
 						this.clearAssistantStuckBanner();
-						this.startAssistantResponseSafetyTimer();
 						if ( this.assistantUnlockTimer ) {
 							window.clearTimeout( this.assistantUnlockTimer );
 							this.assistantUnlockTimer = null;
@@ -3004,8 +3063,7 @@
 						this.setAssistantContinueBusy( false );
 					},
 					onComplete: ( normalized, payload ) => {
-						this.hideAssistantTypingIndicator();
-						this.stopAssistantResponseSafetyTimer();
+						this.clearAssistantStatusBlock();
 						this.applySavedAssistantRouting( normalized, payload, 'chatkit-complete' );
 						this.state.assistantUserMessageSent = true;
 						if ( payload && payload.unsafe_flag ) {
@@ -3015,9 +3073,8 @@
 						}
 					},
 					onError: ( error ) => {
-						this.hideAssistantTypingIndicator();
+						this.clearAssistantStatusBlock();
 						this.setAssistantPreparingState( false );
-						this.stopAssistantResponseSafetyTimer();
 						this.setAssistantNotice( error.message || 'The virtual assistant had trouble loading. Give it another moment, then send a short message about the job.', true );
 						// Issue 5: bridge couldn't mount → show the Plan B banner
 						// so the customer can still get to the booking page even
