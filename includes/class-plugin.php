@@ -45,6 +45,7 @@ class Handik_Booking_App_Plugin {
 	public $forms_rest_api;
 	public $forms_router;
 	public $admin_additional_forms;
+	public $form_approvals;
 	public $notifications;
 
 	/**
@@ -93,11 +94,15 @@ class Handik_Booking_App_Plugin {
 		// the webhook can route Cal events by metadata.handik_booking_source.
 		$this->cal_api          = new Handik_Booking_App_Cal_Api_Service( $this->settings, $this->logger );
 		$this->booking_presets  = new Handik_Booking_App_Booking_Presets_Service( $this->logger );
-		$this->direct_booking   = new Handik_Booking_App_Direct_Booking_Service( $this->booking_presets, $this->contacts, $this->addresses, $this->settings, $this->logger, $this->bookings );
-		$this->project_schedule = new Handik_Booking_App_Project_Schedule_Service( $this->booking_presets, $this->cal_api, $this->contacts, $this->addresses, $this->logger, $this->bookings );
-		$this->forms_rest_api   = new Handik_Booking_App_Forms_Rest_Api( $this->booking_presets, $this->direct_booking, $this->project_schedule, $this->logger );
+		// 2.1.30.0 — soft phone-pre-approval gate for Additional Forms.
+		// Direct + Project services receive it so the booking-capture
+		// paths can consume one row per successful booking.
+		$this->form_approvals   = new Handik_Booking_App_Form_Approvals_Service( $this->contacts, $this->logger );
+		$this->direct_booking   = new Handik_Booking_App_Direct_Booking_Service( $this->booking_presets, $this->contacts, $this->addresses, $this->settings, $this->logger, $this->bookings, $this->form_approvals );
+		$this->project_schedule = new Handik_Booking_App_Project_Schedule_Service( $this->booking_presets, $this->cal_api, $this->contacts, $this->addresses, $this->logger, $this->bookings, $this->form_approvals );
+		$this->forms_rest_api   = new Handik_Booking_App_Forms_Rest_Api( $this->booking_presets, $this->direct_booking, $this->project_schedule, $this->logger, $this->form_approvals, $this->auth );
 		$this->forms_router     = new Handik_Booking_App_Forms_Router( $this->booking_presets, $this->project_schedule, $this->settings, $this->appearance );
-		$this->admin_additional_forms = new Handik_Booking_App_Admin_Additional_Forms( $this->booking_presets, $this->direct_booking, $this->project_schedule, $this->contacts, $this->addresses );
+		$this->admin_additional_forms = new Handik_Booking_App_Admin_Additional_Forms( $this->booking_presets, $this->direct_booking, $this->project_schedule, $this->contacts, $this->addresses, $this->form_approvals );
 
 		$this->webhook        = new Handik_Booking_App_Webhook_Service( $this->settings, $this->logger, $this->job_requests, $this->bookings, $this->direct_booking, $this->project_schedule );
 

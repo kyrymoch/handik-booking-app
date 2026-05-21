@@ -40,7 +40,10 @@ class Handik_Booking_App_Direct_Booking_Service {
 	/** @var Handik_Booking_App_Bookings_Service|null */
 	protected $bookings;
 
-	public function __construct( $presets, $contacts, $addresses, $settings, $logger = null, $bookings = null ) {
+	/** @var Handik_Booking_App_Form_Approvals_Service|null */
+	protected $approvals;
+
+	public function __construct( $presets, $contacts, $addresses, $settings, $logger = null, $bookings = null, $approvals = null ) {
 		$this->presets   = $presets;
 		$this->contacts  = $contacts;
 		$this->addresses = $addresses;
@@ -50,6 +53,9 @@ class Handik_Booking_App_Direct_Booking_Service {
 		// direct row into handik_bookings, making it visible in the
 		// unified Bookings list.
 		$this->bookings  = $bookings;
+		// 2.1.30.0 — soft pre-approval gate. capture_booking consumes
+		// one active row per successful capture.
+		$this->approvals = $approvals;
 		// Sprint 13 hotfix (F3): GC for orphan OPENED rows.
 		add_action( self::CRON_HOOK_GC, array( $this, 'gc_abandoned' ) );
 		add_action( 'init', array( $this, 'maybe_schedule_gc' ) );
@@ -520,6 +526,19 @@ class Handik_Booking_App_Direct_Booking_Service {
 					'cal_booking_uid' => $booking_uid,
 				)
 			);
+		}
+
+		// 2.1.30.0 — soft pre-approval gate. Consume one active row for
+		// (preset_slug, contact phone) so the next booking on the same
+		// link re-shows the warning. No-op if the gate isn't wired or
+		// no active row exists (customer continued through the warning).
+		if ( $this->approvals ) {
+			$contact   = $this->contacts->get( (int) ( $row['contact_id'] ?? 0 ) );
+			$phone     = $contact && ! empty( $contact['phone'] ) ? (string) $contact['phone'] : '';
+			$slug_used = (string) ( $row['preset_slug'] ?? '' );
+			if ( '' !== $phone && '' !== $slug_used ) {
+				$this->approvals->consume_one_for_phone( $slug_used, $phone, 0 );
+			}
 		}
 
 		// Sprint 14a — fire the booking-confirmed action. We're inside the

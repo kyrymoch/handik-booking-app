@@ -53,8 +53,10 @@ class Handik_Booking_App_Project_Schedule_Service {
 	protected $logger;
 	/** @var Handik_Booking_App_Bookings_Service|null */
 	protected $bookings;
+	/** @var Handik_Booking_App_Form_Approvals_Service|null */
+	protected $approvals;
 
-	public function __construct( $presets, $cal_api, $contacts, $addresses, $logger = null, $bookings = null ) {
+	public function __construct( $presets, $cal_api, $contacts, $addresses, $logger = null, $bookings = null, $approvals = null ) {
 		$this->presets   = $presets;
 		$this->cal_api   = $cal_api;
 		$this->contacts  = $contacts;
@@ -68,6 +70,10 @@ class Handik_Booking_App_Project_Schedule_Service {
 		// tests) from breaking when this service is constructed
 		// without DI.
 		$this->bookings  = $bookings;
+		// 2.1.30.0 — soft pre-approval gate. confirm_schedule consumes
+		// one active row per successful project booking (the project
+		// counts as a single "appointment" regardless of N work days).
+		$this->approvals = $approvals;
 
 		// Daily cleanup cron — deletes abandoned schedules (still in
 		// SELECTING / DRAFT after 7 days). Without this, every customer who
@@ -643,6 +649,17 @@ class Handik_Booking_App_Project_Schedule_Service {
 				self::DAY_STATUS_CREATED
 			)
 		);
+
+		// 2.1.30.0 — soft pre-approval gate. A confirmed project schedule
+		// is one "appointment" for gate accounting, regardless of the N
+		// underlying work-day Cal bookings.
+		if ( $this->approvals && ! empty( $contact ) ) {
+			$phone     = ! empty( $contact['phone'] ) ? (string) $contact['phone'] : '';
+			$slug_used = (string) $schedule['preset_slug'];
+			if ( '' !== $phone && '' !== $slug_used ) {
+				$this->approvals->consume_one_for_phone( $slug_used, $phone, 0 );
+			}
+		}
 
 		if ( $this->logger ) {
 			$this->logger->info(

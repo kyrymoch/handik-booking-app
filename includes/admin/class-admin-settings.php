@@ -413,7 +413,9 @@ class Handik_Booking_App_Admin_Settings {
 				<?php Handik_Booking_App_Admin_Helpers::field( 'cal_large_event_url', __( 'Large visit URL', 'handik-booking-app' ), $s['cal_large_event_url'] ); ?>
 				<?php Handik_Booking_App_Admin_Helpers::field( 'cal_project_event_url', __( 'Project consultation URL', 'handik-booking-app' ), $s['cal_project_event_url'] ); ?>
 				<?php Handik_Booking_App_Admin_Helpers::field( 'cal_fallback_url', __( 'Fallback URL (when no event matches)', 'handik-booking-app' ), $s['cal_fallback_url'] ); ?>
+				<?php Handik_Booking_App_Admin_Helpers::field( 'forms_main_booking_url', __( 'Additional Forms — "Go to main form" URL', 'handik-booking-app' ), $s['forms_main_booking_url'] ); ?>
 			</div>
+			<p class="handik-admin-muted" style="margin-top:-6px"><?php esc_html_e( 'Destination for the "Go to main booking form" link on the Additional Forms pre-approval warning screen. Default: https://handik.pro/', 'handik-booking-app' ); ?></p>
 		<?php $this->section_close(); ?>
 
 		<?php $this->section_open( __( 'Webhook', 'handik-booking-app' ) ); ?>

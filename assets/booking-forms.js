@@ -93,7 +93,13 @@
 			// Twilio OTP, then continues to a slim "details" screen (name +
 			// email + address for new clients; saved-address picker + address
 			// for returning clients). The legacy 'contact' step is gone.
-			step: 'phone',          // phone | otp | details | cal | pick-days | review-days | success
+			step: 'phone',          // phone | otp | approval-warning | details | cal | pick-days | review-days | success
+			// 2.1.30.0 — soft pre-approval gate. Set after OTP verify by
+			// checkPresetApproval(); when false we route through the
+			// approval-warning step before details. Customer can always
+			// click "Continue anyway" and proceed.
+			approvalChecked: false,
+			approvalApproved: true,
 			busy: false,
 			contact: { full_name: '', phone: '', email: '' },
 			otpCode: '',
@@ -437,6 +443,7 @@
 		switch ( this.state.step ) {
 			case 'phone':        return this.t( 'phoneStepTitle' );
 			case 'otp':          return this.t( 'otpStepTitle' );
+			case 'approval-warning': return this.t( 'approvalWarningTitle' );
 			case 'details':      return this.state.isReturningClient
 				? this.t( 'detailsReturningTitle' )
 				: this.t( 'detailsNewTitle' );
@@ -452,6 +459,7 @@
 		switch ( this.state.step ) {
 			case 'phone':       return this.phoneStepMarkup();
 			case 'otp':         return this.otpStepMarkup();
+			case 'approval-warning': return this.approvalWarningMarkup();
 			case 'details':     return this.detailsStepMarkup();
 			case 'cal':         return this.calMarkup();
 			case 'pick-days':   return this.pickDaysMarkup();
@@ -539,6 +547,42 @@
 			// tapped) `onInput` calls `verifyPhoneOtp`. The button is hidden
 			// to remove the dead-state UI ("can't tap, can't tell why")
 			// reported by the owner.
+			this.footerActionsMarkup( {
+				hideBack: true,
+				hideContinue: true
+			} )
+		].join( '' );
+	};
+
+	/**
+	 * 2.1.30.0 — soft pre-approval warning screen.
+	 *
+	 * Shown only when the operator pre-approved the preset for OTHER
+	 * phone numbers (i.e. zero active approvals match the customer's
+	 * verified phone). The customer can either drop back to the main
+	 * booking page (config.mainBookingUrl) or click "Continue anyway"
+	 * to proceed to the details step. The screen is intentionally
+	 * informational, not blocking.
+	 */
+	HandikBookingForm.prototype.approvalWarningMarkup = function () {
+		var mainUrl = ( config && config.mainBookingUrl ) || 'https://handik.pro/';
+		return [
+			'<div class="handik-form-approval-warning">',
+				'<p class="handik-booking-app__intro">',
+					escapeHtml( this.t( 'approvalWarningIntro' ) ),
+				'</p>',
+				'<p class="handik-form-approval-warning__body">',
+					escapeHtml( this.t( 'approvalWarningBody' ) ),
+				'</p>',
+				'<div class="handik-form-approval-warning__actions">',
+					'<a class="handik-btn is-primary" href="' + escapeAttr( mainUrl ) + '">',
+						escapeHtml( this.t( 'approvalWarningMainCta' ) ),
+					'</a>',
+					'<button type="button" class="handik-btn is-secondary" data-action="approval-continue-anyway">',
+						escapeHtml( this.t( 'approvalWarningContinueCta' ) ),
+					'</button>',
+				'</div>',
+			'</div>',
 			this.footerActionsMarkup( {
 				hideBack: true,
 				hideContinue: true
@@ -1307,6 +1351,12 @@
 			return;
 		}
 		switch ( action ) {
+			// 2.1.30.0 — soft pre-approval warning: customer chose to
+			// continue despite not being on the operator's allowlist.
+			case 'approval-continue-anyway':
+				this.state.approvalApproved = true; // don't re-warn on this session
+				this.go( 'details' );
+				return;
 			// Phone step: validate then send OTP via Twilio.
 			case 'phone-next':
 				this.state.touched.phone = true;
@@ -1698,10 +1748,12 @@
 					savedAt: Date.now()
 				} );
 
-				self.go( 'details' );
-				if ( self.state.isReturningClient ) {
-					self.toast( 'info', self.t( 'welcomeBack' ) );
-				}
+				self.checkPresetApproval().then( function ( approved ) {
+					self.go( approved ? 'details' : 'approval-warning' );
+					if ( self.state.isReturningClient ) {
+						self.toast( 'info', self.t( 'welcomeBack' ) );
+					}
+				} );
 			} )
 			.catch( function ( err ) {
 				self.state.otpError = ( err && err.message ) || self.t( 'otpInvalid' );
@@ -1741,13 +1793,59 @@
 					self.state.contact.email     = String( p.contact.email || '' );
 					self.state.savedAddresses    = Array.isArray( p.addresses ) ? p.addresses : [];
 				}
-				self.state.step = 'details';
-				return true;
+				return self.checkPresetApproval().then( function ( approved ) {
+					self.state.step = approved ? 'details' : 'approval-warning';
+					return true;
+				} );
 			} )
 			.catch( function () {
 				// Token expired or server invalidated — wipe local cache.
 				clearVerifiedClient();
 				return false;
+			} );
+	};
+
+	/**
+	 * 2.1.30.0 — soft pre-approval check.
+	 *
+	 * Resolves to `true` (approved → straight to details) or `false`
+	 * (warning screen). Stashes the answer on state so a re-render of
+	 * the same flow doesn't bounce back to the warning, and so a
+	 * server-side hiccup never blocks the customer — failure modes
+	 * default to `true` (proceed silently) since this is a soft gate,
+	 * not security.
+	 *
+	 * @return {Promise<boolean>}
+	 */
+	HandikBookingForm.prototype.checkPresetApproval = function () {
+		var self = this;
+		var slug = config && config.preset && config.preset.preset_slug
+			? String( config.preset.preset_slug )
+			: '';
+		var token = String( this.state.verifiedToken || '' );
+		if ( '' === slug || '' === token ) {
+			this.state.approvalChecked = true;
+			this.state.approvalApproved = true;
+			return Promise.resolve( true );
+		}
+		return this.api( 'POST', 'forms/preset/' + encodeURIComponent( slug ) + '/check-approval', { verified_token: token } )
+			.then( function ( res ) {
+				// gate_enabled=false means the server boot didn't wire the
+				// approvals service — treat as "no gate" so legacy installs
+				// behave identically to pre-2.1.30 builds.
+				var gateOn = !! ( res && res.gate_enabled );
+				var ok     = ! gateOn || !! ( res && res.approved );
+				self.state.approvalChecked = true;
+				self.state.approvalApproved = ok;
+				return ok;
+			} )
+			.catch( function () {
+				// Network / token / 4xx — soft gate fails open. Better to
+				// let the customer book than to hard-block on a flaky
+				// network. Operator still sees the booking in admin.
+				self.state.approvalChecked = true;
+				self.state.approvalApproved = true;
+				return true;
 			} );
 	};
 

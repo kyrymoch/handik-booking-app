@@ -67,6 +67,10 @@ class Handik_Booking_App_Settings {
 			'cal_large_event_url'    => '',
 			'cal_project_event_url'  => '',
 			'cal_fallback_url'       => '',
+			// 2.1.30.0 — destination of the "Go to main form" CTA on the
+			// Additional Forms pre-approval warning screen. Empty falls
+			// back to https://handik.pro/ in the JS layer.
+			'forms_main_booking_url' => 'https://handik.pro/',
 			'cal_webhook_secret'     => '',
 			'cal_api_key'            => '',
 			'cal_api_base'           => 'https://api.cal.com/v2',
@@ -503,6 +507,7 @@ class Handik_Booking_App_Settings {
 				case 'cal_large_event_url':
 				case 'cal_project_event_url':
 				case 'cal_fallback_url':
+				case 'forms_main_booking_url':
 				case 'brand_logo_url':
 					$output[ $key ] = esc_url_raw( (string) $value );
 					break;

@@ -23,6 +23,10 @@ class Handik_Booking_App_Admin_Additional_Forms {
 	const PAGE_SLUG          = 'handik-booking-app-additional-forms';
 	const NONCE_ACTION_SAVE  = 'handik_save_form_preset';
 	const NONCE_FIELD_SAVE   = 'handik_save_form_preset_nonce';
+	const NONCE_ACTION_APPROVAL_ADD    = 'handik_add_form_approval';
+	const NONCE_FIELD_APPROVAL_ADD     = 'handik_add_form_approval_nonce';
+	const NONCE_ACTION_APPROVAL_REVOKE = 'handik_revoke_form_approval';
+	const NONCE_FIELD_APPROVAL_REVOKE  = 'handik_revoke_form_approval_nonce';
 	const NONCE_ACTION_CANCEL_DAY = 'handik_cancel_project_day';
 	const NONCE_FIELD_CANCEL_DAY  = 'handik_cancel_project_day_nonce';
 
@@ -36,16 +40,23 @@ class Handik_Booking_App_Admin_Additional_Forms {
 	protected $contacts;
 	/** @var Handik_Booking_App_Addresses_Service */
 	protected $addresses;
+	/** @var Handik_Booking_App_Form_Approvals_Service|null */
+	protected $approvals;
 
-	public function __construct( $presets, $direct, $project, $contacts, $addresses ) {
+	public function __construct( $presets, $direct, $project, $contacts, $addresses, $approvals = null ) {
 		$this->presets   = $presets;
 		$this->direct    = $direct;
 		$this->project   = $project;
 		$this->contacts  = $contacts;
 		$this->addresses = $addresses;
+		$this->approvals = $approvals;
 
 		add_action( 'admin_init', array( $this, 'maybe_save_preset' ) );
 		add_action( 'admin_init', array( $this, 'maybe_cancel_day' ) );
+		// 2.1.30.0 — Pre-approval add / revoke handlers (form-post pattern,
+		// matches maybe_save_preset).
+		add_action( 'admin_init', array( $this, 'maybe_save_approval' ) );
+		add_action( 'admin_init', array( $this, 'maybe_revoke_approval' ) );
 	}
 
 	public function render() {
@@ -302,6 +313,153 @@ class Handik_Booking_App_Admin_Additional_Forms {
 
 		submit_button( __( 'Save preset', 'handik-booking-app' ) );
 		echo '</form>';
+
+		$this->render_preset_approvals( (string) $preset['preset_slug'], (int) $preset['id'] );
+	}
+
+	/**
+	 * 2.1.30.0 — Pre-approvals block.
+	 *
+	 * Lists active and recent approvals for the preset and exposes
+	 * Add + Revoke. Active rows that the customer doesn't satisfy will
+	 * trip the soft warning screen at the OTP step; consumed/revoked/
+	 * expired rows stay in the list for audit.
+	 *
+	 * @param string $preset_slug Preset slug.
+	 * @param int    $preset_id   Preset id (for the back-link after submit).
+	 * @return void
+	 */
+	protected function render_preset_approvals( $preset_slug, $preset_id ) {
+		echo '<hr style="margin:24px 0">';
+		echo '<h3>' . esc_html__( 'Pre-approvals (soft phone gate)', 'handik-booking-app' ) . '</h3>';
+		echo '<p class="description" style="max-width:720px">' .
+			esc_html__( "Add a phone number to pre-approve a customer for this preset link. After they pass the OTP step, the form continues silently. Anyone else lands on a soft warning screen pointing to the main booking page — they can still proceed, you just see who used the link. Each successful booking consumes one active row.", 'handik-booking-app' ) .
+			'</p>';
+
+		if ( ! $this->approvals ) {
+			echo '<p>' . esc_html__( 'Approvals service is not wired up.', 'handik-booking-app' ) . '</p>';
+			return;
+		}
+
+		// Add form.
+		echo '<form method="post" action="" style="margin:12px 0 24px;max-width:720px">';
+		wp_nonce_field( self::NONCE_ACTION_APPROVAL_ADD, self::NONCE_FIELD_APPROVAL_ADD );
+		echo '<input type="hidden" name="preset_slug" value="' . esc_attr( $preset_slug ) . '">';
+		echo '<input type="hidden" name="preset_id" value="' . (int) $preset_id . '">';
+		echo '<table class="form-table" role="presentation"><tbody>';
+		echo '<tr><th scope="row"><label for="handik-approval-phone">' . esc_html__( 'Phone', 'handik-booking-app' ) . '</label></th>';
+		echo '<td><input type="tel" id="handik-approval-phone" name="phone" class="regular-text" placeholder="+1 555 123 4567" required>';
+		echo '<p class="description">' . esc_html__( 'E.164 or US-format. Normalized server-side so spacing / dashes do not matter.', 'handik-booking-app' ) . '</p></td></tr>';
+		echo '<tr><th scope="row"><label for="handik-approval-notes">' . esc_html__( 'Notes', 'handik-booking-app' ) . '</label></th>';
+		echo '<td><textarea id="handik-approval-notes" name="notes" rows="2" class="large-text" placeholder="' . esc_attr__( 'Who and what — visible only in admin.', 'handik-booking-app' ) . '"></textarea></td></tr>';
+		echo '<tr><th scope="row"><label for="handik-approval-expires">' . esc_html__( 'Expires (optional)', 'handik-booking-app' ) . '</label></th>';
+		echo '<td><input type="datetime-local" id="handik-approval-expires" name="expires_at">';
+		echo '<p class="description">' . esc_html__( 'Leave blank for no expiry. Approval is consumed on first successful booking regardless.', 'handik-booking-app' ) . '</p></td></tr>';
+		echo '</tbody></table>';
+		submit_button( __( 'Add pre-approval', 'handik-booking-app' ), 'secondary', 'submit', false );
+		echo '</form>';
+
+		// List.
+		$rows = $this->approvals->list_filtered( array( 'preset_slug' => $preset_slug ) );
+		if ( empty( $rows ) ) {
+			echo '<p>' . esc_html__( 'No pre-approvals yet.', 'handik-booking-app' ) . '</p>';
+			return;
+		}
+		echo '<table class="widefat striped" style="max-width:920px">';
+		echo '<thead><tr>';
+		echo '<th>' . esc_html__( 'Phone', 'handik-booking-app' ) . '</th>';
+		echo '<th>' . esc_html__( 'Status', 'handik-booking-app' ) . '</th>';
+		echo '<th>' . esc_html__( 'Notes', 'handik-booking-app' ) . '</th>';
+		echo '<th>' . esc_html__( 'Created', 'handik-booking-app' ) . '</th>';
+		echo '<th>' . esc_html__( 'Expires', 'handik-booking-app' ) . '</th>';
+		echo '<th></th>';
+		echo '</tr></thead><tbody>';
+		foreach ( $rows as $row ) {
+			$status = (string) ( $row['status'] ?? 'active' );
+			echo '<tr>';
+			echo '<td><code>' . esc_html( (string) $row['phone'] ) . '</code></td>';
+			echo '<td>' . esc_html( ucfirst( $status ) );
+			if ( 'consumed' === $status && ! empty( $row['consumed_at'] ) ) {
+				echo ' <span class="description">(' . esc_html( (string) $row['consumed_at'] ) . ')</span>';
+			}
+			echo '</td>';
+			echo '<td>' . ( ! empty( $row['notes'] ) ? esc_html( (string) $row['notes'] ) : '&mdash;' ) . '</td>';
+			echo '<td>' . esc_html( (string) ( $row['created_at'] ?? '' ) ) . '</td>';
+			echo '<td>' . ( ! empty( $row['expires_at'] ) ? esc_html( (string) $row['expires_at'] ) : '&mdash;' ) . '</td>';
+			echo '<td>';
+			if ( 'active' === $status ) {
+				echo '<form method="post" action="" style="display:inline">';
+				wp_nonce_field( self::NONCE_ACTION_APPROVAL_REVOKE, self::NONCE_FIELD_APPROVAL_REVOKE );
+				echo '<input type="hidden" name="approval_id" value="' . (int) $row['id'] . '">';
+				echo '<input type="hidden" name="preset_id" value="' . (int) $preset_id . '">';
+				echo '<button type="submit" class="button-link-delete" onclick="return confirm(\'' . esc_js( __( 'Revoke this pre-approval?', 'handik-booking-app' ) ) . '\')">' .
+					esc_html__( 'Revoke', 'handik-booking-app' ) .
+					'</button>';
+				echo '</form>';
+			}
+			echo '</td>';
+			echo '</tr>';
+		}
+		echo '</tbody></table>';
+	}
+
+	/**
+	 * Add-approval form-post handler.
+	 */
+	public function maybe_save_approval() {
+		if ( empty( $_POST[ self::NONCE_FIELD_APPROVAL_ADD ] ) ) {
+			return;
+		}
+		if ( ! current_user_can( Handik_Booking_App_Capabilities::MANAGE_BOOKINGS ) ) {
+			return;
+		}
+		check_admin_referer( self::NONCE_ACTION_APPROVAL_ADD, self::NONCE_FIELD_APPROVAL_ADD );
+		if ( ! $this->approvals ) {
+			return;
+		}
+		$slug       = sanitize_title( (string) ( $_POST['preset_slug'] ?? '' ) );
+		$preset_id  = isset( $_POST['preset_id'] ) ? absint( wp_unslash( $_POST['preset_id'] ) ) : 0;
+		$phone      = sanitize_text_field( (string) wp_unslash( $_POST['phone'] ?? '' ) );
+		$notes      = sanitize_textarea_field( (string) wp_unslash( $_POST['notes'] ?? '' ) );
+		$expires_at = isset( $_POST['expires_at'] ) ? sanitize_text_field( (string) wp_unslash( $_POST['expires_at'] ) ) : '';
+
+		$result = $this->approvals->create( $slug, $phone, $notes, $expires_at );
+		if ( ! empty( $result['error'] ) ) {
+			add_settings_error( 'handik_additional_forms', 'handik_form_approval_error', (string) $result['error'], 'error' );
+			set_transient( 'settings_errors', get_settings_errors(), 30 );
+		} else {
+			add_settings_error( 'handik_additional_forms', 'handik_form_approval_added', __( 'Pre-approval added.', 'handik-booking-app' ), 'updated' );
+			set_transient( 'settings_errors', get_settings_errors(), 30 );
+		}
+		$redirect = admin_url( 'admin.php?page=' . self::PAGE_SLUG . '&tab=presets&preset_id=' . $preset_id . '&settings-updated=true' );
+		wp_safe_redirect( $redirect );
+		exit;
+	}
+
+	/**
+	 * Revoke-approval form-post handler.
+	 */
+	public function maybe_revoke_approval() {
+		if ( empty( $_POST[ self::NONCE_FIELD_APPROVAL_REVOKE ] ) ) {
+			return;
+		}
+		if ( ! current_user_can( Handik_Booking_App_Capabilities::MANAGE_BOOKINGS ) ) {
+			return;
+		}
+		check_admin_referer( self::NONCE_ACTION_APPROVAL_REVOKE, self::NONCE_FIELD_APPROVAL_REVOKE );
+		if ( ! $this->approvals ) {
+			return;
+		}
+		$id        = isset( $_POST['approval_id'] ) ? absint( wp_unslash( $_POST['approval_id'] ) ) : 0;
+		$preset_id = isset( $_POST['preset_id'] ) ? absint( wp_unslash( $_POST['preset_id'] ) ) : 0;
+		if ( $id > 0 ) {
+			$this->approvals->revoke( $id );
+			add_settings_error( 'handik_additional_forms', 'handik_form_approval_revoked', __( 'Pre-approval revoked.', 'handik-booking-app' ), 'updated' );
+			set_transient( 'settings_errors', get_settings_errors(), 30 );
+		}
+		$redirect = admin_url( 'admin.php?page=' . self::PAGE_SLUG . '&tab=presets&preset_id=' . $preset_id . '&settings-updated=true' );
+		wp_safe_redirect( $redirect );
+		exit;
 	}
 
 	/**

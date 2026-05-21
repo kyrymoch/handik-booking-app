@@ -49,12 +49,18 @@ class Handik_Booking_App_Forms_Rest_Api {
 	protected $project;
 	/** @var Handik_Booking_App_Logger|null */
 	protected $logger;
+	/** @var Handik_Booking_App_Form_Approvals_Service|null */
+	protected $approvals;
+	/** @var Handik_Booking_App_Auth_Service|null */
+	protected $auth;
 
-	public function __construct( $presets, $direct, $project, $logger = null ) {
-		$this->presets = $presets;
-		$this->direct  = $direct;
-		$this->project = $project;
-		$this->logger  = $logger;
+	public function __construct( $presets, $direct, $project, $logger = null, $approvals = null, $auth = null ) {
+		$this->presets   = $presets;
+		$this->direct    = $direct;
+		$this->project   = $project;
+		$this->logger    = $logger;
+		$this->approvals = $approvals;
+		$this->auth      = $auth;
 
 		add_action( 'rest_api_init', array( $this, 'register_routes' ) );
 	}
@@ -68,6 +74,15 @@ class Handik_Booking_App_Forms_Rest_Api {
 			array(
 				'methods'             => WP_REST_Server::READABLE,
 				'callback'            => array( $this, 'get_preset' ),
+				'permission_callback' => '__return_true',
+			)
+		);
+		register_rest_route(
+			$ns,
+			'/forms/preset/(?P<slug>[a-z0-9-]+)/check-approval',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( $this, 'check_preset_approval' ),
 				'permission_callback' => '__return_true',
 			)
 		);
@@ -144,6 +159,59 @@ class Handik_Booking_App_Forms_Rest_Api {
 			);
 		}
 		return rest_ensure_response( array( 'preset' => $this->public_preset( $preset ) ) );
+	}
+
+	/**
+	 * 2.1.30.0 — soft phone-pre-approval gate for direct-link bookings.
+	 *
+	 * The Forms SPA calls this after a successful OTP verification (or
+	 * after a `phone-verify/restore` rehydrated a 30-day session). We
+	 * re-validate the supplied verified_token via the auth service so a
+	 * malicious caller can't query approvals for a phone they don't
+	 * own, then return the count of active approvals for the
+	 * (preset_slug, verified_phone) pair. If it's 0, the SPA shows the
+	 * "this wasn't pre-approved" warning screen before continuing to
+	 * details. If it's > 0, the booking proceeds silently and one
+	 * approval is consumed on successful Cal capture.
+	 *
+	 * @param WP_REST_Request $request Request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public function check_preset_approval( WP_REST_Request $request ) {
+		$err = $this->guard_submit( $request, 'check_approval' );
+		if ( $err ) {
+			return $err;
+		}
+		$slug = sanitize_title( (string) $request['slug'] );
+		if ( ! $this->approvals || ! $this->auth ) {
+			// Gate disabled (older boot path) — never warn.
+			return rest_ensure_response( array( 'approved' => true, 'active_count' => 0, 'gate_enabled' => false ) );
+		}
+		$token = (string) $request->get_param( 'verified_token' );
+		if ( '' === $token ) {
+			return new WP_Error(
+				'handik_form_missing_token',
+				__( 'Phone verification is required.', 'handik-booking-app' ),
+				array( 'status' => 400 )
+			);
+		}
+		$restored = $this->auth->restore_verified_client( $token );
+		if ( empty( $restored['verified_phone'] ) ) {
+			return new WP_Error(
+				'handik_form_invalid_token',
+				isset( $restored['error'] ) ? (string) $restored['error'] : __( 'Phone verification is required.', 'handik-booking-app' ),
+				array( 'status' => isset( $restored['status'] ) ? (int) $restored['status'] : 401 )
+			);
+		}
+		$phone = (string) $restored['verified_phone'];
+		$count = $this->approvals->count_active_for_phone( $slug, $phone );
+		return rest_ensure_response(
+			array(
+				'approved'     => $count > 0,
+				'active_count' => $count,
+				'gate_enabled' => true,
+			)
+		);
 	}
 
 	public function submit_direct( WP_REST_Request $request ) {

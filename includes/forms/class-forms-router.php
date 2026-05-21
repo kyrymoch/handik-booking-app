@@ -224,6 +224,10 @@ class Handik_Booking_App_Forms_Router {
 			'appearance'        => $this->appearance ? $this->appearance->css_variables() : array(),
 			'googleMapsApiKey'  => (string) $this->settings->get( 'google_maps_api_key', '' ),
 			'googleMapsCountry' => strtolower( (string) $this->settings->get( 'google_maps_country', 'us' ) ),
+			// 2.1.30.0 — destination of the "Go to main form" CTA on the
+			// pre-approval warning screen. Falls back to https://handik.pro/
+			// when the setting is left blank.
+			'mainBookingUrl'    => esc_url_raw( (string) ( $this->settings->get( 'forms_main_booking_url', '' ) ?: 'https://handik.pro/' ) ),
 			'i18n'              => $this->i18n_strings(),
 		);
 
@@ -284,6 +288,13 @@ class Handik_Booking_App_Forms_Router {
 			'otpResendIn'       => __( 'You can resend in %ds', 'handik-booking-app' ),
 			'otpDifferentNumberCta' => __( 'Use a different number', 'handik-booking-app' ),
 			'otpSentToast'      => __( 'Code sent.', 'handik-booking-app' ),
+
+			// 2.1.30.0 — pre-approval warning copy.
+			'approvalWarningTitle'      => __( 'A quick heads-up', 'handik-booking-app' ),
+			'approvalWarningIntro'      => __( "This direct booking link wasn't pre-approved for your phone number.", 'handik-booking-app' ),
+			'approvalWarningBody'       => __( 'If you have a different job in mind, please use the main booking page so the visit is scoped correctly. You can still continue here if you are sure this is the right link.', 'handik-booking-app' ),
+			'approvalWarningMainCta'    => __( 'Go to main booking form', 'handik-booking-app' ),
+			'approvalWarningContinueCta' => __( 'Continue anyway', 'handik-booking-app' ),
 			'detailsNewTitle'   => __( 'Tell us how to reach you', 'handik-booking-app' ),
 			'detailsReturningTitle' => __( 'Where should we go?', 'handik-booking-app' ),
 			'detailsNewIntro'   => __( 'Just a few details so we can prepare.', 'handik-booking-app' ),

@@ -278,6 +278,45 @@
 }
 
 /* ===================================================================== */
+/* 2.1.30.0 — Pre-approval warning screen                                  */
+/* ===================================================================== */
+
+.handik-form-approval-warning {
+	display: flex;
+	flex-direction: column;
+	gap: 14px;
+	padding: 18px;
+	border: 1px solid #fbbf24;
+	background: #fffbeb;
+	color: #78350f;
+	border-radius: 14px;
+}
+
+.handik-form-approval-warning__body {
+	margin: 0;
+	color: #92400e;
+	line-height: 1.45;
+}
+
+.handik-form-approval-warning__actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 10px;
+}
+
+.handik-form-approval-warning__actions .handik-btn {
+	flex: 1 1 220px;
+	min-height: 44px;
+	justify-content: center;
+}
+
+@media ( max-width: 540px ) {
+	.handik-form-approval-warning__actions .handik-btn {
+		flex: 1 1 100%;
+	}
+}
+
+/* ===================================================================== */
 /* Reduced motion                                                         */
 /* ===================================================================== */
 

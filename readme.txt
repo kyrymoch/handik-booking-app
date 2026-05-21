@@ -3,7 +3,7 @@ Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.1.29.2
+Stable tag: 2.1.30.0
 License: Proprietary
 
 Single-page booking application with AI-assisted intake, multi-day project scheduling, and end-to-end Cal.com calendar sync.
@@ -81,6 +81,23 @@ Schema migration 1.6.1 adds `external_contact_id` for backfilling bookings made 
 Schema migration 1.6.0 adds `project_work_day_id` so multi-day project bookings show up in the unified admin Bookings list. Migrates automatically.
 
 == Changelog ==
+
+= 2.1.30.0 =
+* **Additional Forms — soft phone pre-approval gate for direct booking links.** Owner workflow: Alex sends a customer a direct link to one specific preset (e.g. `https://handik.pro/booking/large-visit-360/`). He doesn't want the customer to re-use that link later for an unrelated job. Pre-2.1.30 the only options were "leave the link wide open" or "build a separate one-shot system". This release adds a soft-gate middle ground: operator pre-approves the customer's phone number for the preset; after the OTP step the form silently proceeds; ANY other phone number lands on a friendly "this wasn't pre-approved" screen that points to the main booking page. The customer can always click "Continue anyway" — this is operator visibility, not a hard block.
+* **New table** `handik_form_approvals` (migration 1.6.2): one row per pre-approval. Columns: `preset_slug`, `phone` (E.164 normalized via `Contacts_Service::normalize_phone`), `notes` (operator memo, admin-only), `created_by`, `created_at`, `expires_at` (optional, NULL = forever until consumed), `consumed_at`, `consumed_booking_id`, `status` (`active` / `consumed` / `revoked` / `expired`). Composite key on `(preset_slug, phone, status)` so the per-booking lookup is index-friendly. Expired rows are auto-flipped to `expired` lazily inside `count_active_for_phone` / `consume_one_for_phone` — no separate cron pass.
+* **New service** `Handik_Booking_App_Form_Approvals_Service`:
+  * `create( preset_slug, phone, notes, expires_at )` — operator-side insert.
+  * `revoke( id )` — operator-side soft-delete (status → `revoked`).
+  * `count_active_for_phone( preset_slug, phone )` — drives the warning gate; returns the number of active approvals for the pair.
+  * `consume_one_for_phone( preset_slug, phone, booking_id )` — atomic CAS-update consumes the OLDEST active row first; lost-race recurses once.
+  * `list_filtered( [preset_slug?, status?] )` — backs the admin pre-approvals list.
+* **New public REST endpoint** `POST /forms/preset/{slug}/check-approval`. Nonce + rate-limited; takes `verified_token` (the same HMAC-signed token issued by `/phone-verify/check`) and returns `{ approved: bool, active_count: int, gate_enabled: bool }`. The Forms SPA calls it after a successful OTP verify AND after the 30-day-cache `phone-verify/restore`. The verified_token is re-validated server-side via `Auth_Service::restore_verified_client`, so a caller can only check approvals for a phone they own.
+* **New step** `approval-warning` in the Additional Forms SPA (`assets/booking-forms.js`). Routes to it from the OTP-success / restore-success branches when `check-approval` returns `approved: false`. Two CTAs: "Go to main booking form" (links to the new `forms_main_booking_url` setting, default `https://handik.pro/`) and "Continue anyway" (proceeds to `details`). State flag `approvalApproved` stays sticky once the customer has clicked through, so a re-render doesn't bounce back to the warning. Soft-fail policy: any network / token / 4xx error in the check resolves to `approved: true` and the customer proceeds silently — better booking through than blocking on a flaky network.
+* **Admin UI** added to the per-preset edit screen under Additional Forms → Presets → (preset). New "Pre-approvals (soft phone gate)" block: form to add `phone` + optional `notes` + optional `expires_at` (datetime-local), plus a table of all approvals (`active` / `consumed` / `revoked` / `expired`) with a per-row Revoke button. Uses the same form-POST + nonce pattern as the existing `maybe_save_preset` handler — no new JS in the admin layer.
+* **Consume hooks** wired into `Direct_Booking_Service::capture_booking()` and `Project_Schedule_Service::confirm_schedule()`. After the local row flips to BOOKED / CONFIRMED, the service calls `Form_Approvals_Service::consume_one_for_phone( preset_slug, contact_phone )`. No-op when the gate isn't wired or no active row matches (customer continued through the warning). Project bookings count as one appointment regardless of the N underlying work-day Cal bookings.
+* **New setting** `forms_main_booking_url` (default `https://handik.pro/`). Editable in admin Settings → Cal.com section. Exposed to the Forms SPA via `config.mainBookingUrl`. The warning screen's primary CTA points here.
+* **i18n** — five new keys: `approvalWarningTitle`, `approvalWarningIntro`, `approvalWarningBody`, `approvalWarningMainCta`, `approvalWarningContinueCta`. All translatable through the standard `__()` path.
+* DB migration only — no breaking change to existing presets. Plugin behaves identically to 2.1.29.2 until the operator creates the first approval row for a preset.
 
 = 2.1.29.2 =
 * **P0 follow-up — 2.1.29.1's dedup fix in `handik-chatkit-bridge.js::saveStructuredResult` regressed on follow-up turns where the assistant produced a DIFFERENT structured payload from the previous turn.** Owner-reported with full server + bridge logs for request 217: turn 1 routes to a `standard_visit` (1-2 hours), CTA enables. Turn 2 the customer adds context, the agent re-classifies to `extended_visit` (3-5 hours) and calls `save_assistant_routing_result` with the new payload — but the bridge's "save completed" log surfaces the OLD `standard_visit` / `ready=true` values, the server-side `Assistant result received` log for the extended_visit payload is missing entirely, and the SPA stays on the previous turn's routing with the CTA stuck disabled (the gate read state.assistantReadyForBooking off of the stale payload).
