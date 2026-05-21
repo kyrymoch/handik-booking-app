@@ -245,6 +245,80 @@ class Handik_Booking_App_Form_Approvals_Service {
 	}
 
 	/**
+	 * 2.1.30.1 — operator-facing self-test. Exercises the full lifecycle
+	 * (create x2, count, count-with-other-phone, consume, count, revoke,
+	 * count, phone-normalization-parity) against a synthetic slug + phone
+	 * pair that won't collide with real data. Cleans up after itself.
+	 * Surfaced via a "Run self-test" button under the Pre-approvals block
+	 * in admin → Additional Forms → Presets so the operator can verify
+	 * the gate end-to-end without booking through the customer flow.
+	 *
+	 * @return array<int, array{step: string, pass: bool, detail: string}>
+	 */
+	public function self_test() {
+		global $wpdb;
+		$table = Handik_Booking_App_DB::table( 'form_approvals' );
+		$slug  = '__handik_self_test__';
+		$phone = '+15555550199';
+		$other = '+15555550100';
+		$results = array();
+
+		$record = function ( $step, $pass, $detail = '' ) use ( &$results ) {
+			$results[] = array(
+				'step'   => (string) $step,
+				'pass'   => (bool) $pass,
+				'detail' => (string) $detail,
+			);
+		};
+
+		// Cleanup any prior run so the test is hermetic.
+		$wpdb->delete( $table, array( 'preset_slug' => $slug ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+
+		$a1 = $this->create( $slug, $phone, 'self-test 1' );
+		$a2 = $this->create( $slug, $phone, 'self-test 2' );
+		$record(
+			'create two approvals',
+			! empty( $a1['id'] ) && ! empty( $a2['id'] ),
+			'a1=' . wp_json_encode( $a1 ) . ' a2=' . wp_json_encode( $a2 )
+		);
+
+		$count = $this->count_active_for_phone( $slug, $phone );
+		$record( 'count active for matched phone == 2', 2 === $count, 'count=' . $count );
+
+		$other_count = $this->count_active_for_phone( $slug, $other );
+		$record( 'count active for other phone == 0', 0 === $other_count, 'count=' . $other_count );
+
+		$consumed_id = $this->consume_one_for_phone( $slug, $phone, 0 );
+		$record( 'consume_one_for_phone returns id', $consumed_id > 0, 'id=' . $consumed_id );
+
+		$count_after_consume = $this->count_active_for_phone( $slug, $phone );
+		$record( 'count active after one consume == 1', 1 === $count_after_consume, 'count=' . $count_after_consume );
+
+		// Phone normalization parity — raw + dashes should match E.164.
+		$count_via_raw = $this->count_active_for_phone( $slug, '1-555-555-0199' );
+		$record( 'phone normalization parity', 1 === $count_via_raw, 'raw_match=' . $count_via_raw );
+
+		// Revoke remaining active rows.
+		$active_rows = $this->list_filtered( array( 'preset_slug' => $slug, 'status' => self::STATUS_ACTIVE ) );
+		foreach ( $active_rows as $row ) {
+			$this->revoke( (int) $row['id'] );
+		}
+		$count_after_revoke = $this->count_active_for_phone( $slug, $phone );
+		$record( 'count active after revoke == 0', 0 === $count_after_revoke, 'count=' . $count_after_revoke );
+
+		// Idempotent revoke.
+		if ( ! empty( $a1['id'] ) ) {
+			$repeat = $this->revoke( (int) $a1['id'] );
+			$record( 'revoke is idempotent', ! empty( $repeat['success'] ), wp_json_encode( $repeat ) );
+		}
+
+		// Final cleanup — pull every row we touched.
+		$wpdb->delete( $table, array( 'preset_slug' => $slug ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+
+		return $results;
+	}
+
+	/**
 	 * Bulk-flip stale rows to STATUS_EXPIRED for a single (slug, phone). We
 	 * limit the rewrite to the rows the check / consume call is about to
 	 * read so the runtime cost stays O(rows for this phone) instead of

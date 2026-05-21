@@ -205,6 +205,21 @@ class Handik_Booking_App_Forms_Rest_Api {
 		}
 		$phone = (string) $restored['verified_phone'];
 		$count = $this->approvals->count_active_for_phone( $slug, $phone );
+		// 2.1.30.1 — info-level breadcrumb so the operator can see the
+		// gate firing in Logs view ("we mailed Ivan link X, did his
+		// number actually match an active approval?"). Phone is logged
+		// last-4-digits only to keep PII out of long-term logs.
+		if ( $this->logger ) {
+			$this->logger->info(
+				'Form pre-approval check.',
+				array(
+					'preset_slug'  => $slug,
+					'phone_tail4'  => substr( $phone, -4 ),
+					'active_count' => $count,
+					'approved'     => $count > 0,
+				)
+			);
+		}
 		return rest_ensure_response(
 			array(
 				'approved'     => $count > 0,

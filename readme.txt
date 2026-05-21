@@ -3,7 +3,7 @@ Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.1.30.0
+Stable tag: 2.1.30.1
 License: Proprietary
 
 Single-page booking application with AI-assisted intake, multi-day project scheduling, and end-to-end Cal.com calendar sync.
@@ -81,6 +81,12 @@ Schema migration 1.6.1 adds `external_contact_id` for backfilling bookings made 
 Schema migration 1.6.0 adds `project_work_day_id` so multi-day project bookings show up in the unified admin Bookings list. Migrates automatically.
 
 == Changelog ==
+
+= 2.1.30.1 =
+* **P0 fix — Additional Forms phone OTP verification broken on 2.1.30.0.** Owner-reported: customers could not advance past the 6-digit OTP step; the JS console showed `ReferenceError: config is not defined`. Two new methods added in 2.1.30.0 (`approvalWarningMarkup`, `checkPresetApproval`) referenced a bare `config` identifier — but `booking-forms.js` exposes its config as an instance property (`this.config`, with shortcuts `this.preset` / `this.i18n`), not as a module-scope `const`. The bare reference was an undefined-variable crash on the first frame after `phone-verify/check` resolved, before the SPA could advance to `details`. Replaced with `this.preset.preset_slug` and `this.config.mainBookingUrl`. The new step + check function are now exercised on every OTP success path.
+* **Observability — pre-approval gate is now visible in Logs view.** `POST /forms/preset/{slug}/check-approval` writes an info-level entry on every check: `Form pre-approval check.` with `preset_slug`, last-4 digits of the verified phone (PII-redacted), `active_count`, and the resolved `approved` flag. Pairs with the existing `Form approval created.` / `Form approval revoked.` / `Form approval consumed.` info entries the service emits on writes — so the operator can trace a full link → OTP → check → consume cycle in `Handik Booking → Logs` without touching the database.
+* **Self-test for the gate.** New "Run self-test" button under each preset's Pre-approvals block (Admin → Additional Forms → Presets → preset). Clicking it calls `Form_Approvals_Service::self_test()` which exercises the full lifecycle against a synthetic slug (`__handik_self_test__`) and phone (`+15555550199`): create x2, count active for matched phone, count for other phone, consume one, count again, raw-vs-E.164 phone normalization parity, revoke remaining, idempotent revoke. All rows are wiped before and after so the test is hermetic and can't collide with real data. Results render as a green/red PASS/FAIL table inline under the block — verifies the schema migration, service, and DB writes after every upgrade in 30 seconds.
+* No DB change. No new endpoint. No customer-facing UI copy change.
 
 = 2.1.30.0 =
 * **Additional Forms — soft phone pre-approval gate for direct booking links.** Owner workflow: Alex sends a customer a direct link to one specific preset (e.g. `https://handik.pro/booking/large-visit-360/`). He doesn't want the customer to re-use that link later for an unrelated job. Pre-2.1.30 the only options were "leave the link wide open" or "build a separate one-shot system". This release adds a soft-gate middle ground: operator pre-approves the customer's phone number for the preset; after the OTP step the form silently proceeds; ANY other phone number lands on a friendly "this wasn't pre-approved" screen that points to the main booking page. The customer can always click "Continue anyway" — this is operator visibility, not a hard block.

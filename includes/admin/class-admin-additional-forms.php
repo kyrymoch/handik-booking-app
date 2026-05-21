@@ -23,10 +23,13 @@ class Handik_Booking_App_Admin_Additional_Forms {
 	const PAGE_SLUG          = 'handik-booking-app-additional-forms';
 	const NONCE_ACTION_SAVE  = 'handik_save_form_preset';
 	const NONCE_FIELD_SAVE   = 'handik_save_form_preset_nonce';
-	const NONCE_ACTION_APPROVAL_ADD    = 'handik_add_form_approval';
-	const NONCE_FIELD_APPROVAL_ADD     = 'handik_add_form_approval_nonce';
-	const NONCE_ACTION_APPROVAL_REVOKE = 'handik_revoke_form_approval';
-	const NONCE_FIELD_APPROVAL_REVOKE  = 'handik_revoke_form_approval_nonce';
+	const NONCE_ACTION_APPROVAL_ADD       = 'handik_add_form_approval';
+	const NONCE_FIELD_APPROVAL_ADD        = 'handik_add_form_approval_nonce';
+	const NONCE_ACTION_APPROVAL_REVOKE    = 'handik_revoke_form_approval';
+	const NONCE_FIELD_APPROVAL_REVOKE     = 'handik_revoke_form_approval_nonce';
+	const NONCE_ACTION_APPROVAL_SELF_TEST = 'handik_form_approval_self_test';
+	const NONCE_FIELD_APPROVAL_SELF_TEST  = 'handik_form_approval_self_test_nonce';
+	const SELF_TEST_RESULTS_TRANSIENT     = 'handik_form_approval_self_test_results';
 	const NONCE_ACTION_CANCEL_DAY = 'handik_cancel_project_day';
 	const NONCE_FIELD_CANCEL_DAY  = 'handik_cancel_project_day_nonce';
 
@@ -54,9 +57,11 @@ class Handik_Booking_App_Admin_Additional_Forms {
 		add_action( 'admin_init', array( $this, 'maybe_save_preset' ) );
 		add_action( 'admin_init', array( $this, 'maybe_cancel_day' ) );
 		// 2.1.30.0 — Pre-approval add / revoke handlers (form-post pattern,
-		// matches maybe_save_preset).
+		// matches maybe_save_preset). 2.1.30.1 added the self-test handler
+		// so an operator can verify the lifecycle without booking through.
 		add_action( 'admin_init', array( $this, 'maybe_save_approval' ) );
 		add_action( 'admin_init', array( $this, 'maybe_revoke_approval' ) );
+		add_action( 'admin_init', array( $this, 'maybe_run_approval_self_test' ) );
 	}
 
 	public function render() {
@@ -341,6 +346,36 @@ class Handik_Booking_App_Admin_Additional_Forms {
 			return;
 		}
 
+		// Self-test results (rendered once, then transient is cleared).
+		$test_results = get_transient( self::SELF_TEST_RESULTS_TRANSIENT );
+		if ( is_array( $test_results ) ) {
+			delete_transient( self::SELF_TEST_RESULTS_TRANSIENT );
+			$all_pass = true;
+			foreach ( $test_results as $r ) {
+				if ( empty( $r['pass'] ) ) {
+					$all_pass = false;
+					break;
+				}
+			}
+			echo '<div class="notice notice-' . ( $all_pass ? 'success' : 'error' ) . ' inline" style="max-width:720px;margin:12px 0">';
+			echo '<p><strong>' .
+				esc_html( $all_pass ? __( 'Pre-approval self-test passed.', 'handik-booking-app' ) : __( 'Pre-approval self-test FAILED — see below.', 'handik-booking-app' ) ) .
+				'</strong></p>';
+			echo '<table class="widefat striped" style="margin:0"><thead><tr>';
+			echo '<th>' . esc_html__( 'Step', 'handik-booking-app' ) . '</th>';
+			echo '<th>' . esc_html__( 'Result', 'handik-booking-app' ) . '</th>';
+			echo '<th>' . esc_html__( 'Detail', 'handik-booking-app' ) . '</th>';
+			echo '</tr></thead><tbody>';
+			foreach ( $test_results as $r ) {
+				echo '<tr>';
+				echo '<td>' . esc_html( (string) ( $r['step'] ?? '' ) ) . '</td>';
+				echo '<td>' . ( ! empty( $r['pass'] ) ? '<span style="color:#067d39">PASS</span>' : '<span style="color:#a30606">FAIL</span>' ) . '</td>';
+				echo '<td><code style="font-size:11px">' . esc_html( (string) ( $r['detail'] ?? '' ) ) . '</code></td>';
+				echo '</tr>';
+			}
+			echo '</tbody></table></div>';
+		}
+
 		// Add form.
 		echo '<form method="post" action="" style="margin:12px 0 24px;max-width:720px">';
 		wp_nonce_field( self::NONCE_ACTION_APPROVAL_ADD, self::NONCE_FIELD_APPROVAL_ADD );
@@ -401,6 +436,41 @@ class Handik_Booking_App_Admin_Additional_Forms {
 			echo '</tr>';
 		}
 		echo '</tbody></table>';
+
+		// 2.1.30.1 — Self-test trigger. Lifecycle exercised against a
+		// synthetic preset_slug (won't collide with real presets) and
+		// cleaned up before return. Operator-only.
+		echo '<form method="post" action="" style="margin-top:14px">';
+		wp_nonce_field( self::NONCE_ACTION_APPROVAL_SELF_TEST, self::NONCE_FIELD_APPROVAL_SELF_TEST );
+		echo '<input type="hidden" name="preset_id" value="' . (int) $preset_id . '">';
+		echo '<button type="submit" class="button">' . esc_html__( 'Run self-test', 'handik-booking-app' ) . '</button>';
+		echo ' <span class="description">' . esc_html__( 'Exercises the full pre-approval lifecycle against a synthetic phone (cleans up after itself). Use to verify the gate after upgrades.', 'handik-booking-app' ) . '</span>';
+		echo '</form>';
+	}
+
+	/**
+	 * 2.1.30.1 — Self-test form-post handler. Calls
+	 * Form_Approvals_Service::self_test, stashes the result rows in a
+	 * 30s transient, and redirects back to the preset edit screen which
+	 * renders the rows under the Pre-approvals block.
+	 */
+	public function maybe_run_approval_self_test() {
+		if ( empty( $_POST[ self::NONCE_FIELD_APPROVAL_SELF_TEST ] ) ) {
+			return;
+		}
+		if ( ! current_user_can( Handik_Booking_App_Capabilities::MANAGE_BOOKINGS ) ) {
+			return;
+		}
+		check_admin_referer( self::NONCE_ACTION_APPROVAL_SELF_TEST, self::NONCE_FIELD_APPROVAL_SELF_TEST );
+		if ( ! $this->approvals ) {
+			return;
+		}
+		$preset_id = isset( $_POST['preset_id'] ) ? absint( wp_unslash( $_POST['preset_id'] ) ) : 0;
+		$results   = $this->approvals->self_test();
+		set_transient( self::SELF_TEST_RESULTS_TRANSIENT, $results, 30 );
+		$redirect = admin_url( 'admin.php?page=' . self::PAGE_SLUG . '&tab=presets&preset_id=' . $preset_id );
+		wp_safe_redirect( $redirect );
+		exit;
 	}
 
 	/**

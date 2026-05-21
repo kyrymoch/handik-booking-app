@@ -565,7 +565,7 @@
 	 * informational, not blocking.
 	 */
 	HandikBookingForm.prototype.approvalWarningMarkup = function () {
-		var mainUrl = ( config && config.mainBookingUrl ) || 'https://handik.pro/';
+		var mainUrl = ( this.config && this.config.mainBookingUrl ) || 'https://handik.pro/';
 		return [
 			'<div class="handik-form-approval-warning">',
 				'<p class="handik-booking-app__intro">',
@@ -1819,8 +1819,8 @@
 	 */
 	HandikBookingForm.prototype.checkPresetApproval = function () {
 		var self = this;
-		var slug = config && config.preset && config.preset.preset_slug
-			? String( config.preset.preset_slug )
+		var slug = this.preset && this.preset.preset_slug
+			? String( this.preset.preset_slug )
 			: '';
 		var token = String( this.state.verifiedToken || '' );
 		if ( '' === slug || '' === token ) {
