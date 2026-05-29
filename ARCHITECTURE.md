@@ -382,6 +382,7 @@ DB version stored in `wp_options.handik_booking_app_db_version`. Migrations are 
 
 * `for_booking( $booking )` — given any `handik_bookings` row, resolves `contact` + `address` + `source` (`main` / `direct` / `project` / `external` / `external_unmatched`) and the source-specific rows. Critically, when the booking source has no `address_id` (external Cal bookings always), it falls back to the contact's primary address from `handik_addresses` — so external bookings stop rendering "No address".
 * `get( $contact_id )` — contact + addresses + primary address + requests + bookings (keyed by request id) + chronological `timeline` + stats (visits / completed / lifetime estimate / first-seen / last-seen). Powers the Customers detail page end-to-end (since 2.3.1).
+* `bookings_at_address( $address_id, $exclude_id )` + `schedule_conflicts( $booking, $buffer_minutes )` (since 2.5.0) — power the booking detail's "Previous jobs at this address" + same-day "tight schedule / overlap" warning. Pure time math, no distance API.
 * `search( $query, $limit )` — name/phone/email autocomplete shape for admin pickers.
 * `profile_url( $contact_id )` (static) — Customer-profile deep-link.
 

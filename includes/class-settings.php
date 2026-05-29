@@ -264,6 +264,13 @@ class Handik_Booking_App_Settings {
 			'nudge_body'                        => "Hi {{customer_first_name}},\n\nYou're all set to book — just pick a time that works:\n{{booking_url}}\n\nWe'll hold your details for you.",
 			'nudge_subject_ru'                  => '',
 			'nudge_body_ru'                     => '',
+
+			// Sprint 9 — minimum minutes the operator wants between the end
+			// of one visit and the start of the next on the same day. Drives
+			// the "tight schedule" conflict warning on the booking detail.
+			// (Pure time math — no travel-distance API; that's a future add
+			// once addresses carry geocoded coordinates.)
+			'travel_buffer_minutes'             => 30,
 		);
 	}
 
@@ -598,6 +605,9 @@ class Handik_Booking_App_Settings {
 				case 'log_max_entries_info':
 				case 'log_max_entries_debug':
 					$output[ $key ] = (string) max( 100, absint( $value ) );
+					break;
+				case 'travel_buffer_minutes':
+					$output[ $key ] = max( 0, min( 240, absint( $value ) ) );
 					break;
 				case 'debug_mode':
 					$output[ $key ] = empty( $value ) ? 0 : 1;

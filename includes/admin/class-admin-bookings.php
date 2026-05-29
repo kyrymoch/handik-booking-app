@@ -134,6 +134,9 @@ class Handik_Booking_App_Admin_Bookings {
 		$filter_source = isset( $_GET['filter_source'] ) ? sanitize_key( wp_unslash( $_GET['filter_source'] ) ) : 'all';
 		$query         = isset( $_GET['q'] ) ? sanitize_text_field( wp_unslash( $_GET['q'] ) ) : '';
 		$paged         = isset( $_GET['paged'] ) ? max( 1, absint( $_GET['paged'] ) ) : 1;
+		// Sprint 9 — list / week view toggle + week navigation offset.
+		$view          = isset( $_GET['view'] ) && 'week' === sanitize_key( wp_unslash( $_GET['view'] ) ) ? 'week' : 'list';
+		$week_offset   = isset( $_GET['week'] ) ? (int) $_GET['week'] : 0;
 		// phpcs:enable
 
 		Handik_Booking_App_Admin_Helpers::page_start(
@@ -176,9 +179,18 @@ class Handik_Booking_App_Admin_Bookings {
 		</p>
 		<?php
 
+		echo $this->view_toggle_markup( $view, $filter_time, $filter_status, $query, $filter_source );
 		echo $this->filter_bar_markup( $filter_time, $filter_status, $query, $filter_source );
 
 		$rows = $this->load_filtered_bookings( $filter_time, $filter_status, $query, $filter_source );
+
+		// Sprint 9 — Week view: 7-day grid of the selected week, built from
+		// the same filtered set. Self-contained; no pagination.
+		if ( 'week' === $view ) {
+			echo $this->week_view_markup( $rows, $week_offset );
+			Handik_Booking_App_Admin_Helpers::page_end();
+			return;
+		}
 
 		if ( empty( $rows ) ) {
 			echo '<div class="handik-admin-empty"><p>' . esc_html__( 'No bookings match these filters.', 'handik-booking-app' ) . '</p></div>';
@@ -274,6 +286,132 @@ class Handik_Booking_App_Admin_Bookings {
 		echo '</div>';
 
 		Handik_Booking_App_Admin_Helpers::page_end();
+	}
+
+	/**
+	 * Sprint 9 — List / Week view toggle. Preserves the active filters +
+	 * search so switching views doesn't drop the operator's context.
+	 *
+	 * @return string
+	 */
+	protected function view_toggle_markup( $view, $filter_time, $filter_status, $query, $filter_source ) {
+		$base = array_filter(
+			array(
+				'page'          => 'handik-booking-app-bookings',
+				'filter_time'   => 'all' !== $filter_time ? $filter_time : '',
+				'filter_status' => 'all' !== $filter_status ? $filter_status : '',
+				'filter_source' => 'all' !== $filter_source ? $filter_source : '',
+				'q'             => $query,
+			),
+			static function ( $v ) { return '' !== $v; }
+		);
+		$list_url = add_query_arg( $base, admin_url( 'admin.php' ) );
+		$week_url = add_query_arg( array_merge( $base, array( 'view' => 'week' ) ), admin_url( 'admin.php' ) );
+		$html  = '<nav class="handik-admin-segmented handik-admin-view-toggle" aria-label="' . esc_attr__( 'Bookings view', 'handik-booking-app' ) . '">';
+		$html .= '<a class="handik-admin-segment' . ( 'week' !== $view ? ' is-active' : '' ) . '" href="' . esc_url( $list_url ) . '">' . esc_html__( 'List', 'handik-booking-app' ) . '</a>';
+		$html .= '<a class="handik-admin-segment' . ( 'week' === $view ? ' is-active' : '' ) . '" href="' . esc_url( $week_url ) . '">' . esc_html__( 'Week', 'handik-booking-app' ) . '</a>';
+		$html .= '</nav>';
+		return $html;
+	}
+
+	/**
+	 * Sprint 9 — Week grid. Renders the 7 days of the selected week (Mon–Sun,
+	 * org timezone) as columns, each listing that day's bookings as
+	 * time-ordered chips linking to the detail. `$week_offset` shifts weeks.
+	 *
+	 * @param array<int, array<string,mixed>> $rows        Filtered bookings.
+	 * @param int                             $week_offset Weeks from current (negative = past).
+	 * @return string
+	 */
+	protected function week_view_markup( array $rows, $week_offset ) {
+		$tz       = new DateTimeZone( Handik_Booking_App_Admin_Helpers::TIMEZONE );
+		$now      = new DateTimeImmutable( 'now', $tz );
+		// Monday of the target week.
+		$monday   = $now->modify( ( 1 - (int) $now->format( 'N' ) ) . ' days' )->setTime( 0, 0 )->modify( ( (int) $week_offset ) . ' weeks' );
+		$week_end = $monday->modify( '+7 days' );
+
+		// Bucket bookings into day index 0..6.
+		$buckets = array_fill( 0, 7, array() );
+		$decor   = $this->decorate_bookings( $rows );
+		foreach ( $rows as $row ) {
+			$start = strtotime( (string) ( $row['start_time'] ?? '' ) . ' UTC' );
+			if ( ! $start ) {
+				continue;
+			}
+			$local = ( new DateTimeImmutable( '@' . $start ) )->setTimezone( $tz );
+			if ( $local < $monday || $local >= $week_end ) {
+				continue;
+			}
+			$day = (int) $local->format( 'N' ) - 1; // 0=Mon
+			$buckets[ $day ][] = array( 'row' => $row, 'local' => $local );
+		}
+		foreach ( $buckets as &$day_rows ) {
+			usort( $day_rows, static function ( $a, $b ) { return $a['local'] <=> $b['local']; } );
+		}
+		unset( $day_rows );
+
+		// Week navigation.
+		$nav_base = array_filter(
+			array(
+				'page'          => 'handik-booking-app-bookings',
+				'view'          => 'week',
+				'filter_time'   => isset( $_GET['filter_time'] ) ? sanitize_key( wp_unslash( $_GET['filter_time'] ) ) : '', // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+				'filter_status' => isset( $_GET['filter_status'] ) ? sanitize_key( wp_unslash( $_GET['filter_status'] ) ) : '', // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+				'filter_source' => isset( $_GET['filter_source'] ) ? sanitize_key( wp_unslash( $_GET['filter_source'] ) ) : '', // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+				'q'             => isset( $_GET['q'] ) ? sanitize_text_field( wp_unslash( $_GET['q'] ) ) : '', // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+			),
+			static function ( $v ) { return '' !== $v && 'all' !== $v; }
+		);
+		$prev_url = add_query_arg( array_merge( $nav_base, array( 'week' => (int) $week_offset - 1 ) ), admin_url( 'admin.php' ) );
+		$this_url = add_query_arg( $nav_base, admin_url( 'admin.php' ) );
+		$next_url = add_query_arg( array_merge( $nav_base, array( 'week' => (int) $week_offset + 1 ) ), admin_url( 'admin.php' ) );
+
+		$back_params = $this->detail_back_params();
+
+		ob_start();
+		?>
+		<div class="handik-admin-weeknav">
+			<a class="button" href="<?php echo esc_url( $prev_url ); ?>">← <?php esc_html_e( 'Prev', 'handik-booking-app' ); ?></a>
+			<a class="button" href="<?php echo esc_url( $this_url ); ?>"><?php esc_html_e( 'This week', 'handik-booking-app' ); ?></a>
+			<a class="button" href="<?php echo esc_url( $next_url ); ?>"><?php esc_html_e( 'Next', 'handik-booking-app' ); ?> →</a>
+			<span class="handik-admin-weeknav__range"><?php echo esc_html( $monday->format( 'M j' ) . ' – ' . $monday->modify( '+6 days' )->format( 'M j, Y' ) ); ?></span>
+		</div>
+		<div class="handik-admin-week-grid">
+			<?php for ( $d = 0; $d < 7; $d++ ) :
+				$day_date = $monday->modify( "+{$d} days" );
+				$is_today = $day_date->format( 'Y-m-d' ) === $now->format( 'Y-m-d' );
+				?>
+				<div class="handik-admin-week-col<?php echo $is_today ? ' is-today' : ''; ?>">
+					<div class="handik-admin-week-col__head">
+						<strong><?php echo esc_html( $day_date->format( 'D' ) ); ?></strong>
+						<span><?php echo esc_html( $day_date->format( 'M j' ) ); ?></span>
+					</div>
+					<div class="handik-admin-week-col__body">
+						<?php if ( empty( $buckets[ $d ] ) ) : ?>
+							<span class="handik-admin-week-col__empty">·</span>
+						<?php else : foreach ( $buckets[ $d ] as $entry ) :
+							$row    = $entry['row'];
+							$status = $this->bookings ? $this->bookings->effective_status( $row ) : (string) ( $row['status'] ?? '' );
+							$bundle = $decor[ (int) ( $row['id'] ?? 0 ) ] ?? array();
+							$contact = $bundle['contact'] ?? null;
+							$who    = is_array( $contact ) ? (string) ( $contact['full_name'] ?? '' ) : '';
+							$detail = Handik_Booking_App_Admin_Helpers::admin_url_for(
+								'handik-booking-app-bookings',
+								array_merge( array( 'booking_id' => (int) $row['id'] ), $back_params )
+							);
+							$status_cls = preg_replace( '/[^a-z_]/', '', strtolower( (string) $status ) );
+							?>
+							<a class="handik-admin-week-chip handik-admin-week-chip--<?php echo esc_attr( $status_cls ); ?>" href="<?php echo esc_url( $detail ); ?>">
+								<span class="handik-admin-week-chip__time"><?php echo esc_html( $entry['local']->format( 'g:i A' ) ); ?></span>
+								<span class="handik-admin-week-chip__who"><?php echo esc_html( $who ?: __( 'Booking', 'handik-booking-app' ) ); ?></span>
+							</a>
+						<?php endforeach; endif; ?>
+					</div>
+				</div>
+			<?php endfor; ?>
+		</div>
+		<?php
+		return (string) ob_get_clean();
 	}
 
 	protected function pagination_markup( $paged, $total_pages, $total_upcoming, $total_past ) {
@@ -1230,6 +1368,10 @@ class Handik_Booking_App_Admin_Bookings {
 		// Sprint 4 — pre-visit briefing (customer + property attributes +
 		// internal flags), assembled from the Customer 360 read-model.
 		echo $this->pre_visit_briefing_markup( $contact, $address );
+		// Sprint 9 — same-day schedule conflict warning + previous jobs at
+		// this address (operational visibility).
+		echo $this->schedule_conflict_markup( $booking );
+		echo $this->previous_jobs_markup( $booking, (int) ( is_array( $address ) ? ( $address['id'] ?? 0 ) : 0 ) );
 		// Photos / transcript / summary / tasks blocks all expect a
 		// job_request — for direct rows render a simpler "preset"
 		// block instead so the page isn't broken.
@@ -1605,6 +1747,83 @@ class Handik_Booking_App_Admin_Bookings {
 		</section>
 		<?php
 		return (string) ob_get_clean();
+	}
+
+	/**
+	 * Sprint 9 — same-day "tight schedule" / overlap warning. Pure time math
+	 * against the configured travel buffer; no distance API.
+	 *
+	 * @param array<string,mixed> $booking Booking row.
+	 * @return string
+	 */
+	protected function schedule_conflict_markup( array $booking ) {
+		$status = $this->bookings ? $this->bookings->effective_status( $booking ) : (string) ( $booking['status'] ?? '' );
+		if ( in_array( $status, array( 'cancelled', 'completed' ), true ) ) {
+			return '';
+		}
+		$buffer    = (int) handik_booking_app()->settings->get( 'travel_buffer_minutes', 30 );
+		$conflicts = $this->customer_view()->schedule_conflicts( $booking, $buffer );
+		if ( empty( $conflicts ) ) {
+			return '';
+		}
+		$lines = array();
+		foreach ( $conflicts as $c ) {
+			$other = $c['booking'];
+			$when  = Handik_Booking_App_Admin_Helpers::format_booking_window( $other, 'compact' );
+			$url   = Handik_Booking_App_Admin_Helpers::admin_url_for( 'handik-booking-app-bookings', array( 'booking_id' => (int) ( $other['id'] ?? 0 ) ) );
+			if ( 'overlap' === $c['type'] ) {
+				$lines[] = sprintf(
+					/* translators: %s: linked booking time */
+					esc_html__( 'Overlaps with %s', 'handik-booking-app' ),
+					'<a href="' . esc_url( $url ) . '">' . esc_html( $when ) . '</a>'
+				);
+			} else {
+				$lines[] = sprintf(
+					/* translators: 1: gap minutes, 2: linked booking time */
+					esc_html__( 'Only %1$d min from %2$s', 'handik-booking-app' ),
+					(int) $c['gap_minutes'],
+					'<a href="' . esc_url( $url ) . '">' . esc_html( $when ) . '</a>'
+				);
+			}
+		}
+		$html  = '<section class="handik-admin-block handik-admin-conflict"><h3 class="handik-admin-section-title">⚠ ' . esc_html__( 'Schedule conflict', 'handik-booking-app' ) . '</h3>';
+		$html .= '<p class="handik-admin-muted">' . sprintf(
+			/* translators: %d: buffer minutes */
+			esc_html__( 'You wanted at least %d min between visits.', 'handik-booking-app' ),
+			$buffer
+		) . '</p><ul class="handik-admin-conflict__list">';
+		foreach ( $lines as $line ) {
+			$html .= '<li>' . $line . '</li>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+		}
+		$html .= '</ul></section>';
+		return $html;
+	}
+
+	/**
+	 * Sprint 9 — "Previous jobs at this address" block.
+	 *
+	 * @param array<string,mixed> $booking    Current booking.
+	 * @param int                 $address_id Resolved address id.
+	 * @return string
+	 */
+	protected function previous_jobs_markup( array $booking, $address_id ) {
+		if ( $address_id <= 0 ) {
+			return '';
+		}
+		$rows = $this->customer_view()->bookings_at_address( $address_id, (int) ( $booking['id'] ?? 0 ), 10 );
+		if ( empty( $rows ) ) {
+			return '';
+		}
+		$html  = '<section class="handik-admin-block"><h3 class="handik-admin-section-title">' . esc_html__( 'Previous jobs at this address', 'handik-booking-app' ) . '</h3>';
+		$html .= '<ul class="handik-admin-prevjobs">';
+		foreach ( $rows as $row ) {
+			$when   = Handik_Booking_App_Admin_Helpers::format_booking_window( $row, 'compact' );
+			$status = $this->bookings ? $this->bookings->effective_status( $row ) : (string) ( $row['status'] ?? '' );
+			$url    = Handik_Booking_App_Admin_Helpers::admin_url_for( 'handik-booking-app-bookings', array( 'booking_id' => (int) ( $row['id'] ?? 0 ) ) );
+			$html  .= '<li><a href="' . esc_url( $url ) . '">' . esc_html( $when ?: __( 'Booking', 'handik-booking-app' ) ) . '</a> ' . Handik_Booking_App_Admin_Helpers::status_pill_markup( (string) $status ) . '</li>';
+		}
+		$html .= '</ul></section>';
+		return $html;
 	}
 
 	protected function at_a_glance_markup( array $booking, $contact, $full_address, $request ) {

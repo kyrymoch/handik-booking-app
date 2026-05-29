@@ -595,6 +595,127 @@ class Handik_Booking_App_Customer_View_Service {
 	}
 
 	/**
+	 * Sprint 9 — other bookings at the same address (main-SPA + direct
+	 * sources, matched by address_id). Newest first. Powers the "Previous
+	 * jobs at this address" block on the booking detail.
+	 *
+	 * @param int $address_id        Address id.
+	 * @param int $exclude_booking_id Booking id to omit (the current one).
+	 * @param int $limit             Max rows.
+	 * @return array<int, array<string,mixed>>
+	 */
+	public function bookings_at_address( $address_id, $exclude_booking_id = 0, $limit = 10 ) {
+		global $wpdb;
+		$address_id = (int) $address_id;
+		if ( $address_id <= 0 ) {
+			return array();
+		}
+		$jr  = Handik_Booking_App_DB::table( 'job_requests' );
+		$dbr = Handik_Booking_App_DB::table( 'direct_booking_requests' );
+		$bk  = Handik_Booking_App_DB::table( 'bookings' );
+
+		$req_ids    = $wpdb->get_col( $wpdb->prepare( "SELECT id FROM {$jr} WHERE address_id = %d", $address_id ) );
+		$direct_ids = array();
+		if ( $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $dbr ) ) ) {
+			$direct_ids = $wpdb->get_col( $wpdb->prepare( "SELECT id FROM {$dbr} WHERE address_id = %d", $address_id ) );
+		}
+		$req_ids    = array_map( 'intval', (array) $req_ids );
+		$direct_ids = array_map( 'intval', (array) $direct_ids );
+		if ( empty( $req_ids ) && empty( $direct_ids ) ) {
+			return array();
+		}
+
+		$clauses = array();
+		if ( $req_ids ) {
+			$clauses[] = 'job_request_id IN (' . implode( ',', $req_ids ) . ')';
+		}
+		if ( $direct_ids ) {
+			$clauses[] = 'direct_request_id IN (' . implode( ',', $direct_ids ) . ')';
+		}
+		$where = '( ' . implode( ' OR ', $clauses ) . ' )';
+		$limit = max( 1, (int) $limit );
+		$rows  = $wpdb->get_results( // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+			$wpdb->prepare(
+				"SELECT * FROM {$bk} WHERE {$where} AND id <> %d ORDER BY start_time DESC LIMIT {$limit}",
+				(int) $exclude_booking_id
+			),
+			ARRAY_A
+		);
+		return is_array( $rows ) ? $rows : array();
+	}
+
+	/**
+	 * Sprint 9 — same-day schedule conflicts for a booking: other
+	 * (non-cancelled) bookings whose time gap to this one is below the
+	 * travel buffer, or which overlap. Pure time math — no distance API.
+	 *
+	 * @param array<string,mixed> $booking        The booking row.
+	 * @param int                 $buffer_minutes Minimum desired gap.
+	 * @return array<int, array{booking: array, gap_minutes: int, type: string}>
+	 */
+	public function schedule_conflicts( array $booking, $buffer_minutes = 30 ) {
+		global $wpdb;
+		$start = strtotime( (string) ( $booking['start_time'] ?? '' ) . ' UTC' );
+		if ( ! $start ) {
+			return array();
+		}
+		$end = strtotime( (string) ( $booking['end_time'] ?? '' ) . ' UTC' );
+		if ( ! $end || $end <= $start ) {
+			$dur = (int) ( $booking['duration_minutes'] ?? 0 );
+			$end = $start + ( $dur > 0 ? $dur * 60 : HOUR_IN_SECONDS );
+		}
+		$bk        = Handik_Booking_App_DB::table( 'bookings' );
+		$day_start = gmdate( 'Y-m-d 00:00:00', $start );
+		$day_end   = gmdate( 'Y-m-d 23:59:59', $start );
+		$rows = $wpdb->get_results( // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+			$wpdb->prepare(
+				"SELECT * FROM {$bk} WHERE start_time BETWEEN %s AND %s AND id <> %d ORDER BY start_time ASC",
+				$day_start,
+				$day_end,
+				(int) ( $booking['id'] ?? 0 )
+			),
+			ARRAY_A
+		);
+		$buffer_secs = max( 0, (int) $buffer_minutes ) * 60;
+		$out = array();
+		foreach ( (array) $rows as $other ) {
+			$ostatus = $this->row_status( $other );
+			if ( in_array( $ostatus, array( 'cancelled' ), true ) ) {
+				continue;
+			}
+			$o_start = strtotime( (string) ( $other['start_time'] ?? '' ) . ' UTC' );
+			if ( ! $o_start ) {
+				continue;
+			}
+			$o_end = strtotime( (string) ( $other['end_time'] ?? '' ) . ' UTC' );
+			if ( ! $o_end || $o_end <= $o_start ) {
+				$odur  = (int) ( $other['duration_minutes'] ?? 0 );
+				$o_end = $o_start + ( $odur > 0 ? $odur * 60 : HOUR_IN_SECONDS );
+			}
+			// Overlap?
+			if ( $o_start < $end && $o_end > $start ) {
+				$out[] = array( 'booking' => $other, 'gap_minutes' => 0, 'type' => 'overlap' );
+				continue;
+			}
+			// Gap to the nearest edge.
+			$gap = $o_start >= $end ? ( $o_start - $end ) : ( $start - $o_end );
+			if ( $gap < $buffer_secs ) {
+				$out[] = array( 'booking' => $other, 'gap_minutes' => (int) round( $gap / 60 ), 'type' => 'tight' );
+			}
+		}
+		return $out;
+	}
+
+	/**
+	 * @param array<string,mixed> $row Booking row.
+	 * @return string
+	 */
+	protected function row_status( array $row ) {
+		$override = trim( (string) ( $row['admin_status_override'] ?? '' ) );
+		return '' !== $override ? $override : (string) ( $row['status'] ?? '' );
+	}
+
+	/**
 	 * Classify a booking row by source using ONLY its FK columns — no DB
 	 * queries. Cheap enough to call per-row in a list render. Mirrors the
 	 * (heavier) resolution `for_booking()` does, minus external_unmatched

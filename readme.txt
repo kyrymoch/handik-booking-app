@@ -3,7 +3,7 @@ Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.4.0
+Stable tag: 2.5.0
 License: Proprietary
 
 Single-page booking application with AI-assisted intake, multi-day project scheduling, and end-to-end Cal.com calendar sync.
@@ -81,6 +81,14 @@ Schema migration 1.6.1 adds `external_contact_id` for backfilling bookings made 
 Schema migration 1.6.0 adds `project_work_day_id` so multi-day project bookings show up in the unified admin Bookings list. Migrates automatically.
 
 == Changelog ==
+
+= 2.5.0 =
+* **Sprint 9 / Operational visibility — Week view, previous-jobs-at-address, schedule conflict warning.** No DB change, no migration. Self-contained, no external API.
+* **Bookings list — List / Week toggle.** A new "Week" view renders the selected week (Mon–Sun, org timezone) as a 7-day grid: each day column lists that day's bookings as time-ordered chips (coloured by status) linking straight to the detail. Prev / This week / Next navigation; the toggle and week-nav preserve the active filters + search. Built entirely from the same filtered set — no new queries beyond the existing decoration load.
+* **Booking detail — "Previous jobs at this address".** Lists other bookings at the same address (main-SPA + direct sources, matched by `address_id`), newest first, each linked with a status pill. Powered by the new `Customer_View_Service::bookings_at_address()`.
+* **Booking detail — schedule conflict warning.** A new "⚠ Schedule conflict" block flags same-day visits that overlap or sit closer than the configured travel buffer. `Customer_View_Service::schedule_conflicts()` is pure time math (start/end, falling back to `duration_minutes`); cancelled neighbours are ignored, and the warning is suppressed on cancelled/completed bookings. New setting **Travel buffer between visits (minutes)** (Settings → Booking flow → Scheduling, default 30; 0 disables).
+* **Deferred (noted):** the **Map view** and **Distance-Matrix travel-time** estimates from the roadmap need geocoded coordinates the plugin doesn't store yet. Rather than add on-the-fly geocoding (external API + billing + rate limits) under the same release, the conflict warning ships as pure time math now; real travel-distance can fold in later once addresses carry lat/lng. No functionality was removed.
+* No customer-facing change.
 
 = 2.4.0 =
 * **Sprint 8 / Notifications — proactive SMS reminders, post-visit review request, ready-not-booked nudge.** A single background scanner (every 15 min) sends at-most-once per booking/request. **Everything ships OFF**: nothing sends until you flip a toggle AND fill the prerequisite (a Twilio "From" number for SMS, a review URL for the review email). Respects each customer's "Do not text" flag and language preference.
