@@ -51,6 +51,8 @@ class Handik_Booking_App_Admin {
 	protected $page_bookings;
 	/** @var Handik_Booking_App_Admin_Requests|null */
 	protected $page_requests;
+	/** @var Handik_Booking_App_Admin_Reports|null */
+	protected $page_reports;
 	/** @var Handik_Booking_App_Admin_People|null */
 	protected $page_people;
 	/** @var Handik_Booking_App_Admin_Settings|null */
@@ -90,6 +92,20 @@ class Handik_Booking_App_Admin {
 		// Logs page hooks admin_init for CSV export — instantiate it eagerly so
 		// the hook is registered.
 		$this->logs_page();
+		// Sprint 10 — Reports page also hooks admin_init for its CSV export;
+		// construct it eagerly for the same reason.
+		$this->reports_page();
+	}
+
+	protected function reports_page() {
+		if ( ! $this->page_reports ) {
+			$this->page_reports = new Handik_Booking_App_Admin_Reports( $this->bookings, $this->job_requests, $this->settings );
+		}
+		return $this->page_reports;
+	}
+
+	public function render_reports() {
+		$this->reports_page()->render();
 	}
 
 	// =====================================================================
@@ -130,6 +146,8 @@ class Handik_Booking_App_Admin {
 			add_submenu_page( 'handik-booking-app', __( 'Additional Forms', 'handik-booking-app' ), __( 'Additional Forms', 'handik-booking-app' ), $cap, Handik_Booking_App_Admin_Additional_Forms::PAGE_SLUG, array( $this, 'render_additional_forms' ) );
 			remove_submenu_page( 'handik-booking-app', Handik_Booking_App_Admin_Additional_Forms::PAGE_SLUG );
 		}
+		// Sprint 10 — Reports (money / tax summary).
+		add_submenu_page( 'handik-booking-app', __( 'Reports', 'handik-booking-app' ), __( 'Reports', 'handik-booking-app' ), $cap, Handik_Booking_App_Admin_Reports::PAGE_SLUG, array( $this, 'render_reports' ) );
 		add_submenu_page( 'handik-booking-app', __( 'Integrations & Logs', 'handik-booking-app' ), __( 'Logs', 'handik-booking-app' ), $cap, 'handik-booking-app-operations', array( $this, 'render_operations' ) );
 		add_submenu_page( 'handik-booking-app', __( 'System info', 'handik-booking-app' ), __( 'System', 'handik-booking-app' ), $cap, 'handik-booking-app-system', array( $this, 'render_system' ) );
 	}

@@ -314,6 +314,7 @@ Top-level `Handik Booking` menu (`includes/class-admin.php`). Page renderers liv
 | `handik-booking-app`                 | `Admin_Dashboard`                             | counts + Action-needed chips (Drafts, Ready-not-booked, Unsafe, Errors today) |
 | `handik-booking-app-bookings`        | `Admin_Bookings`                              | unified Bookings list (cards + table), detail view, add booking flow, pull-from-Cal, bulk delete |
 | `handik-booking-app-requests`        | `Admin_Requests`                              | Requests pipeline (since 2.3.0) — union of in-flight job_requests + direct + project, source/status filters, search |
+| `handik-booking-app-reports`         | `Admin_Reports`                               | Money/tax reports (since 2.6.0) — period picker, gross/materials/mileage/net totals, by-service breakdown, CSV export |
 | `handik-booking-app-crm`             | `Admin_People`                                | Customers list + detail (since 2.3.1: Customer 360 via `Customer_View_Service::get()` — stats strip + activity timeline), addresses, attributes, requests focus lists, bulk delete |
 | `handik-booking-app-additional-forms`| `Admin_Additional_Forms`                      | Hidden from menu since 2.3.0 (route kept). Legacy URLs redirect to Settings → Forms / Bookings / Requests; project-schedule detail still renders here |
 | `handik-booking-app-settings`        | `Admin_Settings`                              | Single config home (since 2.2.0). Tabs: Booking flow · Forms (presets + pre-approvals, delegated to `Admin_Additional_Forms`) · Service catalog · Service area · Cal.com · Notifications · Integrations · Appearance |
@@ -350,6 +351,7 @@ DB version stored in `wp_options.handik_booking_app_db_version`. Migrations are 
 | 1.6.4   | Migration_164          | Customer-level structured attributes on `handik_contacts` (language/payment enums, behavior flags, `tags_json`, `brand_preferences`) |
 | 1.6.5   | Migration_165          | Property-level attributes on `handik_addresses` (building/parking enums, masked access codes, pet/hazard flags, `property_notes`) — powers the pre-visit briefing |
 | 1.6.6   | Migration_166          | Notification idempotency stamps: `handik_bookings.reminder_24h_sent_at` / `reminder_2h_sent_at` / `review_request_sent_at`, `handik_job_requests.nudge_1_sent_at` / `nudge_2_sent_at` |
+| 1.6.7   | Migration_167          | Per-booking money fields on `handik_bookings` (`actual_amount_cents`, `materials_amount_cents`, `payment_status`, `payment_method_used`, `invoice_number`, `mileage_miles`) — powers the Reports page |
 
 ### Key tables
 

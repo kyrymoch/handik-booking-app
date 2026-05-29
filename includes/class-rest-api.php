@@ -126,6 +126,13 @@ class Handik_Booking_App_REST_API {
 			'callback'            => array( $this, 'admin_booking_reschedule' ),
 			'permission_callback' => array( $this, 'admin_permission' ),
 		) );
+		// Sprint 10 — per-booking money fields (actual amount, materials,
+		// payment status/method, invoice, mileage).
+		register_rest_route( $namespace, '/admin/booking/(?P<id>\d+)/payment', array(
+			'methods'             => WP_REST_Server::CREATABLE,
+			'callback'            => array( $this, 'admin_booking_payment' ),
+			'permission_callback' => array( $this, 'admin_permission' ),
+		) );
 		register_rest_route( $namespace, '/admin/contact', array(
 			'methods'             => WP_REST_Server::CREATABLE,
 			'callback'            => array( $this, 'admin_contact_create' ),
@@ -495,6 +502,25 @@ class Handik_Booking_App_REST_API {
 		$id    = absint( $request['id'] );
 		$notes = (string) $request->get_param( 'admin_notes' );
 		$ok    = $this->bookings->update_admin_fields( $id, array( 'admin_notes' => $notes ) );
+		return rest_ensure_response( array( 'success' => $ok ) );
+	}
+
+	/**
+	 * Sprint 10 — save per-booking money fields.
+	 *
+	 * @param WP_REST_Request $request Request.
+	 * @return WP_REST_Response
+	 */
+	public function admin_booking_payment( WP_REST_Request $request ) {
+		if ( ! $this->bookings || ! method_exists( $this->bookings, 'update_payment' ) ) {
+			return $this->admin_unavailable();
+		}
+		$id    = absint( $request['id'] );
+		$patch = array_intersect_key(
+			$request->get_params(),
+			array_flip( array( 'actual_amount', 'materials_amount', 'payment_status', 'payment_method_used', 'invoice_number', 'mileage_miles' ) )
+		);
+		$ok = $this->bookings->update_payment( $id, $patch );
 		return rest_ensure_response( array( 'success' => $ok ) );
 	}
 

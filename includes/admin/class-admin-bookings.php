@@ -1389,6 +1389,9 @@ class Handik_Booking_App_Admin_Bookings {
 			echo $this->external_preset_block_markup( $booking );
 		}
 		echo $this->address_block_markup( $full_address );
+		// Sprint 10 — money fields (what was actually charged, materials,
+		// payment, invoice, mileage). Feeds the Reports page.
+		echo $this->payment_block_markup( $booking );
 		echo $this->technical_block_markup( $request, $booking );
 		if ( $request ) {
 			echo $this->chat_logs_block_markup( $request, $booking );
@@ -1543,6 +1546,72 @@ class Handik_Booking_App_Admin_Bookings {
 	 * the operator to type "DELETE" verbatim before the REST DELETE
 	 * fires. On success it redirects back to the bookings list.
 	 */
+	/**
+	 * Sprint 10 — payment + money block. Saves via the new
+	 * POST /admin/booking/{id}/payment endpoint (initBookingPayment in
+	 * booking-app-admin.js). Dollar inputs are stored as integer cents.
+	 *
+	 * @param array<string,mixed> $booking Booking row.
+	 * @return string
+	 */
+	protected function payment_block_markup( array $booking ) {
+		$rest    = trailingslashit( rest_url( 'handik-booking-app/v1' ) );
+		$id      = (int) ( $booking['id'] ?? 0 );
+		$actual  = isset( $booking['actual_amount_cents'] ) && null !== $booking['actual_amount_cents'] ? number_format( (int) $booking['actual_amount_cents'] / 100, 2, '.', '' ) : '';
+		$mater   = isset( $booking['materials_amount_cents'] ) && null !== $booking['materials_amount_cents'] ? number_format( (int) $booking['materials_amount_cents'] / 100, 2, '.', '' ) : '';
+		$miles   = isset( $booking['mileage_miles'] ) && null !== $booking['mileage_miles'] ? (string) ( 0 + $booking['mileage_miles'] ) : '';
+		$pstatus = (string) ( $booking['payment_status'] ?? '' );
+		$pmethod = (string) ( $booking['payment_method_used'] ?? '' );
+		$invoice = (string) ( $booking['invoice_number'] ?? '' );
+
+		$status_opts = array(
+			''        => __( '—', 'handik-booking-app' ),
+			'unpaid'  => __( 'Unpaid', 'handik-booking-app' ),
+			'partial' => __( 'Partial', 'handik-booking-app' ),
+			'paid'    => __( 'Paid', 'handik-booking-app' ),
+		);
+		$method_opts = array(
+			''      => __( '—', 'handik-booking-app' ),
+			'cash'  => __( 'Cash', 'handik-booking-app' ),
+			'venmo' => __( 'Venmo', 'handik-booking-app' ),
+			'zelle' => __( 'Zelle', 'handik-booking-app' ),
+			'check' => __( 'Check', 'handik-booking-app' ),
+			'card'  => __( 'Card', 'handik-booking-app' ),
+			'other' => __( 'Other', 'handik-booking-app' ),
+		);
+		$select = function ( $field, $value, $opts ) {
+			$h = '<select data-pay-field="' . esc_attr( $field ) . '">';
+			foreach ( $opts as $k => $label ) {
+				$h .= '<option value="' . esc_attr( $k ) . '"' . selected( $value, $k, false ) . '>' . esc_html( $label ) . '</option>';
+			}
+			return $h . '</select>';
+		};
+
+		ob_start();
+		?>
+		<section class="handik-admin-block handik-admin-payment"
+			data-handik-payment
+			data-booking-id="<?php echo esc_attr( (string) $id ); ?>"
+			data-rest-base="<?php echo esc_attr( esc_url_raw( $rest ) ); ?>"
+			data-rest-nonce="<?php echo esc_attr( wp_create_nonce( 'wp_rest' ) ); ?>">
+			<h2 class="handik-admin-section-title">💵 <?php esc_html_e( 'Payment & money', 'handik-booking-app' ); ?></h2>
+			<div class="handik-admin-grid">
+				<label class="handik-admin-field"><span><?php esc_html_e( 'Amount charged ($)', 'handik-booking-app' ); ?></span><input type="number" step="0.01" min="0" data-pay-field="actual_amount" value="<?php echo esc_attr( $actual ); ?>" /></label>
+				<label class="handik-admin-field"><span><?php esc_html_e( 'Materials ($)', 'handik-booking-app' ); ?></span><input type="number" step="0.01" min="0" data-pay-field="materials_amount" value="<?php echo esc_attr( $mater ); ?>" /></label>
+				<label class="handik-admin-field"><span><?php esc_html_e( 'Miles driven', 'handik-booking-app' ); ?></span><input type="number" step="0.1" min="0" data-pay-field="mileage_miles" value="<?php echo esc_attr( $miles ); ?>" /></label>
+			</div>
+			<div class="handik-admin-grid">
+				<label class="handik-admin-field"><span><?php esc_html_e( 'Payment status', 'handik-booking-app' ); ?></span><?php echo $select( 'payment_status', $pstatus, $status_opts ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></label>
+				<label class="handik-admin-field"><span><?php esc_html_e( 'Method', 'handik-booking-app' ); ?></span><?php echo $select( 'payment_method_used', $pmethod, $method_opts ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></label>
+				<label class="handik-admin-field"><span><?php esc_html_e( 'Invoice #', 'handik-booking-app' ); ?></span><input type="text" data-pay-field="invoice_number" value="<?php echo esc_attr( $invoice ); ?>" /></label>
+			</div>
+			<p><button type="button" class="button button-primary" data-handik-payment-save>💾 <?php esc_html_e( 'Save payment', 'handik-booking-app' ); ?></button>
+			<span class="handik-admin-muted" data-handik-payment-status aria-live="polite"></span></p>
+		</section>
+		<?php
+		return (string) ob_get_clean();
+	}
+
 	protected function danger_zone_markup( array $booking ) {
 		if ( ! current_user_can( Handik_Booking_App_Capabilities::MANAGE_DELETE ) ) {
 			return '';

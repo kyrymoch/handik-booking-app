@@ -580,6 +580,77 @@ class Handik_Booking_App_Bookings_Service {
 		return $row ?: null;
 	}
 
+	/** Allowed payment statuses + methods for the Sprint 10 money fields. */
+	public static function payment_statuses() {
+		return array( '', 'unpaid', 'partial', 'paid' );
+	}
+	public static function payment_methods() {
+		return array( '', 'cash', 'venmo', 'zelle', 'check', 'card', 'other' );
+	}
+
+	/**
+	 * Sprint 10 — record per-booking money fields. Dollar inputs arrive as
+	 * decimal strings and are stored as integer cents (no float drift);
+	 * enums validated against the allow-lists; mileage as a 0.1-mile decimal.
+	 * Only keys present in $patch are touched (empty string clears).
+	 *
+	 * @param int                 $booking_id Booking id.
+	 * @param array<string,mixed> $patch      Raw input.
+	 * @return bool
+	 */
+	public function update_payment( $booking_id, array $patch ) {
+		global $wpdb;
+		$booking_id = (int) $booking_id;
+		if ( $booking_id <= 0 || ! $this->get( $booking_id ) ) {
+			return false;
+		}
+		$update = array();
+		if ( array_key_exists( 'actual_amount', $patch ) ) {
+			$update['actual_amount_cents'] = $this->dollars_to_cents( $patch['actual_amount'] );
+		}
+		if ( array_key_exists( 'materials_amount', $patch ) ) {
+			$update['materials_amount_cents'] = $this->dollars_to_cents( $patch['materials_amount'] );
+		}
+		if ( array_key_exists( 'payment_status', $patch ) ) {
+			$v = sanitize_key( (string) $patch['payment_status'] );
+			$update['payment_status'] = in_array( $v, self::payment_statuses(), true ) ? $v : '';
+		}
+		if ( array_key_exists( 'payment_method_used', $patch ) ) {
+			$v = sanitize_key( (string) $patch['payment_method_used'] );
+			$update['payment_method_used'] = in_array( $v, self::payment_methods(), true ) ? $v : '';
+		}
+		if ( array_key_exists( 'invoice_number', $patch ) ) {
+			$update['invoice_number'] = sanitize_text_field( (string) $patch['invoice_number'] );
+		}
+		if ( array_key_exists( 'mileage_miles', $patch ) ) {
+			$miles = (string) $patch['mileage_miles'];
+			$update['mileage_miles'] = ( '' === trim( $miles ) ) ? null : round( (float) $miles, 1 );
+		}
+		if ( empty( $update ) ) {
+			return false;
+		}
+		$wpdb->update( Handik_Booking_App_DB::table( 'bookings' ), $update, array( 'id' => $booking_id ) );
+		if ( $this->logger ) {
+			$this->logger->info( 'Admin updated booking payment.', array( 'booking_id' => $booking_id, 'fields' => array_keys( $update ) ) );
+		}
+		return true;
+	}
+
+	/**
+	 * Parse a dollar input ("$1,234.50", "1234.5", "") to integer cents, or
+	 * null for an empty input.
+	 *
+	 * @param mixed $value Raw dollars.
+	 * @return int|null
+	 */
+	protected function dollars_to_cents( $value ) {
+		$clean = preg_replace( '/[^0-9.\-]/', '', (string) $value );
+		if ( '' === $clean ) {
+			return null;
+		}
+		return (int) round( ( (float) $clean ) * 100 );
+	}
+
 	/**
 	 * Sprint 7 (admin perf): bulk fetch bookings by ID for the dashboard's
 	 * `ensure_next_visit_decorations` loops which used to do one `get()` per

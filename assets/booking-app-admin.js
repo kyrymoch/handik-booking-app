@@ -2039,7 +2039,36 @@
 		initPullFromCal();
 		initBulkMode();
 		initApprovalPicker();
+		initBookingPayment();
 	} );
+
+	// ============================================================
+	// Sprint 10 — per-booking payment/money save.
+	// ============================================================
+	function initBookingPayment() {
+		const root = document.querySelector( '[data-handik-payment]' );
+		if ( ! root ) { return; }
+		const saveBtn = root.querySelector( '[data-handik-payment-save]' );
+		const statusEl = root.querySelector( '[data-handik-payment-status]' );
+		if ( ! saveBtn ) { return; }
+		saveBtn.addEventListener( 'click', function () {
+			const body = {};
+			root.querySelectorAll( '[data-pay-field]' ).forEach( function ( el ) {
+				body[ el.dataset.payField ] = el.value;
+			} );
+			withButtonLoading( saveBtn, function () {
+				return adminFetch( root, 'admin/booking/' + root.dataset.bookingId + '/payment', { method: 'POST', body: body } )
+					.then( function () {
+						if ( statusEl ) { statusEl.textContent = i18n.saved || 'Saved'; }
+						toast( i18n.saved || 'Saved', 'success' );
+					} )
+					.catch( function () {
+						if ( statusEl ) { statusEl.textContent = i18n.saveFailed || 'Save failed'; }
+						toast( i18n.saveFailed || 'Save failed', 'error', 3500 );
+					} );
+			} );
+		} );
+	}
 
 	// ============================================================
 	// Sprint 2 — pre-approval customer picker.

@@ -301,6 +301,8 @@ class Handik_Booking_App_Admin_Settings {
 		<?php $this->section_open( __( 'Scheduling', 'handik-booking-app' ) ); ?>
 			<?php Handik_Booking_App_Admin_Helpers::field( 'travel_buffer_minutes', __( 'Travel buffer between visits (minutes)', 'handik-booking-app' ), $s['travel_buffer_minutes'], 'number' ); ?>
 			<p class="handik-admin-muted"><?php esc_html_e( 'The booking detail flags a "tight schedule" warning when two same-day visits are closer than this. 0 disables the warning. (Pure time math — travel-distance estimates arrive once addresses carry coordinates.)', 'handik-booking-app' ); ?></p>
+			<?php Handik_Booking_App_Admin_Helpers::field( 'mileage_rate_cents', __( 'IRS mileage rate (cents per mile)', 'handik-booking-app' ), $s['mileage_rate_cents'], 'number' ); ?>
+			<p class="handik-admin-muted"><?php esc_html_e( 'Used by the Reports page for the mileage deduction. 2025 IRS standard rate is 70¢/mile.', 'handik-booking-app' ); ?></p>
 		<?php $this->section_close(); ?>
 		<?php
 	}

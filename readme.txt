@@ -3,7 +3,7 @@ Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.5.0
+Stable tag: 2.6.0
 License: Proprietary
 
 Single-page booking application with AI-assisted intake, multi-day project scheduling, and end-to-end Cal.com calendar sync.
@@ -81,6 +81,15 @@ Schema migration 1.6.1 adds `external_contact_id` for backfilling bookings made 
 Schema migration 1.6.0 adds `project_work_day_id` so multi-day project bookings show up in the unified admin Bookings list. Migrates automatically.
 
 == Changelog ==
+
+= 2.6.0 =
+* **Sprint 10 / Money & Tax — per-booking payment fields + Reports page.** Closes the loop with the operator's tax/accounting workflow. One additive migration; revenue numbers come straight from the bookings the operator already manages.
+* **Migration 1.6.7** — money fields on `handik_bookings`: `actual_amount_cents`, `materials_amount_cents`, `payment_status`, `payment_method_used`, `invoice_number`, `mileage_miles`. Amounts stored as integer cents (no float drift); mileage as a 0.1-mile decimal. Safe DEFAULTs, idempotent.
+* **Booking detail → "💵 Payment & money" block.** Records amount charged, materials, miles driven, payment status (unpaid / partial / paid), method (cash / Venmo / Zelle / check / card / other), and invoice number. Dollar inputs are parsed (`$1,234.50` → cents) and saved via the new `POST /admin/booking/{id}/payment` endpoint (`Bookings_Service::update_payment`, enum-validated). JS: `initBookingPayment`.
+* **New Reports page** (`Handik Booking → Reports`). Period picker (full year / Q1–Q4 / custom date range) → totals cards: **Gross revenue**, **Materials**, **Mileage** (miles × IRS rate = $), **Net pre-tax**, **Completed visits**; plus a by-service breakdown. Revenue is recognized on COMPLETED visits in the period (by visit date); a completed booking with no recorded amount falls back to the assistant's high estimate (flagged + counted so the operator knows to firm it up). **Export CSV** streams the period's line items + a totals footer (imports straight into spreadsheets / accounting tools).
+* **New setting** `mileage_rate_cents` (Settings → Booking flow → Scheduling, default 70 = 2025 IRS standard rate) drives the mileage deduction.
+* **Deferred (noted):** automatic per-booking mileage via the Google Distance Matrix needs geocoded address coordinates the plugin doesn't store yet (same gap as Sprint 9) — mileage is a manual field for now. PDF export is out of scope; CSV covers the tax-prep handoff. The existing raw full-table bookings CSV (System info) is unchanged.
+* No customer-facing change.
 
 = 2.5.0 =
 * **Sprint 9 / Operational visibility — Week view, previous-jobs-at-address, schedule conflict warning.** No DB change, no migration. Self-contained, no external API.

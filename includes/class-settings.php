@@ -271,6 +271,10 @@ class Handik_Booking_App_Settings {
 			// (Pure time math — no travel-distance API; that's a future add
 			// once addresses carry geocoded coordinates.)
 			'travel_buffer_minutes'             => 30,
+
+			// Sprint 10 — IRS standard mileage rate in cents per mile (2025 =
+			// 70¢). Drives the mileage deduction column on the Reports page.
+			'mileage_rate_cents'                => 70,
 		);
 	}
 
@@ -608,6 +612,9 @@ class Handik_Booking_App_Settings {
 					break;
 				case 'travel_buffer_minutes':
 					$output[ $key ] = max( 0, min( 240, absint( $value ) ) );
+					break;
+				case 'mileage_rate_cents':
+					$output[ $key ] = max( 0, min( 1000, absint( $value ) ) );
 					break;
 				case 'debug_mode':
 					$output[ $key ] = empty( $value ) ? 0 : 1;
