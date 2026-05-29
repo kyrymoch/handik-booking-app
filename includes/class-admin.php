@@ -171,6 +171,15 @@ class Handik_Booking_App_Admin {
 			return;
 		}
 
+		// Sprint 8 — "Send test SMS" on the Notifications tab. Ships the
+		// (unsaved) 24h-reminder template with sample data to a phone typed
+		// into the test field, using the current Twilio config. Doesn't
+		// persist the form.
+		if ( 'send_test_sms' === $action ) {
+			$this->handle_send_test_sms( wp_unslash( $_POST ) );
+			return;
+		}
+
 		// 2.1.22.1 — Reset-to-default for a single email-template field.
 		// Each Reset button posts `handik_action=reset_template_<key>`;
 		// the key portion is parsed out and allow-listed against the
@@ -224,6 +233,44 @@ class Handik_Booking_App_Admin {
 
 		$this->settings->update( $payload );
 		add_settings_error( 'handik-booking-app', 'settings_saved', __( 'Settings updated.', 'handik-booking-app' ), 'updated' );
+	}
+
+	/**
+	 * Sprint 8 — "Send test SMS" submit. Sends the (possibly unsaved)
+	 * 24h-reminder template with sample data to a typed phone number via
+	 * the live Twilio config. Does not persist the form.
+	 *
+	 * @param array<string, mixed> $payload Unslashed POST data.
+	 * @return void
+	 */
+	protected function handle_send_test_sms( array $payload ) {
+		$plugin = handik_booking_app();
+		$notifications = $plugin && isset( $plugin->notifications ) ? $plugin->notifications : null;
+		$to = isset( $payload['handik_test_sms_to'] ) ? sanitize_text_field( (string) $payload['handik_test_sms_to'] ) : '';
+		if ( ! $notifications || '' === $to ) {
+			add_settings_error( 'handik-booking-app', 'sms_test_no_recipient', __( 'Enter a phone number to send a test SMS to.', 'handik-booking-app' ), 'error' );
+			return;
+		}
+		$operator = (string) $this->settings->get( 'operator_first_name', 'Alex' );
+		$template = isset( $payload['sms_reminder_24h_template'] )
+			? sanitize_textarea_field( (string) $payload['sms_reminder_24h_template'] )
+			: (string) $this->settings->get( 'sms_reminder_24h_template', '' );
+		// Sample-data substitution (mirrors render_text's placeholder set).
+		$body = strtr( $template, array(
+			'{{customer_first_name}}' => __( 'Sam', 'handik-booking-app' ),
+			'{{customer_name}}'       => __( 'Sam Sample', 'handik-booking-app' ),
+			'{{operator_name}}'       => $operator,
+			'{{booking_time}}'        => '2:00 PM',
+			'{{booking_date}}'        => gmdate( 'l, F j' ),
+			'{{review_url}}'          => '',
+			'{{booking_url}}'         => '',
+		) );
+		$ok = $notifications->send_sms( $to, $body );
+		if ( $ok ) {
+			add_settings_error( 'handik-booking-app', 'sms_test_sent', sprintf( __( 'Test SMS sent to %s.', 'handik-booking-app' ), $to ), 'updated' );
+		} else {
+			add_settings_error( 'handik-booking-app', 'sms_test_failed', __( 'Test SMS failed — check the Twilio credentials + "From" number, then see Logs.', 'handik-booking-app' ), 'error' );
+		}
 	}
 
 	/**

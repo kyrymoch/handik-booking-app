@@ -57,10 +57,18 @@ class Handik_Booking_App_Notifications_Service {
 		'project_scheduling_requests',
 	);
 
+	// Sprint 8 — recurring reminder/review/nudge scanner.
+	const CRON_HOOK_SCAN  = 'handik_notifications_scan';
+	const CRON_SCHEDULE   = 'handik_quarter_hour';
+	const SCAN_LOOKAHEAD  = 500; // max rows per source per scan
+
 	/**
 	 * @var Handik_Booking_App_Settings
 	 */
 	protected $settings;
+
+	/** @var Handik_Booking_App_Customer_View_Service|null */
+	protected $customer_view;
 
 	/**
 	 * @var Handik_Booking_App_Logger|null
@@ -71,9 +79,10 @@ class Handik_Booking_App_Notifications_Service {
 	 * @param Handik_Booking_App_Settings   $settings Settings.
 	 * @param Handik_Booking_App_Logger|null $logger   Logger (optional).
 	 */
-	public function __construct( $settings, $logger = null ) {
-		$this->settings = $settings;
-		$this->logger   = $logger;
+	public function __construct( $settings, $logger = null, $customer_view = null ) {
+		$this->settings      = $settings;
+		$this->logger        = $logger;
+		$this->customer_view = $customer_view;
 
 		// 2.1.26.5 — wrap each action handler so a fatal inside email
 		// rendering / .ics building / wp_mail SMTP doesn't take down
@@ -121,6 +130,14 @@ class Handik_Booking_App_Notifications_Service {
 				}
 			}
 		}, 10, 1 );
+
+		// Sprint 8 — proactive reminder/review/nudge scanner. Register a
+		// 15-minute schedule + the recurring event (idempotent — only
+		// scheduled once), and the scan handler. The scan early-returns when
+		// every feature toggle is off, so it's cheap to keep running.
+		add_filter( 'cron_schedules', array( $this, 'register_cron_schedule' ) );
+		add_action( 'init', array( $this, 'maybe_schedule_scan' ) );
+		add_action( self::CRON_HOOK_SCAN, array( $this, 'run_scheduled_notifications' ) );
 	}
 
 	const CRON_HOOK_DISPATCH_PROJECT = 'handik_booking_app_dispatch_project_email';
@@ -2624,5 +2641,462 @@ class Handik_Booking_App_Notifications_Service {
 			}
 		}
 		return '';
+	}
+
+	// =====================================================================
+	// Sprint 8 — proactive reminders / review request / nudge.
+	//
+	// One recurring scanner (every 15 min) walks bookings + requests and
+	// sends at-most-once, gated by the idempotency stamps from migration
+	// 1.6.6. EVERYTHING is off until the operator flips a toggle AND
+	// configures the prerequisite (Twilio "from" number for SMS, review
+	// URL for the review email). Defensive throughout: a throwable in one
+	// row never aborts the scan, and a failed send leaves the stamp NULL
+	// so the next scan retries.
+	// =====================================================================
+
+	/**
+	 * Register a 15-minute cron schedule (24h/2h reminders want finer than
+	 * the built-in hourly granularity).
+	 *
+	 * @param array<string, array<string, mixed>> $schedules Existing schedules.
+	 * @return array<string, array<string, mixed>>
+	 */
+	public function register_cron_schedule( $schedules ) {
+		if ( ! isset( $schedules[ self::CRON_SCHEDULE ] ) ) {
+			$schedules[ self::CRON_SCHEDULE ] = array(
+				'interval' => 15 * MINUTE_IN_SECONDS,
+				'display'  => __( 'Every 15 minutes (Handik notifications)', 'handik-booking-app' ),
+			);
+		}
+		return $schedules;
+	}
+
+	/**
+	 * Ensure the recurring scan is scheduled. Mirrors the GC services'
+	 * self-healing pattern so the DISABLE_WP_CRON heartbeat (which
+	 * unschedules each occurrence after firing) re-arms it on the next load.
+	 */
+	public function maybe_schedule_scan() {
+		if ( ! wp_next_scheduled( self::CRON_HOOK_SCAN ) ) {
+			wp_schedule_event( time() + MINUTE_IN_SECONDS, self::CRON_SCHEDULE, self::CRON_HOOK_SCAN );
+		}
+	}
+
+	/**
+	 * Cron entry point. Runs the three scans behind their own toggles. Each
+	 * is wrapped so one failing scan can't abort the others.
+	 */
+	public function run_scheduled_notifications() {
+		if ( $this->setting_on( 'sms_reminders_enabled' ) && '' !== trim( (string) $this->settings->get( 'twilio_sms_from', '' ) ) ) {
+			try { $this->scan_sms_reminders(); } catch ( \Throwable $e ) { $this->log_scan_error( 'sms_reminders', $e ); }
+		}
+		if ( $this->setting_on( 'review_request_enabled' ) && '' !== trim( (string) $this->settings->get( 'review_request_url', '' ) ) ) {
+			try { $this->scan_review_requests(); } catch ( \Throwable $e ) { $this->log_scan_error( 'review_requests', $e ); }
+		}
+		if ( $this->setting_on( 'nudge_enabled' ) ) {
+			try { $this->scan_nudges(); } catch ( \Throwable $e ) { $this->log_scan_error( 'nudges', $e ); }
+		}
+	}
+
+	/**
+	 * 24h + 2h before-visit SMS reminders. A booking gets the 24h reminder
+	 * once we're inside 24h of the start (but not yet inside 2h, so a
+	 * last-minute booking isn't double-texted), and the 2h reminder once
+	 * we're inside 2h. Both stamped independently.
+	 */
+	protected function scan_sms_reminders() {
+		global $wpdb;
+		$bookings = Handik_Booking_App_DB::table( 'bookings' );
+		$now      = current_time( 'timestamp', true ); // UTC
+		$now_sql  = gmdate( 'Y-m-d H:i:s', $now );
+		$in_24h   = gmdate( 'Y-m-d H:i:s', $now + DAY_IN_SECONDS );
+		$cap      = self::SCAN_LOOKAHEAD;
+
+		// Future bookings within the next 24h, missing at least one reminder.
+		$rows = $wpdb->get_results( // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+			$wpdb->prepare(
+				"SELECT * FROM {$bookings}
+				 WHERE start_time > %s AND start_time <= %s
+				 AND ( reminder_24h_sent_at IS NULL OR reminder_2h_sent_at IS NULL )
+				 ORDER BY start_time ASC LIMIT {$cap}",
+				$now_sql,
+				$in_24h
+			),
+			ARRAY_A
+		);
+		foreach ( (array) $rows as $row ) {
+			$status = $this->effective_booking_status( $row );
+			if ( in_array( $status, array( 'cancelled', 'completed' ), true ) ) {
+				continue;
+			}
+			$start_ts = strtotime( (string) $row['start_time'] . ' UTC' );
+			if ( ! $start_ts ) {
+				continue;
+			}
+			$seconds_out = $start_ts - $now;
+			$resolved    = $this->resolve_sms_recipient( $row );
+			if ( ! $resolved ) {
+				continue; // no real contact / opted out / no phone
+			}
+
+			// 2h reminder (inside 2h window).
+			if ( empty( $row['reminder_2h_sent_at'] ) && $seconds_out <= 2 * HOUR_IN_SECONDS ) {
+				$body = $this->render_sms( 'sms_reminder_2h_template', $resolved, $row );
+				if ( $this->stamp_and_send_sms( $bookings, (int) $row['id'], 'reminder_2h_sent_at', $resolved['phone'], $body ) ) {
+					continue; // one SMS per scan per booking
+				}
+			}
+			// 24h reminder (inside 24h but still more than 2h out).
+			if ( empty( $row['reminder_24h_sent_at'] ) && $seconds_out > 2 * HOUR_IN_SECONDS ) {
+				$body = $this->render_sms( 'sms_reminder_24h_template', $resolved, $row );
+				$this->stamp_and_send_sms( $bookings, (int) $row['id'], 'reminder_24h_sent_at', $resolved['phone'], $body );
+			}
+		}
+	}
+
+	/**
+	 * Post-visit review-request email: completed bookings whose completion
+	 * (proxied by updated_at) was at least 24h ago and not yet asked.
+	 */
+	protected function scan_review_requests() {
+		global $wpdb;
+		$bookings = Handik_Booking_App_DB::table( 'bookings' );
+		$cutoff   = gmdate( 'Y-m-d H:i:s', current_time( 'timestamp', true ) - DAY_IN_SECONDS );
+		$cap      = self::SCAN_LOOKAHEAD;
+		$url      = (string) $this->settings->get( 'review_request_url', '' );
+
+		$rows = $wpdb->get_results( // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+			$wpdb->prepare(
+				"SELECT * FROM {$bookings}
+				 WHERE review_request_sent_at IS NULL AND updated_at <= %s
+				 ORDER BY updated_at DESC LIMIT {$cap}",
+				$cutoff
+			),
+			ARRAY_A
+		);
+		foreach ( (array) $rows as $row ) {
+			if ( 'completed' !== $this->effective_booking_status( $row ) ) {
+				continue;
+			}
+			$c = $this->resolve_contact_for_booking( $row );
+			if ( ! $c || empty( $c['email'] ) ) {
+				continue;
+			}
+			$lang    = $this->contact_language( $c );
+			$subject = $this->render_text( $this->localized( 'review_request_subject', $lang ), $c, $row, $url );
+			$body    = $this->render_text( $this->localized( 'review_request_body', $lang ), $c, $row, $url );
+			// Stamp first (claim), roll back on send failure.
+			$wpdb->update( $bookings, array( 'review_request_sent_at' => current_time( 'mysql' ) ), array( 'id' => (int) $row['id'] ) );
+			if ( ! $this->send_plain_email( (string) $c['email'], $subject, $body ) ) {
+				$wpdb->update( $bookings, array( 'review_request_sent_at' => null ), array( 'id' => (int) $row['id'] ) );
+			}
+		}
+	}
+
+	/**
+	 * Ready-not-booked nudge emails: a main-SPA request that reached
+	 * `ready_for_booking`, has no booking, and has been idle ≥6h (first
+	 * nudge) / ≥48h (second nudge).
+	 */
+	protected function scan_nudges() {
+		global $wpdb;
+		$jr  = Handik_Booking_App_DB::table( 'job_requests' );
+		$bk  = Handik_Booking_App_DB::table( 'bookings' );
+		$now = current_time( 'timestamp', true );
+		$cap = self::SCAN_LOOKAHEAD;
+		$six = gmdate( 'Y-m-d H:i:s', $now - 6 * HOUR_IN_SECONDS );
+		$two_day = gmdate( 'Y-m-d H:i:s', $now - 2 * DAY_IN_SECONDS );
+
+		$rows = $wpdb->get_results( // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+			$wpdb->prepare(
+				"SELECT jr.* FROM {$jr} jr LEFT JOIN {$bk} bk ON bk.job_request_id = jr.id
+				 WHERE bk.id IS NULL AND jr.status = 'ready_for_booking' AND jr.updated_at <= %s
+				 AND ( jr.nudge_1_sent_at IS NULL OR jr.nudge_2_sent_at IS NULL )
+				 ORDER BY jr.updated_at DESC LIMIT {$cap}",
+				$six
+			),
+			ARRAY_A
+		);
+		foreach ( (array) $rows as $req ) {
+			$c = ( $req['contact_id'] && $this->customer_view ) ? $this->lookup_contact( (int) $req['contact_id'] ) : null;
+			if ( ! $c || empty( $c['email'] ) ) {
+				continue;
+			}
+			$lang    = $this->contact_language( $c );
+			$subject = $this->localized( 'nudge_subject', $lang );
+			$booking_url = (string) ( $req['cal_booking_url'] ?? '' );
+			$subject = $this->render_text( $subject, $c, $req, '', $booking_url );
+			$body    = $this->render_text( $this->localized( 'nudge_body', $lang ), $c, $req, '', $booking_url );
+
+			// Second nudge if first already sent ≥48h ago and updated_at old.
+			if ( empty( $req['nudge_1_sent_at'] ) ) {
+				$wpdb->update( $jr, array( 'nudge_1_sent_at' => current_time( 'mysql' ) ), array( 'id' => (int) $req['id'] ) );
+				if ( ! $this->send_plain_email( (string) $c['email'], $subject, $body ) ) {
+					$wpdb->update( $jr, array( 'nudge_1_sent_at' => null ), array( 'id' => (int) $req['id'] ) );
+				}
+				continue;
+			}
+			if ( empty( $req['nudge_2_sent_at'] ) && (string) $req['updated_at'] <= $two_day ) {
+				$wpdb->update( $jr, array( 'nudge_2_sent_at' => current_time( 'mysql' ) ), array( 'id' => (int) $req['id'] ) );
+				if ( ! $this->send_plain_email( (string) $c['email'], $subject, $body ) ) {
+					$wpdb->update( $jr, array( 'nudge_2_sent_at' => null ), array( 'id' => (int) $req['id'] ) );
+				}
+			}
+		}
+	}
+
+	/**
+	 * Send an SMS via the Twilio Messages API. Uses the existing account
+	 * SID + auth token; `twilio_sms_from` is the sender (an E.164 number or
+	 * a Messaging Service SID starting `MG`). Returns true on a 2xx.
+	 *
+	 * @param string $to   E.164 destination.
+	 * @param string $body Message text.
+	 * @return bool
+	 */
+	public function send_sms( $to, $body ) {
+		$sid   = trim( (string) $this->settings->get( 'twilio_account_sid', '' ) );
+		$token = trim( (string) $this->settings->get( 'twilio_auth_token', '' ) );
+		$from  = trim( (string) $this->settings->get( 'twilio_sms_from', '' ) );
+		$to    = trim( (string) $to );
+		$body  = trim( (string) $body );
+		if ( '' === $sid || '' === $token || '' === $from || '' === $to || '' === $body ) {
+			return false;
+		}
+
+		$args = array(
+			'To'   => $to,
+			'Body' => $body,
+		);
+		// Messaging Service SID vs a plain "from" number.
+		if ( 0 === strpos( $from, 'MG' ) ) {
+			$args['MessagingServiceSid'] = $from;
+		} else {
+			$args['From'] = $from;
+		}
+
+		$response = wp_remote_post(
+			'https://api.twilio.com/2010-04-01/Accounts/' . rawurlencode( $sid ) . '/Messages.json',
+			array(
+				'timeout' => 12,
+				'headers' => array(
+					'Authorization' => 'Basic ' . base64_encode( $sid . ':' . $token ), // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode
+					'Content-Type'  => 'application/x-www-form-urlencoded',
+				),
+				'body'    => $args,
+			)
+		);
+		if ( is_wp_error( $response ) ) {
+			if ( $this->logger ) {
+				$this->logger->error( 'Notifications: SMS send failed (transport).', array( 'error' => $response->get_error_message() ) );
+			}
+			return false;
+		}
+		$code = (int) wp_remote_retrieve_response_code( $response );
+		$ok   = $code >= 200 && $code < 300;
+		if ( ! $ok && $this->logger ) {
+			$this->logger->error( 'Notifications: SMS send rejected.', array( 'http' => $code, 'body' => substr( (string) wp_remote_retrieve_body( $response ), 0, 300 ) ) );
+		}
+		return $ok;
+	}
+
+	/**
+	 * Claim the idempotency stamp on a booking, send the SMS, roll back on
+	 * failure. Returns true iff the SMS was accepted.
+	 *
+	 * @param string $table   Bookings table.
+	 * @param int    $id      Booking id.
+	 * @param string $column  Stamp column (reminder_24h_sent_at / reminder_2h_sent_at).
+	 * @param string $phone   Destination.
+	 * @param string $body    Message.
+	 * @return bool
+	 */
+	protected function stamp_and_send_sms( $table, $id, $column, $phone, $body ) {
+		global $wpdb;
+		$wpdb->update( $table, array( $column => current_time( 'mysql' ) ), array( 'id' => (int) $id ) );
+		$sent = $this->send_sms( $phone, $body );
+		if ( ! $sent ) {
+			$wpdb->update( $table, array( $column => null ), array( 'id' => (int) $id ) );
+		}
+		return $sent;
+	}
+
+	/**
+	 * Resolve the SMS recipient for a booking: a real contact (id>0), not
+	 * opted out (`do_not_text`), with a phone. Returns null otherwise so we
+	 * never text an attendee we can't honour an opt-out for.
+	 *
+	 * @param array<string,mixed> $booking Booking row.
+	 * @return array{contact: array, phone: string, first_name: string}|null
+	 */
+	protected function resolve_sms_recipient( array $booking ) {
+		$c = $this->resolve_contact_for_booking( $booking );
+		if ( ! $c || (int) ( $c['id'] ?? 0 ) <= 0 ) {
+			return null;
+		}
+		if ( ! empty( $c['do_not_text'] ) ) {
+			return null;
+		}
+		$phone = trim( (string) ( $c['phone'] ?? '' ) );
+		if ( '' === $phone ) {
+			return null;
+		}
+		return array(
+			'contact'    => $c,
+			'phone'      => $phone,
+			'first_name' => $this->first_name( (string) ( $c['full_name'] ?? '' ) ),
+		);
+	}
+
+	/**
+	 * Resolve the contact for a booking through the Customer 360 read-model
+	 * (so external bookings with a matched contact resolve too).
+	 *
+	 * @param array<string,mixed> $booking Booking row.
+	 * @return array<string,mixed>|null
+	 */
+	protected function resolve_contact_for_booking( array $booking ) {
+		if ( $this->customer_view ) {
+			$resolved = $this->customer_view->for_booking( $booking );
+			return $resolved['contact'] ?? null;
+		}
+		return null;
+	}
+
+	protected function lookup_contact( $contact_id ) {
+		if ( $this->customer_view ) {
+			$view = $this->customer_view->get( (int) $contact_id );
+			return $view ? $view['contact'] : null;
+		}
+		return null;
+	}
+
+	protected function effective_booking_status( array $booking ) {
+		$override = trim( (string) ( $booking['admin_status_override'] ?? '' ) );
+		return '' !== $override ? $override : (string) ( $booking['status'] ?? '' );
+	}
+
+	protected function contact_language( array $contact ) {
+		return (string) ( $contact['language'] ?? '' );
+	}
+
+	/**
+	 * Pick the language-specific template variant when the customer is `ru`
+	 * AND a non-empty `*_ru` override exists; otherwise the base template.
+	 *
+	 * @param string $base_key Base setting key.
+	 * @param string $lang     Contact language.
+	 * @return string
+	 */
+	protected function localized( $base_key, $lang ) {
+		if ( 'ru' === $lang ) {
+			$ru = trim( (string) $this->settings->get( $base_key . '_ru', '' ) );
+			if ( '' !== $ru ) {
+				return $ru;
+			}
+		}
+		return (string) $this->settings->get( $base_key, '' );
+	}
+
+	protected function render_sms( $base_key, array $recipient, array $booking ) {
+		$lang = $this->contact_language( $recipient['contact'] );
+		return $this->render_text( $this->localized( $base_key, $lang ), $recipient['contact'], $booking );
+	}
+
+	/**
+	 * Substitute the small placeholder set the reminder/review/nudge copy
+	 * supports. Kept deliberately separate from the rich email-template
+	 * renderer used by the confirmation pipeline.
+	 *
+	 * @param string               $template    Template text.
+	 * @param array<string,mixed>  $contact     Contact row.
+	 * @param array<string,mixed>  $row         Booking or request row.
+	 * @param string               $review_url  Review URL (review email only).
+	 * @param string               $booking_url Booking URL (nudge only).
+	 * @return string
+	 */
+	protected function render_text( $template, array $contact, array $row, $review_url = '', $booking_url = '' ) {
+		$start = isset( $row['start_time'] ) ? strtotime( (string) $row['start_time'] . ' UTC' ) : 0;
+		$tz    = $this->local_timezone();
+		$time  = $start ? wp_date( 'g:i A', $start, $tz ) : '';
+		$date  = $start ? wp_date( 'l, F j', $start, $tz ) : '';
+		$map   = array(
+			'{{customer_first_name}}' => $this->first_name( (string) ( $contact['full_name'] ?? '' ) ),
+			'{{customer_name}}'       => (string) ( $contact['full_name'] ?? '' ),
+			'{{operator_name}}'       => (string) $this->settings->get( 'operator_first_name', 'Alex' ),
+			'{{booking_time}}'        => $time,
+			'{{booking_date}}'        => $date,
+			'{{review_url}}'          => $review_url,
+			'{{booking_url}}'         => $booking_url,
+		);
+		return trim( strtr( (string) $template, $map ) );
+	}
+
+	protected function first_name( $full_name ) {
+		$full = trim( (string) $full_name );
+		if ( '' === $full ) {
+			return '';
+		}
+		$parts = preg_split( '/\s+/', $full );
+		return $parts ? (string) $parts[0] : $full;
+	}
+
+	protected function local_timezone() {
+		$tz_string = (string) $this->settings->get( 'cal_api_timezone', 'America/New_York' );
+		try {
+			return new DateTimeZone( $tz_string ?: 'America/New_York' );
+		} catch ( \Exception $e ) {
+			return new DateTimeZone( 'America/New_York' );
+		}
+	}
+
+	/**
+	 * Minimal plain-text email sender for review / nudge messages. Uses the
+	 * configured From name/address; kept separate from the confirmation
+	 * HTML pipeline so its filters can't interfere.
+	 *
+	 * @param string $to      Recipient.
+	 * @param string $subject Subject.
+	 * @param string $body    Plain-text body.
+	 * @return bool
+	 */
+	public function send_plain_email( $to, $subject, $body ) {
+		$to = trim( (string) $to );
+		if ( '' === $to || ! is_email( $to ) ) {
+			return false;
+		}
+		$from_name = (string) $this->settings->get( 'email_from_name', get_bloginfo( 'name' ) );
+		$from_addr = (string) $this->settings->get( 'email_from_address', get_option( 'admin_email' ) );
+		$headers   = array();
+		if ( $from_addr ) {
+			$headers[] = sprintf( 'From: %s <%s>', $from_name, $from_addr );
+		}
+		$content_type_cb = static function () { return 'text/plain'; };
+		add_filter( 'wp_mail_content_type', $content_type_cb, PHP_INT_MAX );
+		$sent = false;
+		try {
+			$sent = (bool) wp_mail( $to, (string) $subject, (string) $body, $headers );
+		} catch ( \Throwable $e ) {
+			if ( $this->logger ) {
+				$this->logger->error( 'Notifications: plain email threw.', array( 'message' => $e->getMessage() ) );
+			}
+		} finally {
+			remove_filter( 'wp_mail_content_type', $content_type_cb, PHP_INT_MAX );
+		}
+		return $sent;
+	}
+
+	protected function setting_on( $key ) {
+		return ! empty( $this->settings->get( $key, 0 ) );
+	}
+
+	protected function log_scan_error( $scan, \Throwable $e ) {
+		if ( $this->logger ) {
+			$this->logger->error(
+				'Notifications scan threw.',
+				array( 'scan' => $scan, 'message' => $e->getMessage(), 'file' => $e->getFile(), 'line' => $e->getLine() )
+			);
+		}
 	}
 }

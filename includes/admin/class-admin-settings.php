@@ -537,6 +537,44 @@ class Handik_Booking_App_Admin_Settings {
 
 	protected function render_notifications_tab( array $s ) {
 		?>
+		<?php $this->section_open( __( 'Proactive reminders, review & nudge (Sprint 8)', 'handik-booking-app' ) ); ?>
+			<p class="handik-admin-muted" style="max-width:760px">
+				<?php esc_html_e( 'A background scanner (every 15 min) sends at-most-once per booking/request. Everything is OFF until you enable it AND fill the prerequisite (a Twilio "From" number for SMS, a review URL for the review email). SMS respects each customer\'s "Do not text" flag. When a customer\'s language is Russian, the matching _ru template is used if you fill it (otherwise the English one).', 'handik-booking-app' ); ?>
+			</p>
+			<p class="handik-admin-muted"><?php esc_html_e( 'SMS placeholders:', 'handik-booking-app' ); ?>
+				<code>{{customer_first_name}}</code> · <code>{{operator_name}}</code> · <code>{{booking_time}}</code> · <code>{{booking_date}}</code>.
+				<?php esc_html_e( 'Email also supports', 'handik-booking-app' ); ?> <code>{{review_url}}</code> · <code>{{booking_url}}</code>.
+			</p>
+
+			<h4 class="handik-admin-attr-heading"><?php esc_html_e( 'SMS reminders', 'handik-booking-app' ); ?></h4>
+			<?php Handik_Booking_App_Admin_Helpers::checkbox_field( 'sms_reminders_enabled', __( 'Enable 24h + 2h SMS reminders', 'handik-booking-app' ), ! empty( $s['sms_reminders_enabled'] ) ); ?>
+			<?php Handik_Booking_App_Admin_Helpers::field( 'twilio_sms_from', __( 'Twilio "From" number or Messaging Service SID', 'handik-booking-app' ), $s['twilio_sms_from'] ); ?>
+			<p class="handik-admin-muted"><?php esc_html_e( 'E.164 number (e.g. +16175550123) or a Messaging Service SID starting MG. Account SID + auth token come from Settings → Integrations.', 'handik-booking-app' ); ?></p>
+			<?php Handik_Booking_App_Admin_Helpers::textarea_field( 'sms_reminder_24h_template', __( '24h reminder', 'handik-booking-app' ), $s['sms_reminder_24h_template'], '', 3 ); ?>
+			<?php Handik_Booking_App_Admin_Helpers::textarea_field( 'sms_reminder_24h_template_ru', __( '24h reminder (Russian, optional)', 'handik-booking-app' ), $s['sms_reminder_24h_template_ru'], '', 3 ); ?>
+			<?php Handik_Booking_App_Admin_Helpers::textarea_field( 'sms_reminder_2h_template', __( '2h reminder', 'handik-booking-app' ), $s['sms_reminder_2h_template'], '', 3 ); ?>
+			<?php Handik_Booking_App_Admin_Helpers::textarea_field( 'sms_reminder_2h_template_ru', __( '2h reminder (Russian, optional)', 'handik-booking-app' ), $s['sms_reminder_2h_template_ru'], '', 3 ); ?>
+			<p style="margin-top:8px">
+				<input type="tel" name="handik_test_sms_to" class="regular-text" placeholder="+16175550123" />
+				<button type="submit" class="button" name="handik_action" value="send_test_sms"><?php esc_html_e( 'Send test SMS (24h template)', 'handik-booking-app' ); ?></button>
+			</p>
+
+			<h4 class="handik-admin-attr-heading"><?php esc_html_e( 'Post-visit review request (email)', 'handik-booking-app' ); ?></h4>
+			<?php Handik_Booking_App_Admin_Helpers::checkbox_field( 'review_request_enabled', __( 'Email a review request 24h after a completed visit', 'handik-booking-app' ), ! empty( $s['review_request_enabled'] ) ); ?>
+			<?php Handik_Booking_App_Admin_Helpers::field( 'review_request_url', __( 'Review URL (e.g. Google review link)', 'handik-booking-app' ), $s['review_request_url'] ); ?>
+			<?php Handik_Booking_App_Admin_Helpers::field( 'review_request_subject', __( 'Subject', 'handik-booking-app' ), $s['review_request_subject'] ); ?>
+			<?php Handik_Booking_App_Admin_Helpers::textarea_field( 'review_request_body', __( 'Body', 'handik-booking-app' ), $s['review_request_body'], '', 6 ); ?>
+			<?php Handik_Booking_App_Admin_Helpers::field( 'review_request_subject_ru', __( 'Subject (Russian, optional)', 'handik-booking-app' ), $s['review_request_subject_ru'] ); ?>
+			<?php Handik_Booking_App_Admin_Helpers::textarea_field( 'review_request_body_ru', __( 'Body (Russian, optional)', 'handik-booking-app' ), $s['review_request_body_ru'], '', 6 ); ?>
+
+			<h4 class="handik-admin-attr-heading"><?php esc_html_e( 'Ready-not-booked nudge (email)', 'handik-booking-app' ); ?></h4>
+			<?php Handik_Booking_App_Admin_Helpers::checkbox_field( 'nudge_enabled', __( 'Email a nudge when a request is ready but unbooked (6h, then 48h)', 'handik-booking-app' ), ! empty( $s['nudge_enabled'] ) ); ?>
+			<?php Handik_Booking_App_Admin_Helpers::field( 'nudge_subject', __( 'Subject', 'handik-booking-app' ), $s['nudge_subject'] ); ?>
+			<?php Handik_Booking_App_Admin_Helpers::textarea_field( 'nudge_body', __( 'Body', 'handik-booking-app' ), $s['nudge_body'], '', 6 ); ?>
+			<?php Handik_Booking_App_Admin_Helpers::field( 'nudge_subject_ru', __( 'Subject (Russian, optional)', 'handik-booking-app' ), $s['nudge_subject_ru'] ); ?>
+			<?php Handik_Booking_App_Admin_Helpers::textarea_field( 'nudge_body_ru', __( 'Body (Russian, optional)', 'handik-booking-app' ), $s['nudge_body_ru'], '', 6 ); ?>
+		<?php $this->section_close(); ?>
+
 		<?php $this->section_open( __( 'Cal.com confirmation note', 'handik-booking-app' ) ); ?>
 			<p class="handik-admin-muted">
 				<?php esc_html_e( 'This text is forwarded to Cal.com as the booking notes. Available placeholders:', 'handik-booking-app' ); ?>

@@ -116,7 +116,7 @@ class Handik_Booking_App_Plugin {
 		// `handik_booking_confirmed` action that the three booking-creation
 		// sites (Cal upsert, direct capture, project confirm_schedule) fire.
 		// Constructor registers the action listener; nothing else needs DI.
-		$this->notifications  = new Handik_Booking_App_Notifications_Service( $this->settings, $this->logger );
+		$this->notifications  = new Handik_Booking_App_Notifications_Service( $this->settings, $this->logger, $this->customer_view );
 		$this->service_catalog = new Handik_Booking_App_Service_Catalog_Service( $this->settings );
 		$this->changelog      = new Handik_Booking_App_Changelog_Service();
 		$this->app_state      = new Handik_Booking_App_State( $this->service_catalog );

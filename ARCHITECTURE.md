@@ -349,6 +349,7 @@ DB version stored in `wp_options.handik_booking_app_db_version`. Migrations are 
 | 1.6.3   | Migration_163          | `handik_form_approvals.contact_id` (+ index + one-time phone→contact backfill) for the pre-approval customer picker |
 | 1.6.4   | Migration_164          | Customer-level structured attributes on `handik_contacts` (language/payment enums, behavior flags, `tags_json`, `brand_preferences`) |
 | 1.6.5   | Migration_165          | Property-level attributes on `handik_addresses` (building/parking enums, masked access codes, pet/hazard flags, `property_notes`) — powers the pre-visit briefing |
+| 1.6.6   | Migration_166          | Notification idempotency stamps: `handik_bookings.reminder_24h_sent_at` / `reminder_2h_sent_at` / `review_request_sent_at`, `handik_job_requests.nudge_1_sent_at` / `nudge_2_sent_at` |
 
 ### Key tables
 
@@ -394,6 +395,7 @@ DB version stored in `wp_options.handik_booking_app_db_version`. Migrations are 
 
 * `wp_cron` event `handik_booking_app_dispatch_project_email` → async project-form customer email so the customer's "You're all set" screen doesn't block on wp_mail.
 * `wp_cron` event `handik_booking_app_form_gc_abandoned` → daily cleanup of project schedules stuck in `SELECTING` / `DRAFT` for >7 days.
+* `wp_cron` event `handik_notifications_scan` (custom 15-min schedule, since 2.4.0) → `Notifications_Service::run_scheduled_notifications` — sends 24h/2h SMS reminders, post-visit review-request emails, and ready-not-booked nudges, each at-most-once via the migration-1.6.6 stamps. All behind per-feature toggles (off by default).
 * WordPress's built-in option-based locking for `Handik_Booking_App_Migrations` so parallel boots can't double-run migrations.
 
 ---

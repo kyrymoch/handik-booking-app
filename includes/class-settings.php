@@ -238,6 +238,32 @@ class Handik_Booking_App_Settings {
 			'owner_cancellation_body'           => self::default_owner_cancellation_body_text(),
 			'owner_reschedule_subject'          => 'Rescheduled — {{customer_name}}: {{old_booking_when}} → {{booking_when}}',
 			'owner_reschedule_body'             => self::default_owner_reschedule_body_text(),
+
+			// Sprint 8 — proactive reminders + review + nudge engine. ALL
+			// default OFF: nothing sends until the operator enables a toggle
+			// AND configures the prerequisites (a Twilio "from" number for
+			// SMS, a Google review URL for the review request). A recurring
+			// scanner sends at-most-once per booking/request (idempotency
+			// stamps in migration 1.6.6). Language: when a customer's
+			// `language` attribute is `ru`, the `*_ru` template variant is
+			// used if non-empty, otherwise the default (EN) template.
+			'twilio_sms_from'                   => '', // E.164 number OR Messaging Service SID (MG…)
+			'sms_reminders_enabled'             => 0,
+			'sms_reminder_24h_template'         => 'Hi {{customer_first_name}}, reminder: your visit with {{operator_name}} is tomorrow at {{booking_time}}. Reply here if anything changed.',
+			'sms_reminder_2h_template'          => 'Hi {{customer_first_name}}, {{operator_name}} will arrive around {{booking_time}} today. See you soon!',
+			'sms_reminder_24h_template_ru'      => '',
+			'sms_reminder_2h_template_ru'       => '',
+			'review_request_enabled'            => 0,
+			'review_request_url'                => '',
+			'review_request_subject'            => 'How did your visit go?',
+			'review_request_body'               => "Hi {{customer_first_name}},\n\nThanks for having {{operator_name}} out. If everything went well, a quick review would mean a lot:\n{{review_url}}\n\nThank you!",
+			'review_request_subject_ru'         => '',
+			'review_request_body_ru'            => '',
+			'nudge_enabled'                     => 0,
+			'nudge_subject'                     => 'Ready to pick a time?',
+			'nudge_body'                        => "Hi {{customer_first_name}},\n\nYou're all set to book — just pick a time that works:\n{{booking_url}}\n\nWe'll hold your details for you.",
+			'nudge_subject_ru'                  => '',
+			'nudge_body_ru'                     => '',
 		);
 	}
 
@@ -540,7 +566,34 @@ class Handik_Booking_App_Settings {
 				case 'owner_notification_enabled':
 				case 'customer_cancellation_enabled':
 				case 'customer_reschedule_enabled':
+				case 'sms_reminders_enabled':
+				case 'review_request_enabled':
+				case 'nudge_enabled':
 					$output[ $key ] = empty( $value ) ? 0 : 1;
+					break;
+				// Sprint 8 — reminder/review/nudge copy. SMS templates +
+				// email bodies are plain text (newlines preserved); the
+				// review URL is a URL; subjects + twilio_sms_from are
+				// single-line text.
+				case 'sms_reminder_24h_template':
+				case 'sms_reminder_2h_template':
+				case 'sms_reminder_24h_template_ru':
+				case 'sms_reminder_2h_template_ru':
+				case 'review_request_body':
+				case 'review_request_body_ru':
+				case 'nudge_body':
+				case 'nudge_body_ru':
+					$output[ $key ] = sanitize_textarea_field( (string) $value );
+					break;
+				case 'review_request_url':
+					$output[ $key ] = esc_url_raw( (string) $value );
+					break;
+				case 'twilio_sms_from':
+				case 'review_request_subject':
+				case 'review_request_subject_ru':
+				case 'nudge_subject':
+				case 'nudge_subject_ru':
+					$output[ $key ] = sanitize_text_field( (string) $value );
 					break;
 				case 'log_max_entries_info':
 				case 'log_max_entries_debug':

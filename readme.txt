@@ -3,7 +3,7 @@ Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.3.1
+Stable tag: 2.4.0
 License: Proprietary
 
 Single-page booking application with AI-assisted intake, multi-day project scheduling, and end-to-end Cal.com calendar sync.
@@ -81,6 +81,17 @@ Schema migration 1.6.1 adds `external_contact_id` for backfilling bookings made 
 Schema migration 1.6.0 adds `project_work_day_id` so multi-day project bookings show up in the unified admin Bookings list. Migrates automatically.
 
 == Changelog ==
+
+= 2.4.0 =
+* **Sprint 8 / Notifications — proactive SMS reminders, post-visit review request, ready-not-booked nudge.** A single background scanner (every 15 min) sends at-most-once per booking/request. **Everything ships OFF**: nothing sends until you flip a toggle AND fill the prerequisite (a Twilio "From" number for SMS, a review URL for the review email). Respects each customer's "Do not text" flag and language preference.
+* **Migration 1.6.6** — idempotency stamps so nothing ever double-sends: `handik_bookings.reminder_24h_sent_at` / `reminder_2h_sent_at` / `review_request_sent_at`, and `handik_job_requests.nudge_1_sent_at` / `nudge_2_sent_at`. Safe DEFAULT NULL, idempotent.
+* **SMS reminders (24h + 2h before the visit).** `Notifications_Service::send_sms()` posts to the Twilio Messages API using the existing Account SID + auth token; the new `twilio_sms_from` setting is the sender (an E.164 number, or a Messaging Service SID starting `MG`). The scanner sends the 24h reminder once we're inside 24h of the start (and more than 2h out, so a last-minute booking isn't double-texted), and the 2h reminder once inside 2h — each stamped independently. Recipients are gated to a **real contact** (id>0, so we can honour an opt-out), with `do_not_text = 0` and a phone. Cancelled/completed bookings are skipped. A "Send test SMS" button on the Notifications tab fires the 24h template with sample data to a typed number.
+* **Post-visit review request (email).** 24h after a completed visit, emails the customer the configured review URL (Google review link, etc.). Uses `updated_at` as the completion proxy + the `review_request_sent_at` stamp.
+* **Ready-not-booked nudge (email).** A main-SPA request that reached `ready_for_booking` with no booking gets a first nudge after ~6h idle and a second after ~48h, each stamped (`nudge_1_sent_at` / `nudge_2_sent_at`).
+* **Language switch.** When a customer's `language` attribute (Sprint 3) is Russian, the matching `*_ru` template variant is used if you've filled it; otherwise the English template. Applies to all SMS + email copy here.
+* **Settings → Customer notifications** gains a "Proactive reminders, review & nudge" section: master toggles, Twilio "From", and editable EN + optional RU templates for every message, plus the Send test SMS button. Placeholders: `{{customer_first_name}}`, `{{operator_name}}`, `{{booking_time}}`, `{{booking_date}}`, plus `{{review_url}}` / `{{booking_url}}` for the emails.
+* **Reliability.** The scanner is a self-healing recurring event (custom 15-min schedule, re-armed on `init` and by the existing DISABLE_WP_CRON heartbeat). Every scan + every row is wrapped so one failure can't abort the batch; a failed send rolls its stamp back to NULL so the next scan retries. Errors land in Logs.
+* No customer-facing change unless the operator enables a toggle.
 
 = 2.3.1 =
 * **Sprint 7 / Customer unification — People → Customers, with stats + activity timeline.** Finalizes the customer-centric model. The detail page is now a true Customer 360 view powered end-to-end by the Sprint 1 read-model. No DB change, no migration, no breaking change.
