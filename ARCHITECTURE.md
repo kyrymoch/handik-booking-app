@@ -61,7 +61,7 @@ The plugin's lifecycle controller is `Handik_Booking_App_Plugin` (`includes/clas
 Boot order:
 1. Loader (autoload of all `class-*.php`)
 2. Settings + Logger
-3. CRM services (contacts, addresses, job_requests, bookings, messages)
+3. CRM services (contacts, addresses, job_requests, bookings, **customer_view**, messages)
 4. Cascade-delete service (depends on the four CRM services above)
 5. Auth + routing
 6. Cal Service (legacy) + Photo analysis + ChatKit
@@ -364,6 +364,19 @@ DB version stored in `wp_options.handik_booking_app_db_version`. Migrations are 
 `handik_project_work_days` — N rows per project, each with its own `cal_booking_uid` and slot times.
 
 `handik_messages` — chat transcript (since 1.3.0). One row per user/assistant message. Can be backfilled from OpenAI ChatKit thread storage via the admin "Load chat from OpenAI" button.
+
+---
+
+## 13. Customer 360 read-model (since 2.1.31.0)
+
+`Handik_Booking_App_Customer_View_Service` (`includes/services/class-customer-view-service.php`) is the single source of truth for "resolve the customer + address for X". It composes the four CRM services behind one read-model with a per-request instance cache.
+
+* `for_booking( $booking )` — given any `handik_bookings` row, resolves `contact` + `address` + `source` (`main` / `direct` / `project` / `external` / `external_unmatched`) and the source-specific rows. Critically, when the booking source has no `address_id` (external Cal bookings always), it falls back to the contact's primary address from `handik_addresses` — so external bookings stop rendering "No address".
+* `get( $contact_id )` — contact + addresses + primary address + requests + baseline stats.
+* `search( $query, $limit )` — name/phone/email autocomplete shape for admin pickers.
+* `profile_url( $contact_id )` (static) — Customer-profile deep-link.
+
+`Admin_Helpers::customer_link( $contact, $label = null )` renders a customer name as a profile link (plain text for external/synthesized contacts). Used in Bookings detail + Additional Forms lists. This is the foundation for the customer-unification roadmap (Sprints 2+).
 
 `handik_login_tokens` — magic-link one-time-codes.
 

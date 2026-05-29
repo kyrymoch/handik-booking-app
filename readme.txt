@@ -3,7 +3,7 @@ Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.1.30.1
+Stable tag: 2.1.31.0
 License: Proprietary
 
 Single-page booking application with AI-assisted intake, multi-day project scheduling, and end-to-end Cal.com calendar sync.
@@ -81,6 +81,19 @@ Schema migration 1.6.1 adds `external_contact_id` for backfilling bookings made 
 Schema migration 1.6.0 adds `project_work_day_id` so multi-day project bookings show up in the unified admin Bookings list. Migrates automatically.
 
 == Changelog ==
+
+= 2.1.31.0 =
+* **Sprint 1 / Customer unification — Customer 360 read-model + cross-links.** First sprint of the customer-unification roadmap. Introduces a single source of truth for "resolve the customer + address for any booking" and makes customer names clickable across the admin. No DB change, no migration, no breaking change.
+* **New service** `Handik_Booking_App_Customer_View_Service`. Composes the existing CRM services (contacts / addresses / job_requests / bookings) behind one read-model with a per-request instance cache:
+  * `for_booking( $booking )` — resolves contact + address + source marker (`main` / `direct` / `project` / `external` / `external_unmatched`) plus the source-specific rows, for any of the four booking origins. Centralizes logic that used to be duplicated inline in the Bookings detail renderer.
+  * `get( $contact_id )` — contact + addresses + primary address + requests + baseline stats (used end-to-end by the later Customers sprint).
+  * `search( $query, $limit )` — name / phone / email autocomplete shape for admin pickers (consumed by the Sprint 2 pre-approval picker).
+  * `profile_url( $contact_id )` — canonical Customer-profile deep-link.
+* **P1 fix — external Cal bookings now show the customer's address.** External bookings carry `external_contact_id` but no `address_id`, so the Bookings detail page always rendered "No address" even though the linked contact had a primary address (People showed it fine). `for_booking()` now falls back to the contact's primary address from `handik_addresses` when the booking source has none. (Roadmap "Боль 1".)
+* **Customer names are links across the admin.** New `Admin_Helpers::customer_link( $contact, $label = null )` renders the name as a link to the Customer profile (falls back to plain text for external/synthesized contacts with no real id). Wired into: Bookings detail "At a glance" Client cell, Additional Forms → Direct Submissions list, Additional Forms → Project Schedules list + project detail. (Roadmap "Боль 2".)
+* **Refactor** `Admin_Bookings::render_detail()` to resolve contact + address + source rows through `Customer_View_Service::for_booking()` instead of its own inline per-source logic. Behavior is identical for main / direct / project bookings; external bookings gain the address fallback above.
+* Wiring: the service is constructed once in the plugin container and threaded into the Admin page renderers (with a lazy fallback build so legacy construction keeps working). Dashboard next-visit rows already link to the booking detail (the row itself is the link), so no nested link was added there.
+* No DB change. No new public REST endpoint. No customer-facing change.
 
 = 2.1.30.1 =
 * **P0 fix — Additional Forms phone OTP verification broken on 2.1.30.0.** Owner-reported: customers could not advance past the 6-digit OTP step; the JS console showed `ReferenceError: config is not defined`. Two new methods added in 2.1.30.0 (`approvalWarningMarkup`, `checkPresetApproval`) referenced a bare `config` identifier — but `booking-forms.js` exposes its config as an instance property (`this.config`, with shortcuts `this.preset` / `this.i18n`), not as a module-scope `const`. The bare reference was an undefined-variable crash on the first frame after `phone-verify/check` resolved, before the SPA could advance to `details`. Replaced with `this.preset.preset_slug` and `this.config.mainBookingUrl`. The new step + check function are now exercised on every OTP success path.

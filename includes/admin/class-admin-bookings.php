@@ -36,8 +36,10 @@ class Handik_Booking_App_Admin_Bookings {
 	protected $messages;
 	/** @var Handik_Booking_App_Booking_Presets_Service|null */
 	protected $booking_presets;
+	/** @var Handik_Booking_App_Customer_View_Service|null */
+	protected $customer_view;
 
-	public function __construct( $bookings, $job_requests, $contacts, $addresses, $catalog, $logger, $messages, $booking_presets = null ) {
+	public function __construct( $bookings, $job_requests, $contacts, $addresses, $catalog, $logger, $messages, $booking_presets = null, $customer_view = null ) {
 		$this->bookings        = $bookings;
 		$this->job_requests    = $job_requests;
 		$this->contacts        = $contacts;
@@ -48,6 +50,27 @@ class Handik_Booking_App_Admin_Bookings {
 		// Sprint 13 — used by the Add Booking page to populate the
 		// preset picker with currently-enabled direct presets.
 		$this->booking_presets = $booking_presets;
+		// Sprint 1 (customer unification) — shared Customer 360 read-model.
+		$this->customer_view   = $customer_view;
+	}
+
+	/**
+	 * Lazily resolve the Customer 360 read-model. Builds a fallback from
+	 * the CRM services this page already holds if DI didn't supply one.
+	 *
+	 * @return Handik_Booking_App_Customer_View_Service
+	 */
+	protected function customer_view() {
+		if ( ! $this->customer_view ) {
+			$this->customer_view = new Handik_Booking_App_Customer_View_Service(
+				$this->contacts,
+				$this->addresses,
+				$this->job_requests,
+				$this->bookings,
+				$this->logger
+			);
+		}
+		return $this->customer_view;
 	}
 
 	public function render() {
@@ -1146,7 +1169,6 @@ class Handik_Booking_App_Admin_Bookings {
 	}
 
 	protected function render_detail( $booking_id ) {
-		global $wpdb;
 		$booking = $this->bookings ? $this->bookings->get( $booking_id ) : null;
 		if ( ! $booking ) {
 			Handik_Booking_App_Admin_Helpers::page_start( __( 'Booking', 'handik-booking-app' ) );
@@ -1155,79 +1177,20 @@ class Handik_Booking_App_Admin_Bookings {
 			return;
 		}
 
-		// Sprint 13.5 — direct bookings have no job_request. Resolve
-		// contact + address from the linked direct_booking_requests row
-		// instead, so the detail page renders something useful.
-		// 1.6.0 — same shape for project work-day bookings (third
-		// source): day_id → schedule_id → contact/address.
-		$request          = ! empty( $booking['job_request_id'] ) && $this->job_requests ? $this->job_requests->get( (int) $booking['job_request_id'] ) : null;
-		$direct           = null;
-		$project_day      = null;
-		$project_schedule = null;
-		if ( ! $request && ! empty( $booking['direct_request_id'] ) ) {
-			$direct = $wpdb->get_row( $wpdb->prepare(
-				'SELECT * FROM ' . Handik_Booking_App_DB::table( 'direct_booking_requests' ) . ' WHERE id = %d LIMIT 1',
-				(int) $booking['direct_request_id']
-			), ARRAY_A );
-		}
-		if ( ! $request && ! $direct && ! empty( $booking['project_work_day_id'] ) ) {
-			$project_day = $wpdb->get_row( $wpdb->prepare(
-				'SELECT * FROM ' . Handik_Booking_App_DB::table( 'project_work_days' ) . ' WHERE id = %d LIMIT 1',
-				(int) $booking['project_work_day_id']
-			), ARRAY_A );
-			if ( $project_day && ! empty( $project_day['scheduling_request_id'] ) ) {
-				$project_schedule = $wpdb->get_row( $wpdb->prepare(
-					'SELECT * FROM ' . Handik_Booking_App_DB::table( 'project_scheduling_requests' ) . ' WHERE id = %d LIMIT 1',
-					(int) $project_day['scheduling_request_id']
-				), ARRAY_A );
-			}
-		}
-		$contact_id = $request
-			? (int) ( $request['contact_id'] ?? 0 )
-			: ( $direct
-				? (int) ( $direct['contact_id'] ?? 0 )
-				: ( $project_schedule
-					? (int) ( $project_schedule['contact_id'] ?? 0 )
-					// 1.6.1 — fourth source: external Cal.com booking with linked contact.
-					: (int) ( $booking['external_contact_id'] ?? 0 ) ) );
-		$address_id = $request
-			? (int) ( $request['address_id'] ?? 0 )
-			: ( $direct
-				? (int) ( $direct['address_id'] ?? 0 )
-				: ( $project_schedule ? (int) ( $project_schedule['address_id'] ?? 0 ) : 0 ) );
-		$contact = ( $contact_id && $this->contacts ) ? $this->contacts->get( $contact_id ) : null;
-		$address = ( $address_id && $this->addresses ) ? $this->addresses->get( $address_id ) : null;
-		// 1.6.1 — external Cal booking without a linked contact: pull
-		// attendee from the stashed webhook payload so the sticky
-		// action bar / detail page show something useful in the
-		// "Client" slot. External bookings never carry photos.
-		if ( ! $request && ! $direct && ! $project_schedule && ! $contact && ! empty( $booking['raw_webhook_json'] ) ) {
-			$decoded_w = json_decode( (string) $booking['raw_webhook_json'], true );
-			if ( is_array( $decoded_w ) ) {
-				$external_name  = '';
-				$external_email = '';
-				$external_phone = '';
-				if ( isset( $decoded_w['attendees'][0] ) && is_array( $decoded_w['attendees'][0] ) ) {
-					$external_name  = (string) ( $decoded_w['attendees'][0]['name']  ?? '' );
-					$external_email = (string) ( $decoded_w['attendees'][0]['email'] ?? '' );
-				}
-				if ( '' === $external_name && ! empty( $decoded_w['responses']['name']['value'] ) ) {
-					$external_name = (string) $decoded_w['responses']['name']['value'];
-				}
-				if ( '' === $external_email && ! empty( $decoded_w['responses']['email']['value'] ) ) {
-					$external_email = (string) $decoded_w['responses']['email']['value'];
-				}
-				if ( $external_name || $external_email ) {
-					$contact = array(
-						'id'         => 0,
-						'full_name'  => $external_name ?: $external_email,
-						'email'      => $external_email,
-						'phone'      => $external_phone,
-						'_external'  => true, // marker so downstream renderers know this isn't a real contact row
-					);
-				}
-			}
-		}
+		// Sprint 1 (customer unification) — resolve contact + address + the
+		// source-specific rows through the shared Customer 360 read-model.
+		// This replaces the per-source inline resolution that used to live
+		// here and, critically, adds the primary-address fallback so an
+		// external Cal booking (external_contact_id, no address_id) now
+		// shows the contact's address instead of "No address". (Боль 1.)
+		$resolved         = $this->customer_view()->for_booking( $booking );
+		$request          = $resolved['request'];
+		$direct           = $resolved['direct'];
+		$project_day      = $resolved['project_day'];
+		$project_schedule = $resolved['project_schedule'];
+		$contact_id       = $resolved['contact_id'];
+		$contact          = $resolved['contact'];
+		$address          = $resolved['address'];
 		$photos  = is_array( $request['photos'] ?? null ) ? $request['photos'] : array(); // direct/project/external bookings have no photos
 		$full_address = Handik_Booking_App_Admin_Helpers::full_request_address( $request, $address );
 
@@ -1598,7 +1561,8 @@ class Handik_Booking_App_Admin_Bookings {
 				</div>
 				<div class="handik-admin-glance__cell">
 					<span class="handik-admin-glance__label"><?php esc_html_e( 'Client', 'handik-booking-app' ); ?></span>
-					<strong><?php echo esc_html( $client_name ); ?></strong>
+					<?php // Sprint 1 — link the name to the Customer profile (Боль 2). External/synthesized contacts (id=0) render as plain text. ?>
+					<strong><?php echo Handik_Booking_App_Admin_Helpers::customer_link( $contact, $client_name ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></strong>
 					<?php if ( $client_phone ) : ?>
 						<span><a href="<?php echo esc_url( Handik_Booking_App_Admin_Helpers::tel_url( $client_phone ) ); ?>"><?php echo esc_html( $client_phone ); ?></a> <button type="button" class="handik-admin-copy-btn" data-handik-copy="<?php echo esc_attr( $client_phone ); ?>" aria-label="<?php esc_attr_e( 'Copy phone', 'handik-booking-app' ); ?>">⧉</button></span>
 					<?php endif; ?>

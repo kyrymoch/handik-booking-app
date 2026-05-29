@@ -33,8 +33,10 @@ class Handik_Booking_App_Admin_Dashboard {
 	protected $logger;
 	/** @var Handik_Booking_App_Changelog_Service */
 	protected $changelog;
+	/** @var Handik_Booking_App_Customer_View_Service|null */
+	protected $customer_view;
 
-	public function __construct( $bookings, $job_requests, $contacts, $addresses, $catalog, $logger, $changelog ) {
+	public function __construct( $bookings, $job_requests, $contacts, $addresses, $catalog, $logger, $changelog, $customer_view = null ) {
 		$this->bookings     = $bookings;
 		$this->job_requests = $job_requests;
 		$this->contacts     = $contacts;
@@ -42,6 +44,8 @@ class Handik_Booking_App_Admin_Dashboard {
 		$this->catalog      = $catalog;
 		$this->logger       = $logger;
 		$this->changelog    = $changelog;
+		// Sprint 1 (customer unification) — shared Customer 360 read-model.
+		$this->customer_view = $customer_view;
 	}
 
 	public function render() {

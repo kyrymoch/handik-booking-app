@@ -41,6 +41,8 @@ class Handik_Booking_App_Admin {
 	protected $page_additional_forms;
 	/** @var Handik_Booking_App_Booking_Presets_Service|null */
 	protected $booking_presets;
+	/** @var Handik_Booking_App_Customer_View_Service|null */
+	protected $customer_view;
 
 	// Page renderers (lazy-instantiated in render_*).
 	/** @var Handik_Booking_App_Admin_Dashboard|null */
@@ -58,7 +60,7 @@ class Handik_Booking_App_Admin {
 	/** @var Handik_Booking_App_Admin_Logs|null */
 	protected $page_logs;
 
-	public function __construct( $settings, $assets, $contacts, $addresses, $job_requests, $bookings, $logger, $changelog, $service_catalog, $messages = null, $additional_forms = null, $booking_presets = null ) {
+	public function __construct( $settings, $assets, $contacts, $addresses, $job_requests, $bookings, $logger, $changelog, $service_catalog, $messages = null, $additional_forms = null, $booking_presets = null, $customer_view = null ) {
 		$this->settings        = $settings;
 		$this->assets          = $assets;
 		$this->contacts        = $contacts;
@@ -74,6 +76,9 @@ class Handik_Booking_App_Admin {
 		// Booking page can populate the preset picker with currently-
 		// enabled direct-cal-booking presets.
 		$this->booking_presets = $booking_presets;
+		// Sprint 1 (customer unification) — shared Customer 360 read-model,
+		// threaded into the page renderers below.
+		$this->customer_view   = $customer_view;
 
 		add_action( 'admin_menu', array( $this, 'register_menu' ) );
 		add_action( 'admin_init', array( $this, 'maybe_save_settings' ) );
@@ -485,9 +490,30 @@ class Handik_Booking_App_Admin {
 			$this->addresses,
 			$this->service_catalog,
 			$this->logger,
-			$this->changelog
+			$this->changelog,
+			$this->customer_view()
 		) );
 		$page->render();
+	}
+
+	/**
+	 * Sprint 1 — lazily resolve the shared Customer 360 read-model. Uses the
+	 * DI-provided instance when present; otherwise builds one from the CRM
+	 * services this class already holds (keeps legacy construction working).
+	 *
+	 * @return Handik_Booking_App_Customer_View_Service
+	 */
+	protected function customer_view() {
+		if ( ! $this->customer_view ) {
+			$this->customer_view = new Handik_Booking_App_Customer_View_Service(
+				$this->contacts,
+				$this->addresses,
+				$this->job_requests,
+				$this->bookings,
+				$this->logger
+			);
+		}
+		return $this->customer_view;
 	}
 
 	public function render_bookings() {
@@ -499,7 +525,8 @@ class Handik_Booking_App_Admin {
 			$this->service_catalog,
 			$this->logger,
 			$this->messages,
-			$this->booking_presets
+			$this->booking_presets,
+			$this->customer_view()
 		) );
 		$page->render();
 	}

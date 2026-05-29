@@ -390,6 +390,35 @@ class Handik_Booking_App_Admin_Helpers {
 		return '<span class="handik-admin-pill handik-admin-pill--' . esc_attr( $tone ) . '">' . esc_html( $label ) . '</span>';
 	}
 
+	/**
+	 * Sprint 1 (customer unification) — render a customer name as a link to
+	 * their Customer profile. Closes "Боль 2" (names everywhere should be
+	 * links). Falls back to plain escaped text when the contact has no real
+	 * id (external Cal bookings synthesize a display-only contact with
+	 * id=0 / `_external` marker — there's no profile to link to).
+	 *
+	 * @param array<string,mixed>|null $contact Contact row (or synthesized).
+	 * @param string|null              $label   Override label; defaults to full_name.
+	 * @return string Safe HTML.
+	 */
+	public static function customer_link( $contact, $label = null ) {
+		$name = null !== $label
+			? (string) $label
+			: ( is_array( $contact ) ? (string) ( $contact['full_name'] ?? '' ) : '' );
+		if ( '' === trim( $name ) ) {
+			$name = __( 'Unknown', 'handik-booking-app' );
+		}
+		$contact_id = is_array( $contact ) ? (int) ( $contact['id'] ?? 0 ) : 0;
+		$is_external = is_array( $contact ) && ! empty( $contact['_external'] );
+		if ( $contact_id <= 0 || $is_external ) {
+			return esc_html( $name );
+		}
+		$url = class_exists( 'Handik_Booking_App_Customer_View_Service' )
+			? Handik_Booking_App_Customer_View_Service::profile_url( $contact_id )
+			: self::admin_url_for( 'handik-booking-app-crm', array( 'contact_id' => $contact_id ) );
+		return '<a href="' . esc_url( $url ) . '">' . esc_html( $name ) . '</a>';
+	}
+
 	public static function chip_markup( $href, $label, $count, $tone = 'muted' ) {
 		$count = (int) $count;
 		$active = $count > 0;

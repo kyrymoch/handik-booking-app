@@ -45,14 +45,20 @@ class Handik_Booking_App_Admin_Additional_Forms {
 	protected $addresses;
 	/** @var Handik_Booking_App_Form_Approvals_Service|null */
 	protected $approvals;
+	/** @var Handik_Booking_App_Customer_View_Service|null */
+	protected $customer_view;
 
-	public function __construct( $presets, $direct, $project, $contacts, $addresses, $approvals = null ) {
+	public function __construct( $presets, $direct, $project, $contacts, $addresses, $approvals = null, $customer_view = null ) {
 		$this->presets   = $presets;
 		$this->direct    = $direct;
 		$this->project   = $project;
 		$this->contacts  = $contacts;
 		$this->addresses = $addresses;
 		$this->approvals = $approvals;
+		// Sprint 1 (customer unification) — shared Customer 360 read-model
+		// (currently used only for the profile-link helper, which is static;
+		// kept for forward use as these lists migrate into Bookings/Requests).
+		$this->customer_view = $customer_view;
 
 		add_action( 'admin_init', array( $this, 'maybe_save_preset' ) );
 		add_action( 'admin_init', array( $this, 'maybe_cancel_day' ) );
@@ -667,7 +673,8 @@ class Handik_Booking_App_Admin_Additional_Forms {
 			}
 			echo '<tr>';
 			echo '<td>' . esc_html( Handik_Booking_App_Admin_Helpers::format_short( (string) $row['created_at'] ) ) . '</td>';
-			echo '<td>' . esc_html( (string) ( $contact['full_name'] ?? '—' ) ) . '</td>';
+			// Sprint 1 — link the client name to their Customer profile (Боль 2).
+			echo '<td>' . ( $contact ? Handik_Booking_App_Admin_Helpers::customer_link( $contact ) : '—' ) . '</td>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
 			echo '<td>' . esc_html( (string) ( $contact['phone'] ?? '—' ) ) . '</td>';
 			echo '<td>' . esc_html( $address_text ?: '—' ) . '</td>';
 			echo '<td><code>' . esc_html( (string) $row['preset_slug'] ) . '</code></td>';
@@ -710,7 +717,8 @@ class Handik_Booking_App_Admin_Additional_Forms {
 			);
 			echo '<tr>';
 			echo '<td>' . esc_html( Handik_Booking_App_Admin_Helpers::format_short( (string) $row['created_at'] ) ) . '</td>';
-			echo '<td>' . esc_html( (string) ( $contact['full_name'] ?? '—' ) ) . '</td>';
+			// Sprint 1 — link the client name to their Customer profile (Боль 2).
+			echo '<td>' . ( $contact ? Handik_Booking_App_Admin_Helpers::customer_link( $contact ) : '—' ) . '</td>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
 			echo '<td><code>' . esc_html( (string) $row['preset_slug'] ) . '</code></td>';
 			echo '<td>' . esc_html( (string) $row['required_days'] ) . '</td>';
 			echo '<td>' . esc_html( (string) $row['status'] ) . '</td>';
@@ -741,7 +749,8 @@ class Handik_Booking_App_Admin_Additional_Forms {
 
 		echo '<table class="form-table"><tbody>';
 		echo '<tr><th>' . esc_html__( 'Status', 'handik-booking-app' ) . '</th><td>' . esc_html( (string) $schedule['status'] ) . '</td></tr>';
-		echo '<tr><th>' . esc_html__( 'Client', 'handik-booking-app' ) . '</th><td>' . esc_html( (string) ( $contact['full_name'] ?? '—' ) ) . '<br>' . esc_html( (string) ( $contact['phone'] ?? '' ) ) . ' · ' . esc_html( (string) ( $contact['email'] ?? '' ) ) . '</td></tr>';
+		// Sprint 1 — link the client name to their Customer profile (Боль 2).
+		echo '<tr><th>' . esc_html__( 'Client', 'handik-booking-app' ) . '</th><td>' . ( $contact ? Handik_Booking_App_Admin_Helpers::customer_link( $contact ) : '—' ) . '<br>' . esc_html( (string) ( $contact['phone'] ?? '' ) ) . ' · ' . esc_html( (string) ( $contact['email'] ?? '' ) ) . '</td></tr>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
 		echo '<tr><th>' . esc_html__( 'Preset', 'handik-booking-app' ) . '</th><td><code>' . esc_html( (string) $schedule['preset_slug'] ) . '</code></td></tr>';
 		echo '<tr><th>' . esc_html__( 'Days requested', 'handik-booking-app' ) . '</th><td>' . esc_html( (string) $schedule['required_days'] ) . ' × ' . esc_html( (string) $schedule['work_day_duration_minutes'] ) . ' min</td></tr>';
 		echo '<tr><th>' . esc_html__( 'Public link', 'handik-booking-app' ) . '</th><td>';

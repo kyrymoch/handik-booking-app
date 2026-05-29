@@ -16,6 +16,7 @@ class Handik_Booking_App_Plugin {
 	public $addresses;
 	public $job_requests;
 	public $bookings;
+	public $customer_view;
 	public $messages;
 	public $cascade_delete;
 	public $auth;
@@ -68,6 +69,11 @@ class Handik_Booking_App_Plugin {
 		$this->addresses      = new Handik_Booking_App_Addresses_Service();
 		$this->job_requests   = new Handik_Booking_App_Job_Requests_Service( $this->logger );
 		$this->bookings       = new Handik_Booking_App_Bookings_Service( $this->logger, $this->job_requests, $this->contacts );
+		// Sprint 1 (customer unification) — Customer 360 read-model. Single
+		// source of truth for resolving a contact + address (with primary-
+		// address fallback) for any booking, plus customer search for admin
+		// pickers. Depends only on the four CRM services above.
+		$this->customer_view  = new Handik_Booking_App_Customer_View_Service( $this->contacts, $this->addresses, $this->job_requests, $this->bookings, $this->logger );
 		$this->messages       = new Handik_Booking_App_Messages_Service( $this->logger );
 		// Sprint 12 — cascading hard-delete coordinator. Wires every
 		// data-layer service so the REST handlers can call one method
@@ -102,7 +108,7 @@ class Handik_Booking_App_Plugin {
 		$this->project_schedule = new Handik_Booking_App_Project_Schedule_Service( $this->booking_presets, $this->cal_api, $this->contacts, $this->addresses, $this->logger, $this->bookings, $this->form_approvals );
 		$this->forms_rest_api   = new Handik_Booking_App_Forms_Rest_Api( $this->booking_presets, $this->direct_booking, $this->project_schedule, $this->logger, $this->form_approvals, $this->auth );
 		$this->forms_router     = new Handik_Booking_App_Forms_Router( $this->booking_presets, $this->project_schedule, $this->settings, $this->appearance );
-		$this->admin_additional_forms = new Handik_Booking_App_Admin_Additional_Forms( $this->booking_presets, $this->direct_booking, $this->project_schedule, $this->contacts, $this->addresses, $this->form_approvals );
+		$this->admin_additional_forms = new Handik_Booking_App_Admin_Additional_Forms( $this->booking_presets, $this->direct_booking, $this->project_schedule, $this->contacts, $this->addresses, $this->form_approvals, $this->customer_view );
 
 		$this->webhook        = new Handik_Booking_App_Webhook_Service( $this->settings, $this->logger, $this->job_requests, $this->bookings, $this->direct_booking, $this->project_schedule );
 
@@ -121,7 +127,7 @@ class Handik_Booking_App_Plugin {
 		$this->frontend_app   = new Handik_Booking_App_Frontend_App( $this->assets, $this->appearance );
 		$this->shortcode      = new Handik_Booking_App_Shortcode( $this->frontend_app );
 		$this->rest_api       = new Handik_Booking_App_REST_API( $this->app_controller, $this->auth, $this->chatkit, $this->webhook, $this->messages, $this->bookings, $this->contacts, $this->addresses, $this->settings, $this->logger, $this->job_requests, $this->service_catalog, $this->cascade_delete, $this->direct_booking, $this->booking_presets, $this->cal_api );
-		$this->admin          = new Handik_Booking_App_Admin( $this->settings, $this->assets, $this->contacts, $this->addresses, $this->job_requests, $this->bookings, $this->logger, $this->changelog, $this->service_catalog, $this->messages, $this->admin_additional_forms, $this->booking_presets );
+		$this->admin          = new Handik_Booking_App_Admin( $this->settings, $this->assets, $this->contacts, $this->addresses, $this->job_requests, $this->bookings, $this->logger, $this->changelog, $this->service_catalog, $this->messages, $this->admin_additional_forms, $this->booking_presets, $this->customer_view );
 		$this->widget_registry = new Handik_Booking_App_Widget_Registry();
 
 		add_action( 'template_redirect', array( $this, 'maybe_process_magic_link' ) );
