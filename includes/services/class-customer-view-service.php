@@ -229,23 +229,138 @@ class Handik_Booking_App_Customer_View_Service {
 			$primary_address = $addresses[0];
 		}
 
+		$requests = is_array( $requests ) ? $requests : array();
+
+		// Sprint 7 — resolve the contact's bookings (main-SPA flow) keyed by
+		// request id, then derive richer stats + a chronological timeline.
+		$bookings_by_request = $this->bookings_for_requests( $requests );
+
+		$total_visits     = 0;
+		$completed_visits = 0;
+		$revenue_high     = 0.0;
+		$timestamps       = array();
+		foreach ( $requests as $req ) {
+			$ts = (string) ( $req['created_at'] ?? '' );
+			if ( '' !== $ts ) {
+				$timestamps[] = $ts;
+			}
+			$rid = (int) ( $req['id'] ?? 0 );
+			$bk  = $rid > 0 && isset( $bookings_by_request[ $rid ] ) ? $bookings_by_request[ $rid ] : null;
+			if ( ! $bk ) {
+				continue;
+			}
+			++$total_visits;
+			$status = $this->bookings ? $this->bookings->effective_status( $bk ) : (string) ( $bk['status'] ?? '' );
+			$bts    = (string) ( $bk['start_time'] ?? ( $bk['created_at'] ?? '' ) );
+			if ( '' !== $bts ) {
+				$timestamps[] = $bts;
+			}
+			if ( 'completed' === $status ) {
+				++$completed_visits;
+				$state         = ! empty( $req['app_state'] ) && is_array( $req['app_state'] ) ? $req['app_state'] : array();
+				$revenue_high += (float) ( $state['total_estimate_high'] ?? 0 );
+			}
+		}
+
+		sort( $timestamps );
+		$first_seen = $timestamps ? reset( $timestamps ) : '';
+		$last_seen_ts = (int) ( $counts['last_seen'] ?? 0 );
+
 		$out = array(
 			'contact'         => $contact,
 			'addresses'       => is_array( $addresses ) ? $addresses : array(),
 			'primary_address' => $primary_address,
-			'requests'        => is_array( $requests ) ? $requests : array(),
+			'requests'        => $requests,
+			'bookings'        => $bookings_by_request,
+			'timeline'        => $this->build_timeline( $requests, $bookings_by_request ),
 			'stats'           => array(
-				'requests_count' => (int) ( $counts['requests'] ?? 0 ),
-				'bookings_count' => (int) ( $counts['bookings'] ?? 0 ),
-				'addresses_count' => (int) ( $counts['addresses'] ?? count( (array) $addresses ) ),
-				'last_seen'      => (int) ( $counts['last_seen'] ?? 0 ),
-				'is_returning'   => (int) ( $counts['bookings'] ?? 0 ) > 0,
-				'is_spam'        => ! empty( $contact['is_spam'] ),
+				'requests_count'    => (int) ( $counts['requests'] ?? 0 ),
+				'bookings_count'    => (int) ( $counts['bookings'] ?? 0 ),
+				'addresses_count'   => (int) ( $counts['addresses'] ?? count( (array) $addresses ) ),
+				'total_visits'      => $total_visits,
+				'completed_visits'  => $completed_visits,
+				'total_revenue_high' => $revenue_high,
+				'first_seen'        => $first_seen,
+				'last_seen'         => $last_seen_ts,
+				'is_returning'      => (int) ( $counts['bookings'] ?? 0 ) > 0,
+				'is_spam'           => ! empty( $contact['is_spam'] ),
 			),
 		);
 
 		$this->cache_get[ $contact_id ] = $out;
 		return $out;
+	}
+
+	/**
+	 * Resolve bookings for a list of request rows, keyed by request id.
+	 *
+	 * @param array<int, array<string,mixed>> $requests Request rows.
+	 * @return array<int, array<string,mixed>>
+	 */
+	protected function bookings_for_requests( array $requests ) {
+		if ( empty( $requests ) || ! $this->bookings ) {
+			return array();
+		}
+		$ids = array();
+		foreach ( $requests as $r ) {
+			$rid = (int) ( $r['id'] ?? 0 );
+			if ( $rid > 0 ) {
+				$ids[] = $rid;
+			}
+		}
+		if ( method_exists( $this->bookings, 'find_latest_for_requests' ) ) {
+			return $this->bookings->find_latest_for_requests( $ids );
+		}
+		$out = array();
+		foreach ( $ids as $rid ) {
+			$b = method_exists( $this->bookings, 'find_latest_for_request' ) ? $this->bookings->find_latest_for_request( $rid ) : null;
+			if ( $b ) {
+				$out[ $rid ] = $b;
+			}
+		}
+		return $out;
+	}
+
+	/**
+	 * Build a chronological (newest-first) timeline merging requests +
+	 * their bookings. Each entry: ts / kind / label / status.
+	 *
+	 * @param array<int, array<string,mixed>> $requests Request rows.
+	 * @param array<int, array<string,mixed>> $bookings Bookings keyed by request id.
+	 * @return array<int, array<string,mixed>>
+	 */
+	protected function build_timeline( array $requests, array $bookings ) {
+		$events = array();
+		foreach ( $requests as $req ) {
+			$rid = (int) ( $req['id'] ?? 0 );
+			$created = (string) ( $req['created_at'] ?? '' );
+			if ( '' !== $created ) {
+				$desc = trim( (string) ( $req['short_description'] ?? '' ) );
+				$events[] = array(
+					'ts'     => $created,
+					'kind'   => 'request',
+					'label'  => '' !== $desc ? $desc : __( 'Submitted a request', 'handik-booking-app' ),
+					'status' => (string) ( $req['status'] ?? '' ),
+				);
+			}
+			$bk = $rid > 0 && isset( $bookings[ $rid ] ) ? $bookings[ $rid ] : null;
+			if ( $bk ) {
+				$bts    = (string) ( $bk['start_time'] ?? ( $bk['created_at'] ?? '' ) );
+				$status = $this->bookings ? $this->bookings->effective_status( $bk ) : (string) ( $bk['status'] ?? '' );
+				if ( '' !== $bts ) {
+					$events[] = array(
+						'ts'     => $bts,
+						'kind'   => 'booking',
+						'label'  => __( 'Visit', 'handik-booking-app' ),
+						'status' => $status,
+					);
+				}
+			}
+		}
+		usort( $events, static function ( $a, $b ) {
+			return strcmp( (string) $b['ts'], (string) $a['ts'] );
+		} );
+		return $events;
 	}
 
 	/**

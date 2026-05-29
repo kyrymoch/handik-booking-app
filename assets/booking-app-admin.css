@@ -215,6 +215,40 @@
 	box-shadow: inset 3px 0 0 #f59e0b;
 }
 
+/* Sprint 7 — Customer detail: stats strip + activity timeline. */
+.handik-admin-cust-stats__grid {
+	display: grid;
+	gap: 12px;
+	grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+}
+.handik-admin-cust-stats__cell {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	padding: 10px 12px;
+	background: #f6f7f7;
+	border-radius: 8px;
+}
+.handik-admin-cust-stats__label {
+	font-size: 11px;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	color: #646970;
+}
+.handik-admin-cust-stats__value { font-size: 18px; }
+
+.handik-admin-timeline { margin: 0; }
+.handik-admin-timeline__item {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 6px 0;
+	border-bottom: 1px solid #f0f0f1;
+	font-size: 13px;
+}
+.handik-admin-timeline__when { color: #646970; min-width: 120px; }
+.handik-admin-timeline__label { flex: 1; }
+
 .handik-admin-field {
 	display: flex;
 	flex-direction: column;

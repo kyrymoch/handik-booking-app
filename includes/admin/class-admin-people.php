@@ -24,8 +24,10 @@ class Handik_Booking_App_Admin_People {
 	protected $messages;
 	/** @var Handik_Booking_App_Logger */
 	protected $logger;
+	/** @var Handik_Booking_App_Customer_View_Service|null */
+	protected $customer_view;
 
-	public function __construct( $contacts, $addresses, $job_requests, $bookings, $catalog, $messages, $logger ) {
+	public function __construct( $contacts, $addresses, $job_requests, $bookings, $catalog, $messages, $logger, $customer_view = null ) {
 		$this->contacts     = $contacts;
 		$this->addresses    = $addresses;
 		$this->job_requests = $job_requests;
@@ -33,6 +35,27 @@ class Handik_Booking_App_Admin_People {
 		$this->catalog      = $catalog;
 		$this->messages     = $messages;
 		$this->logger       = $logger;
+		// Sprint 7 — Customer 360 read-model powers the detail stats + timeline.
+		$this->customer_view = $customer_view;
+	}
+
+	/**
+	 * Lazily resolve the Customer 360 read-model (fallback build if DI didn't
+	 * supply one — keeps legacy construction working).
+	 *
+	 * @return Handik_Booking_App_Customer_View_Service
+	 */
+	protected function customer_view() {
+		if ( ! $this->customer_view ) {
+			$this->customer_view = new Handik_Booking_App_Customer_View_Service(
+				$this->contacts,
+				$this->addresses,
+				$this->job_requests,
+				$this->bookings,
+				$this->logger
+			);
+		}
+		return $this->customer_view;
 	}
 
 	public function render() {
@@ -69,8 +92,8 @@ class Handik_Booking_App_Admin_People {
 		// phpcs:enable
 
 		Handik_Booking_App_Admin_Helpers::page_start(
-			__( 'People & Requests', 'handik-booking-app' ),
-			__( 'One row per customer — addresses, requests and bookings consolidated.', 'handik-booking-app' )
+			__( 'Customers', 'handik-booking-app' ),
+			__( 'One row per customer — addresses, attributes, requests and bookings consolidated.', 'handik-booking-app' )
 		);
 
 		// Top toolbar: Add person + filter chips + search + (optional)
@@ -78,7 +101,7 @@ class Handik_Booking_App_Admin_People {
 		$add_url = Handik_Booking_App_Admin_Helpers::admin_url_for( 'handik-booking-app-crm', array( 'action' => 'add' ) );
 		$can_bulk_delete = current_user_can( Handik_Booking_App_Capabilities::MANAGE_DELETE );
 		echo '<div class="handik-admin-toolbar">';
-		echo '<a class="button button-primary" href="' . esc_url( $add_url ) . '">+ ' . esc_html__( 'Add person', 'handik-booking-app' ) . '</a>';
+		echo '<a class="button button-primary" href="' . esc_url( $add_url ) . '">+ ' . esc_html__( 'Add customer', 'handik-booking-app' ) . '</a>';
 		if ( $can_bulk_delete ) {
 			echo '<button type="button" class="button" data-handik-bulk-toggle data-handik-bulk-target=".handik-admin-people-list">' . esc_html__( 'Select', 'handik-booking-app' ) . '</button>';
 		}
@@ -127,7 +150,7 @@ class Handik_Booking_App_Admin_People {
 		$spam_count = ( $this->contacts && ! $show_spam ) ? $this->contacts->count_spam() : 0;
 
 		if ( empty( $rows ) ) {
-			echo '<div class="handik-admin-empty"><p>' . esc_html__( 'No people match these filters.', 'handik-booking-app' ) . '</p></div>';
+			echo '<div class="handik-admin-empty"><p>' . esc_html__( 'No customers match these filters.', 'handik-booking-app' ) . '</p></div>';
 		} else {
 			echo $this->people_list_markup( $rows );
 		}
@@ -179,7 +202,7 @@ class Handik_Booking_App_Admin_People {
 			'show_spam' => ! empty( $_GET['show_spam'] ) ? 1 : 0,
 		), static function ( $v ) { return '' !== $v && 0 !== $v; } );
 		// phpcs:enable
-		$html = '<nav class="handik-admin-segmented" aria-label="' . esc_attr__( 'People filter', 'handik-booking-app' ) . '">';
+		$html = '<nav class="handik-admin-segmented" aria-label="' . esc_attr__( 'Customer filter', 'handik-booking-app' ) . '">';
 		foreach ( $chips as $key => $label ) {
 			$url = Handik_Booking_App_Admin_Helpers::admin_url_for(
 				$page,
@@ -404,27 +427,95 @@ class Handik_Booking_App_Admin_People {
 	// =====================================================================
 
 	protected function render_person_detail( $contact_id ) {
-		$contact = $this->contacts ? $this->contacts->get( $contact_id ) : null;
-		if ( ! $contact ) {
-			Handik_Booking_App_Admin_Helpers::page_start( __( 'Person', 'handik-booking-app' ) );
-			echo '<div class="notice notice-error"><p>' . esc_html__( 'Contact not found.', 'handik-booking-app' ) . '</p></div>';
+		// Sprint 7 — single read-model call powers the whole detail page.
+		$view = $this->customer_view()->get( $contact_id );
+		if ( ! $view || empty( $view['contact'] ) ) {
+			Handik_Booking_App_Admin_Helpers::page_start( __( 'Customer', 'handik-booking-app' ) );
+			echo '<div class="notice notice-error"><p>' . esc_html__( 'Customer not found.', 'handik-booking-app' ) . '</p></div>';
 			Handik_Booking_App_Admin_Helpers::page_end();
 			return;
 		}
 
-		$addresses = $this->addresses ? $this->addresses->list_for_contact( $contact_id, false ) : array();
-		$requests  = $this->job_requests ? $this->job_requests->list_recent_for_contact( $contact_id, 100 ) : array();
-		$bookings  = $this->bookings_for_contact( $requests );
+		$contact   = $view['contact'];
+		$addresses = $view['addresses'];
+		$requests  = $view['requests'];
+		// bookings keyed by request id (same shape person_requests_markup expects).
+		$bookings  = $view['bookings'];
 
-		Handik_Booking_App_Admin_Helpers::page_start( (string) ( $contact['full_name'] ?? __( 'Person', 'handik-booking-app' ) ) );
+		Handik_Booking_App_Admin_Helpers::page_start( (string) ( $contact['full_name'] ?? __( 'Customer', 'handik-booking-app' ) ) );
 
 		echo $this->person_header_markup( $contact );
+		echo $this->person_stats_markup( $view['stats'] );
 		echo $this->person_edit_form_markup( $contact );
 		echo $this->person_addresses_markup( $contact_id, $addresses );
 		echo $this->person_requests_markup( $requests, $bookings );
+		echo $this->person_timeline_markup( $view['timeline'] );
 		echo $this->person_danger_zone_markup( $contact_id, $contact );
 
 		Handik_Booking_App_Admin_Helpers::page_end();
+	}
+
+	/**
+	 * Sprint 7 — at-a-glance customer stats: visits, completed, lifetime
+	 * estimate, first/last seen.
+	 *
+	 * @param array<string,mixed> $stats Stats from Customer_View_Service::get().
+	 * @return string
+	 */
+	protected function person_stats_markup( array $stats ) {
+		$revenue = Handik_Booking_App_Admin_Helpers::format_money_range(
+			0,
+			(float) ( $stats['total_revenue_high'] ?? 0 )
+		);
+		$first = ! empty( $stats['first_seen'] )
+			? Handik_Booking_App_Admin_Helpers::format_short( (string) $stats['first_seen'] )
+			: '—';
+		$last = ! empty( $stats['last_seen'] )
+			? Handik_Booking_App_Admin_Helpers::relative_time( gmdate( 'Y-m-d H:i:s', (int) $stats['last_seen'] ) )
+			: '—';
+
+		$cells = array(
+			array( __( 'Visits', 'handik-booking-app' ), (string) (int) ( $stats['total_visits'] ?? 0 ) ),
+			array( __( 'Completed', 'handik-booking-app' ), (string) (int) ( $stats['completed_visits'] ?? 0 ) ),
+			array( __( 'Est. lifetime value', 'handik-booking-app' ), $revenue ?: '—' ),
+			array( __( 'First seen', 'handik-booking-app' ), $first ),
+			array( __( 'Last seen', 'handik-booking-app' ), $last ?: '—' ),
+		);
+
+		$html = '<section class="handik-admin-block handik-admin-cust-stats"><div class="handik-admin-cust-stats__grid">';
+		foreach ( $cells as $c ) {
+			$html .= '<div class="handik-admin-cust-stats__cell"><span class="handik-admin-cust-stats__label">' . esc_html( $c[0] ) . '</span><strong class="handik-admin-cust-stats__value">' . esc_html( $c[1] ) . '</strong></div>';
+		}
+		$html .= '</div></section>';
+		return $html;
+	}
+
+	/**
+	 * Sprint 7 — chronological activity timeline (newest first).
+	 *
+	 * @param array<int, array<string,mixed>> $timeline Timeline events.
+	 * @return string
+	 */
+	protected function person_timeline_markup( array $timeline ) {
+		if ( empty( $timeline ) ) {
+			return '';
+		}
+		$html = '<section class="handik-admin-block"><h3 class="handik-admin-section-title">' . esc_html__( 'Timeline', 'handik-booking-app' ) . '</h3>';
+		$html .= '<ul class="handik-admin-timeline">';
+		foreach ( $timeline as $ev ) {
+			$icon = 'booking' === ( $ev['kind'] ?? '' ) ? '📅' : '📝';
+			$when = Handik_Booking_App_Admin_Helpers::format_short( (string) ( $ev['ts'] ?? '' ) );
+			$html .= '<li class="handik-admin-timeline__item">';
+			$html .= '<span class="handik-admin-timeline__icon" aria-hidden="true">' . $icon . '</span>';
+			$html .= '<span class="handik-admin-timeline__when">' . esc_html( $when ) . '</span>';
+			$html .= '<span class="handik-admin-timeline__label">' . esc_html( (string) ( $ev['label'] ?? '' ) ) . '</span>';
+			if ( ! empty( $ev['status'] ) ) {
+				$html .= ' ' . Handik_Booking_App_Admin_Helpers::status_pill_markup( (string) $ev['status'] );
+			}
+			$html .= '</li>';
+		}
+		$html .= '</ul></section>';
+		return $html;
 	}
 
 	protected function bookings_for_contact( array $requests ) {
@@ -1000,7 +1091,7 @@ class Handik_Booking_App_Admin_People {
 	// =====================================================================
 
 	protected function render_add_form() {
-		Handik_Booking_App_Admin_Helpers::page_start( __( 'Add person', 'handik-booking-app' ) );
+		Handik_Booking_App_Admin_Helpers::page_start( __( 'Add customer', 'handik-booking-app' ) );
 
 		$rest = trailingslashit( rest_url( 'handik-booking-app/v1' ) );
 		?>

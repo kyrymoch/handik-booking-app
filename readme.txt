@@ -3,7 +3,7 @@ Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.3.0
+Stable tag: 2.3.1
 License: Proprietary
 
 Single-page booking application with AI-assisted intake, multi-day project scheduling, and end-to-end Cal.com calendar sync.
@@ -81,6 +81,15 @@ Schema migration 1.6.1 adds `external_contact_id` for backfilling bookings made 
 Schema migration 1.6.0 adds `project_work_day_id` so multi-day project bookings show up in the unified admin Bookings list. Migrates automatically.
 
 == Changelog ==
+
+= 2.3.1 =
+* **Sprint 7 / Customer unification — People → Customers, with stats + activity timeline.** Finalizes the customer-centric model. The detail page is now a true Customer 360 view powered end-to-end by the Sprint 1 read-model. No DB change, no migration, no breaking change.
+* **People → Customers rename.** Page titles, subtitle, toolbar ("Add customer"), empty state, and filter labels now say Customers. The slug stays `handik-booking-app-crm` (canonical) — a slug rename would touch a dozen internal link sites for zero user benefit, and the menu/thumb-nav already read "Customers" (Sprint 6). All existing bookmarks keep working unchanged.
+* **Customer detail uses `Customer_View_Service::get()` end-to-end.** One read-model call now drives the whole page (contact + addresses + requests + bookings + stats + timeline) instead of three separate service calls, keeping every surface consistent with the rest of the admin.
+* **Stats strip** added to the top of the customer detail: Visits, Completed, Estimated lifetime value (sum of `total_estimate_high` over completed visits), First seen, Last seen.
+* **Activity timeline** added below the requests block: a chronological (newest-first) merge of the customer's requests and their bookings, each with an icon, date, label, and status pill.
+* **`Customer_View_Service::get()` enriched** to return `bookings` (keyed by request id), a `timeline` array, and richer `stats` (`total_visits`, `completed_visits`, `total_revenue_high`, `first_seen`). Backward compatible — the Sprint 1 keys are preserved.
+* No customer-facing change. (Stats/timeline currently aggregate the main-SPA visit flow; direct/project visit aggregation can fold in later without changing the page shape.)
 
 = 2.3.0 =
 * **Sprint 6 / Customer unification — Requests pipeline + Additional Forms folded away (IA reorg, part 2).** The menu now reads Dashboard · Bookings · **Requests** · Customers · Settings · Logs · System. Submissions that used to hide in the Additional Forms tabs now live in the main flow. No DB change, no migration.

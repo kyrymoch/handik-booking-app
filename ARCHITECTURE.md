@@ -314,7 +314,7 @@ Top-level `Handik Booking` menu (`includes/class-admin.php`). Page renderers liv
 | `handik-booking-app`                 | `Admin_Dashboard`                             | counts + Action-needed chips (Drafts, Ready-not-booked, Unsafe, Errors today) |
 | `handik-booking-app-bookings`        | `Admin_Bookings`                              | unified Bookings list (cards + table), detail view, add booking flow, pull-from-Cal, bulk delete |
 | `handik-booking-app-requests`        | `Admin_Requests`                              | Requests pipeline (since 2.3.0) — union of in-flight job_requests + direct + project, source/status filters, search |
-| `handik-booking-app-crm`             | `Admin_People`                                | Customers list, person detail, addresses, requests focus lists, bulk delete |
+| `handik-booking-app-crm`             | `Admin_People`                                | Customers list + detail (since 2.3.1: Customer 360 via `Customer_View_Service::get()` — stats strip + activity timeline), addresses, attributes, requests focus lists, bulk delete |
 | `handik-booking-app-additional-forms`| `Admin_Additional_Forms`                      | Hidden from menu since 2.3.0 (route kept). Legacy URLs redirect to Settings → Forms / Bookings / Requests; project-schedule detail still renders here |
 | `handik-booking-app-settings`        | `Admin_Settings`                              | Single config home (since 2.2.0). Tabs: Booking flow · Forms (presets + pre-approvals, delegated to `Admin_Additional_Forms`) · Service catalog · Service area · Cal.com · Notifications · Integrations · Appearance |
 | `handik-booking-app-operations`      | `Admin_Logs` + `Admin_System`                 | Logs, system info, migration status, transients clear                 |
@@ -380,7 +380,7 @@ DB version stored in `wp_options.handik_booking_app_db_version`. Migrations are 
 `Handik_Booking_App_Customer_View_Service` (`includes/services/class-customer-view-service.php`) is the single source of truth for "resolve the customer + address for X". It composes the four CRM services behind one read-model with a per-request instance cache.
 
 * `for_booking( $booking )` — given any `handik_bookings` row, resolves `contact` + `address` + `source` (`main` / `direct` / `project` / `external` / `external_unmatched`) and the source-specific rows. Critically, when the booking source has no `address_id` (external Cal bookings always), it falls back to the contact's primary address from `handik_addresses` — so external bookings stop rendering "No address".
-* `get( $contact_id )` — contact + addresses + primary address + requests + baseline stats.
+* `get( $contact_id )` — contact + addresses + primary address + requests + bookings (keyed by request id) + chronological `timeline` + stats (visits / completed / lifetime estimate / first-seen / last-seen). Powers the Customers detail page end-to-end (since 2.3.1).
 * `search( $query, $limit )` — name/phone/email autocomplete shape for admin pickers.
 * `profile_url( $contact_id )` (static) — Customer-profile deep-link.
 

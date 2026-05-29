@@ -561,7 +561,8 @@ class Handik_Booking_App_Admin {
 			$this->bookings,
 			$this->service_catalog,
 			$this->messages,
-			$this->logger
+			$this->logger,
+			$this->customer_view()
 		) );
 		$page->render();
 	}
