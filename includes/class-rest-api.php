@@ -218,6 +218,11 @@ class Handik_Booking_App_REST_API {
 			'permission_callback' => array( $this, 'admin_permission' ),
 		) );
 		register_rest_route( $namespace, '/admin/address/(?P<id>\d+)', array(
+			'methods'             => WP_REST_Server::READABLE,
+			'callback'            => array( $this, 'admin_address_get' ),
+			'permission_callback' => array( $this, 'admin_permission' ),
+		) );
+		register_rest_route( $namespace, '/admin/address/(?P<id>\d+)', array(
 			'methods'             => WP_REST_Server::EDITABLE,
 			'callback'            => array( $this, 'admin_address_update' ),
 			'permission_callback' => array( $this, 'admin_permission' ),
@@ -807,14 +812,43 @@ class Handik_Booking_App_REST_API {
 		return rest_ensure_response( array( 'success' => $ok ) );
 	}
 
+	/**
+	 * Sprint 4 — read a full address row (incl. property attributes) so the
+	 * admin edit modal can populate every field without threading 16
+	 * data-attributes through the markup.
+	 *
+	 * @param WP_REST_Request $request Request.
+	 * @return WP_REST_Response
+	 */
+	public function admin_address_get( WP_REST_Request $request ) {
+		if ( ! $this->addresses ) {
+			return $this->admin_unavailable();
+		}
+		$id  = absint( $request['id'] );
+		$row = $this->addresses->get( $id );
+		if ( ! $row ) {
+			return rest_ensure_response( array( 'address' => null ) );
+		}
+		return rest_ensure_response( array( 'address' => $row ) );
+	}
+
 	public function admin_address_update( WP_REST_Request $request ) {
 		if ( ! $this->addresses ) {
 			return $this->admin_unavailable();
 		}
-		$id    = absint( $request['id'] );
+		$id      = absint( $request['id'] );
+		// Sprint 4 — allow property-level attributes through alongside the
+		// core address fields. Allowlist built from the canonical schema.
+		$allowed = array_merge(
+			array( 'address_full', 'address_unit', 'city', 'state', 'zip_code', 'label', 'property_notes' ),
+			array_keys( Handik_Booking_App_Addresses_Service::attribute_enums() ),
+			Handik_Booking_App_Addresses_Service::attribute_booleans(),
+			Handik_Booking_App_Addresses_Service::attribute_sensitive(),
+			Handik_Booking_App_Addresses_Service::attribute_texts()
+		);
 		$patch = array_intersect_key(
 			$request->get_params(),
-			array_flip( array( 'address_full', 'address_unit', 'city', 'state', 'zip_code', 'label' ) )
+			array_flip( $allowed )
 		);
 		$ok = $this->addresses->admin_update( $id, $patch );
 		return rest_ensure_response( array( 'success' => $ok ) );

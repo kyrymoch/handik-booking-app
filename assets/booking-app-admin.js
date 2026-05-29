@@ -386,23 +386,66 @@
 		} );
 	}
 
+	// Sprint 4 — property-attribute field definitions for the address modal.
+	// Mirrors Addresses_Service::attribute_* (PHP is authoritative; these are
+	// just the UI surface). Enums render as selects, booleans as checkboxes,
+	// codes/texts as inputs, property_notes as a textarea.
+	const ADDR_ENUMS = {
+		building_type: [ [ '', '—' ], [ 'single_family', 'Single family' ], [ 'apartment', 'Apartment' ], [ 'condo', 'Condo' ], [ 'townhouse', 'Townhouse' ], [ 'commercial', 'Commercial' ] ],
+		parking: [ [ '', '—' ], [ 'driveway', 'Driveway' ], [ 'street_free', 'Street (free)' ], [ 'street_metered', 'Street (metered)' ], [ 'building_lot', 'Building lot' ], [ 'none', 'None' ], [ 'specific_spot', 'Specific spot' ] ],
+		building_age_class: [ [ '', '—' ], [ 'pre_1978_lead_paint', 'Pre-1978 (lead paint)' ], [ 'modern', 'Modern' ], [ 'unknown', 'Unknown' ] ]
+	};
+	const ADDR_BOOLS = [
+		[ 'doorman', 'Doorman' ], [ 'freight_elevator_required', 'Freight elevator required' ],
+		[ 'pets_present', 'Pets at this address' ], [ 'asbestos_warning', 'Asbestos warning' ],
+		[ 'mold_present', 'Mold present' ], [ 'hoarding_situation', 'Hoarding situation' ]
+	];
+
+	function addrSelectHtml( field, label, value ) {
+		const opts = ( ADDR_ENUMS[ field ] || [] ).map( function ( o ) {
+			return '<option value="' + escapeAttr( o[ 0 ] ) + '"' + ( String( value || '' ) === o[ 0 ] ? ' selected' : '' ) + '>' + escapeHtml( o[ 1 ] ) + '</option>';
+		} ).join( '' );
+		return '<label class="handik-admin-field"><span>' + escapeHtml( label ) + '</span><select data-field="' + field + '">' + opts + '</select></label>';
+	}
+
 	function openAddressEditModal( values ) {
 		// Custom modal w/ several inputs. Returns Promise<{label, address_full, ...}|null>
 		return new Promise( function( resolve ) {
+			const v = values || {};
+			const checkHtml = ADDR_BOOLS.map( function ( b ) {
+				return '<label class="handik-admin-checkbox"><input type="checkbox" data-field="' + b[ 0 ] + '" value="1"' + ( v[ b[ 0 ] ] ? ' checked' : '' ) + ' /> <span>' + escapeHtml( b[ 1 ] ) + '</span></label>';
+			} ).join( '' );
 			const backdrop = document.createElement( 'div' );
 			backdrop.className = 'handik-admin-modal-backdrop';
 			backdrop.innerHTML =
 				'<div class="handik-admin-modal" role="dialog" aria-modal="true">' +
 					'<h3>' + ( i18n.addressEdit || 'Edit address' ) + '</h3>' +
 					'<div class="handik-admin-modal__body">' +
-						'<label class="handik-admin-field"><span>Label (e.g. Home)</span><input type="text" data-field="label" value="' + escapeAttr( values.label ) + '" /></label>' +
-						'<label class="handik-admin-field"><span>Full address</span><input type="text" data-field="address_full" autocomplete="street-address" value="' + escapeAttr( values.address_full ) + '" /></label>' +
-						'<label class="handik-admin-field"><span>Unit / apt</span><input type="text" data-field="address_unit" autocomplete="address-line2" value="' + escapeAttr( values.address_unit ) + '" /></label>' +
+						'<label class="handik-admin-field"><span>Label (e.g. Home)</span><input type="text" data-field="label" value="' + escapeAttr( v.label ) + '" /></label>' +
+						'<label class="handik-admin-field"><span>Full address</span><input type="text" data-field="address_full" autocomplete="street-address" value="' + escapeAttr( v.address_full ) + '" /></label>' +
+						'<label class="handik-admin-field"><span>Unit / apt</span><input type="text" data-field="address_unit" autocomplete="address-line2" value="' + escapeAttr( v.address_unit ) + '" /></label>' +
 						'<div class="handik-admin-grid">' +
-							'<label class="handik-admin-field"><span>City</span><input type="text" data-field="city" autocomplete="address-level2" value="' + escapeAttr( values.city ) + '" /></label>' +
-							'<label class="handik-admin-field"><span>State</span><input type="text" data-field="state" autocomplete="address-level1" value="' + escapeAttr( values.state ) + '" /></label>' +
-							'<label class="handik-admin-field"><span>ZIP</span><input type="text" data-field="zip_code" autocomplete="postal-code" inputmode="numeric" value="' + escapeAttr( values.zip_code ) + '" /></label>' +
+							'<label class="handik-admin-field"><span>City</span><input type="text" data-field="city" autocomplete="address-level2" value="' + escapeAttr( v.city ) + '" /></label>' +
+							'<label class="handik-admin-field"><span>State</span><input type="text" data-field="state" autocomplete="address-level1" value="' + escapeAttr( v.state ) + '" /></label>' +
+							'<label class="handik-admin-field"><span>ZIP</span><input type="text" data-field="zip_code" autocomplete="postal-code" inputmode="numeric" value="' + escapeAttr( v.zip_code ) + '" /></label>' +
 						'</div>' +
+						'<h4 class="handik-admin-attr-heading">Access</h4>' +
+						'<div class="handik-admin-grid">' +
+							addrSelectHtml( 'building_type', 'Building type', v.building_type ) +
+							addrSelectHtml( 'parking', 'Parking', v.parking ) +
+							addrSelectHtml( 'building_age_class', 'Building age', v.building_age_class ) +
+						'</div>' +
+						'<div class="handik-admin-grid">' +
+							'<label class="handik-admin-field"><span>Gate code</span><input type="text" data-field="gate_code" autocomplete="off" value="' + escapeAttr( v.gate_code ) + '" /></label>' +
+							'<label class="handik-admin-field"><span>Lockbox code</span><input type="text" data-field="lockbox_code" autocomplete="off" value="' + escapeAttr( v.lockbox_code ) + '" /></label>' +
+							'<label class="handik-admin-field"><span>Alarm code</span><input type="text" data-field="alarm_code" autocomplete="off" value="' + escapeAttr( v.alarm_code ) + '" /></label>' +
+						'</div>' +
+						'<label class="handik-admin-field"><span>Parking notes</span><input type="text" data-field="parking_notes" value="' + escapeAttr( v.parking_notes ) + '" /></label>' +
+						'<label class="handik-admin-field"><span>Freight elevator hours</span><input type="text" data-field="freight_elevator_hours" value="' + escapeAttr( v.freight_elevator_hours ) + '" /></label>' +
+						'<h4 class="handik-admin-attr-heading">Pets & hazards</h4>' +
+						'<div class="handik-admin-grid handik-admin-grid--checks">' + checkHtml + '</div>' +
+						'<label class="handik-admin-field"><span>Pets notes</span><input type="text" data-field="pets_notes" value="' + escapeAttr( v.pets_notes ) + '" /></label>' +
+						'<label class="handik-admin-field handik-admin-field--textarea"><span>Property notes</span><textarea rows="2" data-field="property_notes">' + escapeHtml( v.property_notes || '' ) + '</textarea></label>' +
 					'</div>' +
 					'<div class="handik-admin-modal__actions">' +
 						'<button type="button" class="button" data-action="cancel">' + ( i18n.cancel || 'Cancel' ) + '</button>' +
@@ -428,7 +471,9 @@
 				if ( 'save' === btn.dataset.action ) {
 					const out = {};
 					backdrop.querySelectorAll( '[data-field]' ).forEach( function( input ) {
-						out[ input.dataset.field ] = input.value;
+						// Sprint 4 — checkboxes (property booleans) sent as
+						// boolean, everything else as its value.
+						out[ input.dataset.field ] = ( 'checkbox' === input.type ) ? !! input.checked : input.value;
 					} );
 					close( out );
 				}
@@ -722,14 +767,23 @@
 						item.remove();
 					}
 					if ( 'addr-edit' === action ) {
-						const result = await openAddressEditModal( {
+						// Sprint 4 — fetch the full row (incl. property
+						// attributes) so the modal can pre-fill every field.
+						// Fall back to the data-attrs (core fields) if the
+						// fetch fails so editing still works offline-ish.
+						let values = {
 							label:        item.dataset.label || '',
 							address_full: item.dataset.addressFull || '',
 							address_unit: item.dataset.addressUnit || '',
 							city:         item.dataset.city || '',
 							state:        item.dataset.state || '',
 							zip_code:     item.dataset.zip || ''
-						} );
+						};
+						try {
+							const payload = await adminFetch( ctx, 'admin/address/' + addressId, { method: 'GET' } );
+							if ( payload && payload.address ) { values = payload.address; }
+						} catch ( e ) { /* use data-attr fallback */ }
+						const result = await openAddressEditModal( values );
 						if ( null === result ) { return; }
 						await adminFetch( ctx, 'admin/address/' + addressId, { method: 'POST', body: result } );
 						toast( i18n.saved || 'Saved', 'success' );
@@ -1203,6 +1257,28 @@
 					open();
 				}
 			} );
+		} );
+	}
+
+	// Sprint 4 — reveal/hide masked access codes in the pre-visit briefing.
+	function initSecretReveal() {
+		document.addEventListener( 'click', function ( event ) {
+			const btn = event.target.closest( '[data-handik-reveal-toggle]' );
+			if ( ! btn ) { return; }
+			event.preventDefault();
+			const row = btn.closest( 'dd' ) || btn.parentNode;
+			const secret = row ? row.querySelector( '[data-handik-reveal]' ) : null;
+			if ( ! secret ) { return; }
+			const real = secret.dataset.handikReveal || '';
+			if ( secret.dataset.shown === '1' ) {
+				secret.textContent = '••••';
+				secret.dataset.shown = '0';
+				btn.textContent = i18n.reveal || 'show';
+			} else {
+				secret.textContent = real;
+				secret.dataset.shown = '1';
+				btn.textContent = i18n.hide || 'hide';
+			}
 		} );
 	}
 
@@ -1952,6 +2028,7 @@
 		initSystemTools();
 		initLightbox();
 		initCopyButtons();
+		initSecretReveal();
 		initDebouncedSearch();
 		initDetailsMemory();
 		initRestoreScroll();

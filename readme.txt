@@ -3,7 +3,7 @@ Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.1.33.0
+Stable tag: 2.1.34.0
 License: Proprietary
 
 Single-page booking application with AI-assisted intake, multi-day project scheduling, and end-to-end Cal.com calendar sync.
@@ -81,6 +81,16 @@ Schema migration 1.6.1 adds `external_contact_id` for backfilling bookings made 
 Schema migration 1.6.0 adds `project_work_day_id` so multi-day project bookings show up in the unified admin Bookings list. Migrates automatically.
 
 == Changelog ==
+
+= 2.1.34.0 =
+* **Sprint 4 / Customer unification — property-level attributes + pre-visit briefing.** Customer attributes (1.6.4) answer "who is this person"; property attributes answer "what's true about THIS address" — gate code, parking, pets, building hazards. They live on the address, not the contact: if the customer moves, the gate code doesn't follow them. One additive migration, no breaking change.
+* **Migration 1.6.5** — adds to `handik_addresses`: enums `building_type`, `parking`, `building_age_class`; access codes `gate_code` / `lockbox_code` / `alarm_code` (stored raw, masked in the UI); booleans `doorman`, `freight_elevator_required`, `pets_present`, `asbestos_warning`, `mold_present`, `hoarding_situation`; texts `freight_elevator_hours`, `parking_notes`, `pets_notes`; and a `property_notes` textarea. Safe DEFAULTs, idempotent.
+* **`Addresses_Service`** gains the canonical property-attribute schema (`attribute_enums()` / `attribute_booleans()` / `attribute_sensitive()` / `attribute_texts()`), shared by the sanitizer, the edit modal, and the REST allowlist. `admin_update()` validates enums against the allowed set, coerces booleans, and stores codes/texts/notes.
+* **Pre-visit briefing block** on the Bookings detail (above Tasks), assembled by the new `Customer_View_Service::pre_visit_briefing( $contact, $address )`. Three groups — Customer (language, preferred channel/time, payment, do-not-text), Property (building, access codes, parking + notes, 🐕 pets, ⚠ hazards), Internal flags (VIP, scope creeper, do-not-service, tips/payment behavior). Only set attributes appear. Access codes render masked (`••••`) with a "show" reveal toggle + copy-to-clipboard. The operator opens a booking on the way over and sees everything at a glance.
+* **Address edit modal** (Customer detail → Addresses → Edit) now includes the full property-attribute set: enum selects, hazard/pet checkboxes, code/note inputs, property-notes textarea. The modal fetches the full row via the new `GET /admin/address/{id}` so every field pre-fills (with a data-attr fallback for the core fields).
+* **New REST endpoint** `GET /admin/address/{id}` (READABLE) returns the full address row for the edit modal. `PATCH /admin/address/{id}` allowlist expanded from the canonical schema. Both `admin_permission` gated.
+* Apple Maps deep-link is intentionally left as a pure address geocode — parking guidance surfaces in the briefing's "Parking" row (appending free text to the maps `q=` would break the geocode).
+* No customer-facing change. Migration auto-runs on next admin load.
 
 = 2.1.33.0 =
 * **Sprint 3 / Customer unification — customer-level structured attributes.** Replaces the single free-text `notes` textarea as the only place to record what you know about a customer. Adds the service-CRM pattern (Jobber / Housecall Pro): enums + boolean flags for recurring attributes, a flexible tags multi-select, and `brand_preferences` short text — with `notes` kept as the free-form catch-all at the end of the form. One additive migration, no breaking change.

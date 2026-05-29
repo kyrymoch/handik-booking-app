@@ -168,7 +168,8 @@ DEL   /admin/booking/{id}             Single-row danger-zone delete
                                       (auto-cancels on Cal.com, then cascades)
 POST  /admin/booking/new              Admin-side "add booking" submit
 
-GET   /admin/address/{id}             Lookup address
+GET   /admin/address/{id}             Full address row (incl. property attrs)
+                                      for the edit modal
 PATCH /admin/address/{id}             Update address
 POST  /admin/address/{id}/primary     Set primary address for contact
 POST  /admin/catalog                  Edit service catalog
@@ -346,6 +347,7 @@ DB version stored in `wp_options.handik_booking_app_db_version`. Migrations are 
 | 1.6.2   | Migration_162          | `handik_form_approvals` table — soft phone pre-approval gate for Additional Forms presets |
 | 1.6.3   | Migration_163          | `handik_form_approvals.contact_id` (+ index + one-time phone→contact backfill) for the pre-approval customer picker |
 | 1.6.4   | Migration_164          | Customer-level structured attributes on `handik_contacts` (language/payment enums, behavior flags, `tags_json`, `brand_preferences`) |
+| 1.6.5   | Migration_165          | Property-level attributes on `handik_addresses` (building/parking enums, masked access codes, pet/hazard flags, `property_notes`) — powers the pre-visit briefing |
 
 ### Key tables
 

@@ -1227,6 +1227,9 @@ class Handik_Booking_App_Admin_Bookings {
 		echo $this->sticky_action_bar_markup( $booking, $contact, $full_address );
 		echo $this->actions_bar_markup( $booking );
 		echo $this->at_a_glance_markup( $booking, $contact, $full_address, $request );
+		// Sprint 4 — pre-visit briefing (customer + property attributes +
+		// internal flags), assembled from the Customer 360 read-model.
+		echo $this->pre_visit_briefing_markup( $contact, $address );
 		// Photos / transcript / summary / tasks blocks all expect a
 		// job_request — for direct rows render a simpler "preset"
 		// block instead so the page isn't broken.
@@ -1542,6 +1545,64 @@ class Handik_Booking_App_Admin_Bookings {
 				<p data-handik-admin-notes-display><?php echo nl2br( esc_html( (string) $booking['admin_notes'] ) ); ?></p>
 			</div>
 		<?php endif; ?>
+		<?php
+		return (string) ob_get_clean();
+	}
+
+	/**
+	 * Sprint 4 — pre-visit briefing block. Renders the customer / property /
+	 * internal attribute groups assembled by Customer_View_Service. Sensitive
+	 * access codes are masked with a reveal toggle + copy-to-clipboard.
+	 * Renders nothing when there's no contact/address or no attributes set.
+	 *
+	 * @param array<string,mixed>|null $contact Contact row.
+	 * @param array<string,mixed>|null $address Address row.
+	 * @return string
+	 */
+	protected function pre_visit_briefing_markup( $contact, $address ) {
+		$briefing = $this->customer_view()->pre_visit_briefing( $contact, $address );
+		if ( empty( $briefing['customer'] ) && empty( $briefing['property'] ) && empty( $briefing['internal'] ) ) {
+			return '';
+		}
+
+		$render_group = function ( $title, $rows ) {
+			if ( empty( $rows ) ) {
+				return '';
+			}
+			$html = '<div class="handik-admin-briefing__group"><h3 class="handik-admin-briefing__title">' . esc_html( $title ) . '</h3><dl class="handik-admin-briefing__list">';
+			foreach ( $rows as $r ) {
+				$tone_cls = ! empty( $r['tone'] ) ? ' is-' . preg_replace( '/[^a-z_]/', '', (string) $r['tone'] ) : '';
+				$html    .= '<div class="handik-admin-briefing__row' . $tone_cls . '">';
+				$html    .= '<dt>' . esc_html( $r['label'] ) . '</dt>';
+				if ( ! empty( $r['sensitive'] ) && '' !== (string) $r['value'] ) {
+					// Masked by default; reveal toggle swaps in the real value
+					// (stored in data-handik-reveal); copy button copies it.
+					$html .= '<dd>'
+						. '<span class="handik-admin-secret" data-handik-reveal="' . esc_attr( (string) $r['value'] ) . '">••••</span> '
+						. '<button type="button" class="handik-admin-secret-toggle" data-handik-reveal-toggle>' . esc_html__( 'show', 'handik-booking-app' ) . '</button> '
+						. '<button type="button" class="handik-admin-copy-btn" data-handik-copy="' . esc_attr( (string) $r['value'] ) . '" aria-label="' . esc_attr__( 'Copy', 'handik-booking-app' ) . '">⧉</button>'
+						. '</dd>';
+				} else {
+					$html .= '<dd>' . esc_html( (string) $r['value'] ) . '</dd>';
+				}
+				$html .= '</div>';
+			}
+			$html .= '</dl></div>';
+			return $html;
+		};
+
+		ob_start();
+		?>
+		<section class="handik-admin-block handik-admin-briefing">
+			<h2 class="handik-admin-section-title">📋 <?php esc_html_e( 'Pre-visit briefing', 'handik-booking-app' ); ?></h2>
+			<div class="handik-admin-briefing__grid">
+				<?php
+				echo $render_group( __( 'Customer', 'handik-booking-app' ), $briefing['customer'] ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+				echo $render_group( __( 'Property', 'handik-booking-app' ), $briefing['property'] ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+				echo $render_group( __( 'Internal flags', 'handik-booking-app' ), $briefing['internal'] ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+				?>
+			</div>
+		</section>
 		<?php
 		return (string) ob_get_clean();
 	}

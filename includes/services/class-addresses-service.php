@@ -5,6 +5,57 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 class Handik_Booking_App_Addresses_Service {
+
+	// =====================================================================
+	// Property-level structured attributes (Sprint 4 / migration 1.6.5).
+	// Mirrors Contacts_Service's attribute schema. Single source of truth
+	// for the sanitizer (admin_update), the edit modal, the REST allowlist,
+	// and the pre-visit briefing assembly.
+	// =====================================================================
+
+	/**
+	 * @return array<string, array<int, string>> field => allowed enum values.
+	 */
+	public static function attribute_enums() {
+		return array(
+			'building_type'      => array( '', 'single_family', 'apartment', 'condo', 'townhouse', 'commercial' ),
+			'parking'            => array( '', 'driveway', 'street_free', 'street_metered', 'building_lot', 'none', 'specific_spot' ),
+			'building_age_class' => array( '', 'pre_1978_lead_paint', 'modern', 'unknown' ),
+		);
+	}
+
+	/**
+	 * @return array<int, string> boolean attribute field names.
+	 */
+	public static function attribute_booleans() {
+		return array(
+			'doorman',
+			'freight_elevator_required',
+			'pets_present',
+			'asbestos_warning',
+			'mold_present',
+			'hoarding_situation',
+		);
+	}
+
+	/**
+	 * Sensitive access-code fields — masked in the UI, stored raw.
+	 *
+	 * @return array<int, string>
+	 */
+	public static function attribute_sensitive() {
+		return array( 'gate_code', 'lockbox_code', 'alarm_code' );
+	}
+
+	/**
+	 * Plain short-text attribute fields.
+	 *
+	 * @return array<int, string>
+	 */
+	public static function attribute_texts() {
+		return array( 'freight_elevator_hours', 'parking_notes', 'pets_notes' );
+	}
+
 	/**
 	 * @param int                  $contact_id Contact ID.
 	 * @param array<string, mixed> $payload Payload.
@@ -92,6 +143,30 @@ class Handik_Booking_App_Addresses_Service {
 				$update[ $key ] = ( 'address_full' === $key ) ? sanitize_textarea_field( $value ) : sanitize_text_field( $value );
 			}
 		}
+
+		// Sprint 4 — property-level structured attributes. Enums validated
+		// against the allowed set; booleans coerced; sensitive codes + texts
+		// kept as short text; property_notes as a textarea.
+		foreach ( self::attribute_enums() as $field => $allowed ) {
+			if ( array_key_exists( $field, $patch ) ) {
+				$value = sanitize_key( (string) $patch[ $field ] );
+				$update[ $field ] = in_array( $value, $allowed, true ) ? $value : '';
+			}
+		}
+		foreach ( self::attribute_booleans() as $field ) {
+			if ( array_key_exists( $field, $patch ) ) {
+				$update[ $field ] = ! empty( $patch[ $field ] ) ? 1 : 0;
+			}
+		}
+		foreach ( array_merge( self::attribute_sensitive(), self::attribute_texts() ) as $field ) {
+			if ( array_key_exists( $field, $patch ) ) {
+				$update[ $field ] = sanitize_text_field( (string) $patch[ $field ] );
+			}
+		}
+		if ( array_key_exists( 'property_notes', $patch ) ) {
+			$update['property_notes'] = sanitize_textarea_field( (string) $patch['property_notes'] );
+		}
+
 		if ( empty( $update ) ) {
 			return false;
 		}

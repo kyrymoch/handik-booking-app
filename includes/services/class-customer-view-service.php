@@ -287,6 +287,199 @@ class Handik_Booking_App_Customer_View_Service {
 	}
 
 	/**
+	 * Assemble a pre-visit briefing from a contact + address — the
+	 * "what should I know before knocking on this door" summary the
+	 * Bookings detail surfaces. Returns three groups (customer / property /
+	 * internal), each a list of `{ label, value, sensitive, tone }` rows;
+	 * only set attributes are included, so an empty group means nothing to
+	 * show. Sensitive rows (access codes) are flagged so the renderer can
+	 * mask + offer copy-to-clipboard.
+	 *
+	 * @param array<string,mixed>|null $contact Contact row.
+	 * @param array<string,mixed>|null $address Address row.
+	 * @return array{customer: array, property: array, internal: array}
+	 */
+	public function pre_visit_briefing( $contact, $address ) {
+		$contact = is_array( $contact ) ? $contact : array();
+		$address = is_array( $address ) ? $address : array();
+
+		$labels = self::briefing_value_labels();
+		$row    = static function ( $label, $value, $sensitive = false, $tone = '' ) {
+			return array(
+				'label'     => (string) $label,
+				'value'     => (string) $value,
+				'sensitive' => (bool) $sensitive,
+				'tone'      => (string) $tone,
+			);
+		};
+
+		// ----- Customer group -----
+		$customer = array();
+		if ( ! empty( $contact['language'] ) ) {
+			$customer[] = $row( __( 'Language', 'handik-booking-app' ), $labels['language'][ $contact['language'] ] ?? $contact['language'] );
+		}
+		if ( ! empty( $contact['preferred_channel'] ) && 'no_preference' !== $contact['preferred_channel'] ) {
+			$customer[] = $row( __( 'Prefers', 'handik-booking-app' ), $labels['preferred_channel'][ $contact['preferred_channel'] ] ?? $contact['preferred_channel'] );
+		}
+		if ( ! empty( $contact['preferred_time'] ) && 'no_preference' !== $contact['preferred_time'] ) {
+			$customer[] = $row( __( 'Best time', 'handik-booking-app' ), $labels['preferred_time'][ $contact['preferred_time'] ] ?? $contact['preferred_time'] );
+		}
+		if ( ! empty( $contact['do_not_text'] ) ) {
+			$customer[] = $row( __( 'SMS', 'handik-booking-app' ), __( 'Do NOT text', 'handik-booking-app' ), false, 'warn' );
+		}
+		if ( ! empty( $contact['payment_method_preferred'] ) && 'no_preference' !== $contact['payment_method_preferred'] ) {
+			$customer[] = $row( __( 'Payment', 'handik-booking-app' ), $labels['payment_method_preferred'][ $contact['payment_method_preferred'] ] ?? $contact['payment_method_preferred'] );
+		}
+		if ( ! empty( $contact['requires_invoice'] ) ) {
+			$customer[] = $row( __( 'Billing', 'handik-booking-app' ), __( 'Requires invoice', 'handik-booking-app' ) );
+		}
+		if ( ! empty( $contact['brand_preferences'] ) ) {
+			$customer[] = $row( __( 'Brands', 'handik-booking-app' ), $contact['brand_preferences'] );
+		}
+
+		// ----- Property group -----
+		$property = array();
+		if ( ! empty( $address['building_type'] ) ) {
+			$property[] = $row( __( 'Building', 'handik-booking-app' ), $labels['building_type'][ $address['building_type'] ] ?? $address['building_type'] );
+		}
+		if ( ! empty( $address['building_age_class'] ) && 'unknown' !== $address['building_age_class'] ) {
+			$tone = 'pre_1978_lead_paint' === $address['building_age_class'] ? 'warn' : '';
+			$property[] = $row( __( 'Age', 'handik-booking-app' ), $labels['building_age_class'][ $address['building_age_class'] ] ?? $address['building_age_class'], false, $tone );
+		}
+		foreach ( array(
+			'gate_code'    => __( 'Gate code', 'handik-booking-app' ),
+			'lockbox_code' => __( 'Lockbox', 'handik-booking-app' ),
+			'alarm_code'   => __( 'Alarm code', 'handik-booking-app' ),
+		) as $field => $label ) {
+			if ( ! empty( $address[ $field ] ) ) {
+				$property[] = $row( $label, $address[ $field ], true );
+			}
+		}
+		if ( ! empty( $address['doorman'] ) ) {
+			$property[] = $row( __( 'Doorman', 'handik-booking-app' ), __( 'Yes', 'handik-booking-app' ) );
+		}
+		if ( ! empty( $address['freight_elevator_required'] ) ) {
+			$hours = ! empty( $address['freight_elevator_hours'] ) ? ' (' . $address['freight_elevator_hours'] . ')' : '';
+			$property[] = $row( __( 'Freight elevator', 'handik-booking-app' ), __( 'Required', 'handik-booking-app' ) . $hours );
+		}
+		if ( ! empty( $address['parking'] ) && 'none' !== $address['parking'] ) {
+			$parking = $labels['parking'][ $address['parking'] ] ?? $address['parking'];
+			if ( ! empty( $address['parking_notes'] ) ) {
+				$parking .= ' — ' . $address['parking_notes'];
+			}
+			$property[] = $row( __( 'Parking', 'handik-booking-app' ), $parking );
+		} elseif ( ! empty( $address['parking_notes'] ) ) {
+			$property[] = $row( __( 'Parking', 'handik-booking-app' ), $address['parking_notes'] );
+		}
+		if ( ! empty( $address['pets_present'] ) ) {
+			$pets = ! empty( $address['pets_notes'] ) ? $address['pets_notes'] : __( 'Pets at this address', 'handik-booking-app' );
+			$property[] = $row( '🐕 ' . __( 'Pets', 'handik-booking-app' ), $pets );
+		}
+		foreach ( array(
+			'asbestos_warning'   => __( 'Asbestos warning', 'handik-booking-app' ),
+			'mold_present'       => __( 'Mold present', 'handik-booking-app' ),
+			'hoarding_situation' => __( 'Hoarding situation', 'handik-booking-app' ),
+		) as $field => $label ) {
+			if ( ! empty( $address[ $field ] ) ) {
+				$property[] = $row( '⚠ ' . $label, __( 'Yes', 'handik-booking-app' ), false, 'danger' );
+			}
+		}
+		if ( ! empty( $address['property_notes'] ) ) {
+			$property[] = $row( __( 'Property notes', 'handik-booking-app' ), $address['property_notes'] );
+		}
+
+		// ----- Internal flags -----
+		$internal = array();
+		if ( ! empty( $contact['vip'] ) ) {
+			$internal[] = $row( 'VIP', __( 'Top-tier customer', 'handik-booking-app' ), false, 'info' );
+		}
+		foreach ( array(
+			'do_not_service'  => __( 'Do not service', 'handik-booking-app' ),
+			'scope_creeper'   => __( 'Scope creeper — set clear expectations', 'handik-booking-app' ),
+			'negotiates_hard' => __( 'Negotiates hard', 'handik-booking-app' ),
+			'complains_after' => __( 'Complains after', 'handik-booking-app' ),
+		) as $field => $label ) {
+			if ( ! empty( $contact[ $field ] ) ) {
+				$internal[] = $row( '⚠', $label, false, 'do_not_service' === $field ? 'danger' : 'warn' );
+			}
+		}
+		if ( ! empty( $contact['tips_well'] ) && 'unknown' !== $contact['tips_well'] ) {
+			$internal[] = $row( __( 'Tips', 'handik-booking-app' ), $labels['tips_well'][ $contact['tips_well'] ] ?? $contact['tips_well'] );
+		}
+		if ( ! empty( $contact['payment_on_time'] ) && 'unknown' !== $contact['payment_on_time'] ) {
+			$tone = 'chronically_late' === $contact['payment_on_time'] ? 'warn' : '';
+			$internal[] = $row( __( 'Pays', 'handik-booking-app' ), $labels['payment_on_time'][ $contact['payment_on_time'] ] ?? $contact['payment_on_time'], false, $tone );
+		}
+
+		return array(
+			'customer' => $customer,
+			'property' => $property,
+			'internal' => $internal,
+		);
+	}
+
+	/**
+	 * Display labels for the enum values surfaced in the briefing. Display-
+	 * only; the authoritative allowed-value sets live on the services.
+	 *
+	 * @return array<string, array<string, string>>
+	 */
+	protected static function briefing_value_labels() {
+		return array(
+			'language' => array(
+				'en' => __( 'English', 'handik-booking-app' ),
+				'ru' => __( 'Russian', 'handik-booking-app' ),
+				'both' => __( 'English + Russian', 'handik-booking-app' ),
+			),
+			'preferred_channel' => array(
+				'sms' => __( 'SMS', 'handik-booking-app' ),
+				'email' => __( 'Email', 'handik-booking-app' ),
+				'call' => __( 'Phone call', 'handik-booking-app' ),
+			),
+			'preferred_time' => array(
+				'morning' => __( 'Morning', 'handik-booking-app' ),
+				'afternoon' => __( 'Afternoon', 'handik-booking-app' ),
+				'evening' => __( 'Evening', 'handik-booking-app' ),
+			),
+			'payment_method_preferred' => array(
+				'cash' => __( 'Cash', 'handik-booking-app' ),
+				'venmo' => __( 'Venmo', 'handik-booking-app' ),
+				'zelle' => __( 'Zelle', 'handik-booking-app' ),
+				'check' => __( 'Check', 'handik-booking-app' ),
+				'card' => __( 'Card', 'handik-booking-app' ),
+			),
+			'tips_well' => array(
+				'always' => __( 'Always', 'handik-booking-app' ),
+				'sometimes' => __( 'Sometimes', 'handik-booking-app' ),
+				'never' => __( 'Never', 'handik-booking-app' ),
+			),
+			'payment_on_time' => array(
+				'on_time' => __( 'On time', 'handik-booking-app' ),
+				'sometimes_late' => __( 'Sometimes late', 'handik-booking-app' ),
+				'chronically_late' => __( 'Chronically late', 'handik-booking-app' ),
+			),
+			'building_type' => array(
+				'single_family' => __( 'Single family', 'handik-booking-app' ),
+				'apartment' => __( 'Apartment', 'handik-booking-app' ),
+				'condo' => __( 'Condo', 'handik-booking-app' ),
+				'townhouse' => __( 'Townhouse', 'handik-booking-app' ),
+				'commercial' => __( 'Commercial', 'handik-booking-app' ),
+			),
+			'building_age_class' => array(
+				'pre_1978_lead_paint' => __( 'Pre-1978 (lead paint awareness)', 'handik-booking-app' ),
+				'modern' => __( 'Modern', 'handik-booking-app' ),
+			),
+			'parking' => array(
+				'driveway' => __( 'Driveway', 'handik-booking-app' ),
+				'street_free' => __( 'Street (free)', 'handik-booking-app' ),
+				'street_metered' => __( 'Street (metered)', 'handik-booking-app' ),
+				'building_lot' => __( 'Building lot', 'handik-booking-app' ),
+				'specific_spot' => __( 'Specific spot', 'handik-booking-app' ),
+			),
+		);
+	}
+
+	/**
 	 * Classify a booking row by source using ONLY its FK columns — no DB
 	 * queries. Cheap enough to call per-row in a list render. Mirrors the
 	 * (heavier) resolution `for_booking()` does, minus external_unmatched
