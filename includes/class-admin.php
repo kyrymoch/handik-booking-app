@@ -115,7 +115,7 @@ class Handik_Booking_App_Admin {
 		add_submenu_page( 'handik-booking-app', __( 'Dashboard', 'handik-booking-app' ), __( 'Dashboard', 'handik-booking-app' ), $cap, 'handik-booking-app', array( $this, 'render_dashboard' ) );
 		add_submenu_page( 'handik-booking-app', __( 'Bookings', 'handik-booking-app' ), __( 'Bookings', 'handik-booking-app' ), $cap, 'handik-booking-app-bookings', array( $this, 'render_bookings' ) );
 		add_submenu_page( 'handik-booking-app', __( 'People & Requests', 'handik-booking-app' ), __( 'People', 'handik-booking-app' ), $cap, 'handik-booking-app-crm', array( $this, 'render_people' ) );
-		add_submenu_page( 'handik-booking-app', __( 'App Setup', 'handik-booking-app' ), __( 'Setup', 'handik-booking-app' ), $cap, 'handik-booking-app-settings', array( $this, 'render_settings' ) );
+		add_submenu_page( 'handik-booking-app', __( 'Settings', 'handik-booking-app' ), __( 'Settings', 'handik-booking-app' ), $cap, 'handik-booking-app-settings', array( $this, 'render_settings' ) );
 		if ( $this->page_additional_forms ) {
 			add_submenu_page( 'handik-booking-app', __( 'Additional Forms', 'handik-booking-app' ), __( 'Additional Forms', 'handik-booking-app' ), $cap, Handik_Booking_App_Admin_Additional_Forms::PAGE_SLUG, array( $this, 'render_additional_forms' ) );
 		}
@@ -548,7 +548,7 @@ class Handik_Booking_App_Admin {
 	}
 
 	public function render_settings() {
-		$page = $this->page_settings ?: ( $this->page_settings = new Handik_Booking_App_Admin_Settings( $this->settings, $this->service_catalog, $this->job_requests ) );
+		$page = $this->page_settings ?: ( $this->page_settings = new Handik_Booking_App_Admin_Settings( $this->settings, $this->service_catalog, $this->job_requests, $this->page_additional_forms ) );
 		$page->render();
 	}
 

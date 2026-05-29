@@ -101,6 +101,18 @@ class Handik_Booking_App_Admin_Integrations {
 			echo '</section>';
 			return;
 		}
+		// Sprint 5 — integrations config now also lives under Settings →
+		// Integrations. Point operators there; this tab stays for backward
+		// compatibility.
+		$settings_integrations_url = add_query_arg(
+			array( 'page' => 'handik-booking-app-settings', 'tab' => 'integrations' ),
+			admin_url( 'admin.php' )
+		);
+		echo '<div class="notice notice-info inline" style="margin:12px 0"><p>'
+			. esc_html__( 'Integration credentials have a new home under', 'handik-booking-app' )
+			. ' <a href="' . esc_url( $settings_integrations_url ) . '">' . esc_html__( 'Settings → Integrations', 'handik-booking-app' ) . '</a>. '
+			. esc_html__( 'This tab still works but will be retired in a future update.', 'handik-booking-app' )
+			. '</p></div>';
 		$s = $this->settings->all();
 		?>
 		<form method="post">

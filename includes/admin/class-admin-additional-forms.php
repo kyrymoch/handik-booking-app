@@ -21,6 +21,9 @@ if ( ! defined( 'ABSPATH' ) ) {
  */
 class Handik_Booking_App_Admin_Additional_Forms {
 	const PAGE_SLUG          = 'handik-booking-app-additional-forms';
+	// Sprint 5 — the presets + pre-approvals config now also renders inside
+	// Settings → Forms. The settings page hosts it under ?tab=forms.
+	const SETTINGS_PAGE_SLUG = 'handik-booking-app-settings';
 	const NONCE_ACTION_SAVE  = 'handik_save_form_preset';
 	const NONCE_FIELD_SAVE   = 'handik_save_form_preset_nonce';
 	const NONCE_ACTION_APPROVAL_ADD       = 'handik_add_form_approval';
@@ -47,6 +50,14 @@ class Handik_Booking_App_Admin_Additional_Forms {
 	protected $approvals;
 	/** @var Handik_Booking_App_Customer_View_Service|null */
 	protected $customer_view;
+	/**
+	 * Render context — 'legacy' (the standalone Additional Forms page) or
+	 * 'settings' (embedded under Settings → Forms). Controls which base URL
+	 * the presets/approval links + redirects target.
+	 *
+	 * @var string
+	 */
+	protected $forms_origin = 'legacy';
 
 	public function __construct( $presets, $direct, $project, $contacts, $addresses, $approvals = null, $customer_view = null ) {
 		$this->presets   = $presets;
@@ -80,6 +91,21 @@ class Handik_Booking_App_Admin_Additional_Forms {
 		echo '<div class="wrap handik-admin">';
 		echo '<h1>' . esc_html__( 'Additional Forms', 'handik-booking-app' ) . '</h1>';
 		settings_errors( 'handik_additional_forms' );
+		// Sprint 5 — Forms config (presets + pre-approvals) now also lives
+		// under Settings → Forms. Point operators there; this page stays for
+		// the Direct/Project submission lists until Sprint 6 folds them into
+		// Bookings/Requests.
+		if ( 'presets' === $tab ) {
+			$settings_forms_url = add_query_arg(
+				array( 'page' => self::SETTINGS_PAGE_SLUG, 'tab' => 'forms' ),
+				admin_url( 'admin.php' )
+			);
+			echo '<div class="notice notice-info inline" style="margin:12px 0"><p>'
+				. esc_html__( 'Forms configuration has a new home under', 'handik-booking-app' )
+				. ' <a href="' . esc_url( $settings_forms_url ) . '">' . esc_html__( 'Settings → Forms', 'handik-booking-app' ) . '</a>. '
+				. esc_html__( 'This page will become submissions-only in a future update.', 'handik-booking-app' )
+				. '</p></div>';
+		}
 		$this->render_tabs( $tab );
 
 		if ( 'presets' === $tab && $preset_new ) {
@@ -101,6 +127,70 @@ class Handik_Booking_App_Admin_Additional_Forms {
 		}
 
 		echo '</div>';
+	}
+
+	/**
+	 * Sprint 5 — render JUST the presets + pre-approvals config (no page
+	 * wrap, no Direct/Project data tabs) for embedding under Settings →
+	 * Forms. The data lists (direct/project submissions) stay on the legacy
+	 * page until Sprint 6 folds them into Bookings/Requests.
+	 *
+	 * @return void
+	 */
+	public function render_settings_forms_tab() {
+		$this->forms_origin = 'settings';
+		settings_errors( 'handik_additional_forms' );
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		$preset_param = isset( $_GET['preset_id'] ) ? sanitize_text_field( wp_unslash( $_GET['preset_id'] ) ) : '';
+		$preset_id    = absint( $preset_param );
+		if ( 'new' === $preset_param ) {
+			$this->render_preset_create();
+		} elseif ( $preset_id > 0 ) {
+			$this->render_preset_edit( $preset_id );
+		} else {
+			$this->render_presets_list();
+		}
+	}
+
+	/**
+	 * Origin-aware base for the presets/approvals links. In settings context
+	 * the config lives under Settings → Forms; legacy keeps the standalone
+	 * Additional Forms page.
+	 *
+	 * @param array<string,mixed> $extra Extra query args (e.g. preset_id).
+	 * @return string
+	 */
+	protected function forms_link( array $extra = array() ) {
+		if ( 'settings' === $this->forms_origin ) {
+			$args = array_merge( array( 'page' => self::SETTINGS_PAGE_SLUG, 'tab' => 'forms' ), $extra );
+		} else {
+			$args = array_merge( array( 'page' => self::PAGE_SLUG, 'tab' => 'presets' ), $extra );
+		}
+		return add_query_arg( $args, admin_url( 'admin.php' ) );
+	}
+
+	/**
+	 * Origin-aware redirect target for the form-POST handlers. Reads the
+	 * hidden `forms_origin` field so a save initiated from Settings → Forms
+	 * returns there instead of bouncing to the legacy page.
+	 *
+	 * @param array<string,mixed> $extra Extra query args.
+	 * @return string
+	 */
+	protected function forms_redirect_url( array $extra = array() ) {
+		// phpcs:ignore WordPress.Security.NonceVerification.Missing
+		$origin = isset( $_POST['forms_origin'] ) && 'settings' === $_POST['forms_origin'] ? 'settings' : 'legacy';
+		if ( 'settings' === $origin ) {
+			$args = array_merge( array( 'page' => self::SETTINGS_PAGE_SLUG, 'tab' => 'forms' ), $extra );
+		} else {
+			$args = array_merge( array( 'page' => self::PAGE_SLUG, 'tab' => 'presets' ), $extra );
+		}
+		return add_query_arg( $args, admin_url( 'admin.php' ) );
+	}
+
+	/** Hidden field carrying the render context through a form POST. */
+	protected function forms_origin_field() {
+		return '<input type="hidden" name="forms_origin" value="' . esc_attr( $this->forms_origin ) . '">';
 	}
 
 	protected function render_tabs( $current ) {
@@ -130,7 +220,6 @@ class Handik_Booking_App_Admin_Additional_Forms {
 
 	protected function render_presets_list() {
 		$presets = $this->presets->all();
-		$base    = admin_url( 'admin.php?page=' . self::PAGE_SLUG );
 
 		echo '<p class="description">' . esc_html__( 'Public booking-form presets. Direct visit presets use the Cal.com iframe; project work days presets use the Cal.com API. Edit a row to point it at a Cal.com event type or slug, change the duration, or disable it.', 'handik-booking-app' ) . '</p>';
 		// Sprint 10 fix: explicit "Add new preset" CTA. Was P1 — the
@@ -138,10 +227,7 @@ class Handik_Booking_App_Admin_Additional_Forms {
 		// the admin only listed existing rows. The new preset_id=new
 		// query param routes the edit form into create-mode (handler in
 		// render_preset_edit / save_preset).
-		$new_url = add_query_arg(
-			array( 'tab' => 'presets', 'preset_id' => 'new' ),
-			$base
-		);
+		$new_url = $this->forms_link( array( 'preset_id' => 'new' ) );
 		echo '<p><a class="button button-primary" href="' . esc_url( $new_url ) . '">+ ' . esc_html__( 'Add new preset', 'handik-booking-app' ) . '</a></p>';
 		echo '<table class="wp-list-table widefat striped">';
 		echo '<thead><tr>';
@@ -189,13 +275,7 @@ class Handik_Booking_App_Admin_Additional_Forms {
 			echo '</td>';
 			echo '<td>';
 			if ( $preset_db_id > 0 ) {
-				$edit_url = add_query_arg(
-					array(
-						'tab'       => 'presets',
-						'preset_id' => $preset_db_id,
-					),
-					$base
-				);
+				$edit_url = $this->forms_link( array( 'preset_id' => $preset_db_id ) );
 				echo '<a class="button button-small" href="' . esc_url( $edit_url ) . '">' . esc_html__( 'Edit', 'handik-booking-app' ) . '</a>';
 			} else {
 				// In-memory default — table not yet seeded. Editing requires a
@@ -210,12 +290,13 @@ class Handik_Booking_App_Admin_Additional_Forms {
 	}
 
 	protected function render_preset_create() {
-		$back_url = admin_url( 'admin.php?page=' . self::PAGE_SLUG . '&tab=presets' );
+		$back_url = $this->forms_link();
 		echo '<p><a href="' . esc_url( $back_url ) . '">&larr; ' . esc_html__( 'Back to presets', 'handik-booking-app' ) . '</a></p>';
 		echo '<h2>' . esc_html__( 'Create new preset', 'handik-booking-app' ) . '</h2>';
 		echo '<p class="description">' . esc_html__( 'Pick a unique slug and a form type. The preset starts disabled — you can fill in the Cal.com URL, duration and title on the next page, then tick Enabled when ready.', 'handik-booking-app' ) . '</p>';
 		echo '<form method="post" action="">';
 		wp_nonce_field( self::NONCE_ACTION_SAVE, self::NONCE_FIELD_SAVE );
+		echo $this->forms_origin_field(); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
 		echo '<input type="hidden" name="action" value="create_preset">';
 		echo '<table class="form-table" role="presentation"><tbody>';
 		echo '<tr><th><label for="hbp-new-slug">' . esc_html__( 'Slug', 'handik-booking-app' ) . '</label></th><td>';
@@ -239,13 +320,14 @@ class Handik_Booking_App_Admin_Additional_Forms {
 			return;
 		}
 		$is_project = Handik_Booking_App_Booking_Presets_Service::FORM_TYPE_PROJECT === (string) $preset['form_type'];
-		$back_url   = admin_url( 'admin.php?page=' . self::PAGE_SLUG . '&tab=presets' );
+		$back_url   = $this->forms_link();
 
 		echo '<p><a href="' . esc_url( $back_url ) . '">&larr; ' . esc_html__( 'Back to presets', 'handik-booking-app' ) . '</a></p>';
 		echo '<h2>' . esc_html( (string) $preset['form_title'] ) . '</h2>';
 
 		echo '<form method="post" action="">';
 		wp_nonce_field( self::NONCE_ACTION_SAVE, self::NONCE_FIELD_SAVE );
+		echo $this->forms_origin_field(); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
 		echo '<input type="hidden" name="preset_id" value="' . (int) $preset['id'] . '">';
 
 		echo '<table class="form-table" role="presentation"><tbody>';
@@ -392,6 +474,7 @@ class Handik_Booking_App_Admin_Additional_Forms {
 			. ' data-handik-rest-base="' . esc_attr( esc_url_raw( $rest_base ) ) . '"'
 			. ' data-handik-rest-nonce="' . esc_attr( wp_create_nonce( 'wp_rest' ) ) . '">';
 		wp_nonce_field( self::NONCE_ACTION_APPROVAL_ADD, self::NONCE_FIELD_APPROVAL_ADD );
+		echo $this->forms_origin_field(); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
 		echo '<input type="hidden" name="preset_slug" value="' . esc_attr( $preset_slug ) . '">';
 		echo '<input type="hidden" name="preset_id" value="' . (int) $preset_id . '">';
 		echo '<input type="hidden" name="contact_id" value="" data-handik-approval-contact-id>';
@@ -462,6 +545,7 @@ class Handik_Booking_App_Admin_Additional_Forms {
 			if ( 'active' === $status ) {
 				echo '<form method="post" action="" style="display:inline">';
 				wp_nonce_field( self::NONCE_ACTION_APPROVAL_REVOKE, self::NONCE_FIELD_APPROVAL_REVOKE );
+				echo $this->forms_origin_field(); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
 				echo '<input type="hidden" name="approval_id" value="' . (int) $row['id'] . '">';
 				echo '<input type="hidden" name="preset_id" value="' . (int) $preset_id . '">';
 				echo '<button type="submit" class="button-link-delete" onclick="return confirm(\'' . esc_js( __( 'Revoke this pre-approval?', 'handik-booking-app' ) ) . '\')">' .
@@ -479,6 +563,7 @@ class Handik_Booking_App_Admin_Additional_Forms {
 		// cleaned up before return. Operator-only.
 		echo '<form method="post" action="" style="margin-top:14px">';
 		wp_nonce_field( self::NONCE_ACTION_APPROVAL_SELF_TEST, self::NONCE_FIELD_APPROVAL_SELF_TEST );
+		echo $this->forms_origin_field(); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
 		echo '<input type="hidden" name="preset_id" value="' . (int) $preset_id . '">';
 		echo '<button type="submit" class="button">' . esc_html__( 'Run self-test', 'handik-booking-app' ) . '</button>';
 		echo ' <span class="description">' . esc_html__( 'Exercises the full pre-approval lifecycle against a synthetic phone (cleans up after itself). Use to verify the gate after upgrades.', 'handik-booking-app' ) . '</span>';
@@ -505,8 +590,7 @@ class Handik_Booking_App_Admin_Additional_Forms {
 		$preset_id = isset( $_POST['preset_id'] ) ? absint( wp_unslash( $_POST['preset_id'] ) ) : 0;
 		$results   = $this->approvals->self_test();
 		set_transient( self::SELF_TEST_RESULTS_TRANSIENT, $results, 30 );
-		$redirect = admin_url( 'admin.php?page=' . self::PAGE_SLUG . '&tab=presets&preset_id=' . $preset_id );
-		wp_safe_redirect( $redirect );
+		wp_safe_redirect( $this->forms_redirect_url( array( 'preset_id' => $preset_id ) ) );
 		exit;
 	}
 
@@ -539,8 +623,7 @@ class Handik_Booking_App_Admin_Additional_Forms {
 			add_settings_error( 'handik_additional_forms', 'handik_form_approval_added', __( 'Pre-approval added.', 'handik-booking-app' ), 'updated' );
 			set_transient( 'settings_errors', get_settings_errors(), 30 );
 		}
-		$redirect = admin_url( 'admin.php?page=' . self::PAGE_SLUG . '&tab=presets&preset_id=' . $preset_id . '&settings-updated=true' );
-		wp_safe_redirect( $redirect );
+		wp_safe_redirect( $this->forms_redirect_url( array( 'preset_id' => $preset_id, 'settings-updated' => 'true' ) ) );
 		exit;
 	}
 
@@ -565,8 +648,7 @@ class Handik_Booking_App_Admin_Additional_Forms {
 			add_settings_error( 'handik_additional_forms', 'handik_form_approval_revoked', __( 'Pre-approval revoked.', 'handik-booking-app' ), 'updated' );
 			set_transient( 'settings_errors', get_settings_errors(), 30 );
 		}
-		$redirect = admin_url( 'admin.php?page=' . self::PAGE_SLUG . '&tab=presets&preset_id=' . $preset_id . '&settings-updated=true' );
-		wp_safe_redirect( $redirect );
+		wp_safe_redirect( $this->forms_redirect_url( array( 'preset_id' => $preset_id, 'settings-updated' => 'true' ) ) );
 		exit;
 	}
 
@@ -600,15 +682,7 @@ class Handik_Booking_App_Admin_Additional_Forms {
 				return;
 			}
 			add_settings_error( 'handik_additional_forms', 'preset_created', __( 'Preset created. Fill in the rest of the fields and tick Enabled when ready.', 'handik-booking-app' ), 'updated' );
-			$redirect = add_query_arg(
-				array(
-					'page'      => self::PAGE_SLUG,
-					'tab'       => 'presets',
-					'preset_id' => $new_id,
-				),
-				admin_url( 'admin.php' )
-			);
-			wp_safe_redirect( $redirect );
+			wp_safe_redirect( $this->forms_redirect_url( array( 'preset_id' => $new_id ) ) );
 			exit;
 		}
 

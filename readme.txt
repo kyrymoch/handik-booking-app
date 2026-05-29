@@ -3,7 +3,7 @@ Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.1.34.0
+Stable tag: 2.2.0
 License: Proprietary
 
 Single-page booking application with AI-assisted intake, multi-day project scheduling, and end-to-end Cal.com calendar sync.
@@ -81,6 +81,15 @@ Schema migration 1.6.1 adds `external_contact_id` for backfilling bookings made 
 Schema migration 1.6.0 adds `project_work_day_id` so multi-day project bookings show up in the unified admin Bookings list. Migrates automatically.
 
 == Changelog ==
+
+= 2.2.0 =
+* **Sprint 5 / Customer unification — Settings consolidation (IA reorg, part 1).** Configuration now lives under one roof. The Settings page ("App Setup" renamed to **Settings**) gains two tabs — **Forms** and **Integrations** — so an operator no longer hunts across three pages to configure the plugin. Additive + backward-compatible: the old pages still work, with deprecation notices pointing at the new home. No DB change, no migration.
+* **Settings → Forms tab** — hosts the booking-form presets + per-preset phone pre-approvals (previously only under the standalone Additional Forms page). Delegates to the existing Additional Forms renderer via a new `render_settings_forms_tab()`, with origin-aware links + redirects (`forms_link()` / `forms_redirect_url()` + a hidden `forms_origin` field) so creating/editing a preset or adding/revoking a pre-approval from Settings returns to Settings → Forms instead of bouncing to the legacy page. The Direct/Project submission *lists* stay on the legacy page for now (they fold into Bookings/Requests in Sprint 6).
+* **Settings → Integrations tab** — vendor credentials (OpenAI / Google Maps / Twilio / GitHub) moved here from the "Integrations & Logs" page. Saved by the standard settings handler (same nonce), which already gates the credential keys behind the `handik_manage_integrations` capability.
+* **Deprecation notices** added (non-breaking): the Additional Forms → Presets tab now shows "Forms configuration has a new home under Settings → Forms"; the Integrations & Logs → Integrations tab shows "Integration credentials have a new home under Settings → Integrations". Both old surfaces keep working.
+* **Settings tab order** reworked to match the mental model: Booking flow · Forms · Service catalog · Service area · Cal.com · Customer notifications · Integrations · Appearance.
+* Menu label "App Setup" → "Settings".
+* No customer-facing change. No new REST endpoint. Old bookmarks/URLs continue to resolve.
 
 = 2.1.34.0 =
 * **Sprint 4 / Customer unification — property-level attributes + pre-visit briefing.** Customer attributes (1.6.4) answer "who is this person"; property attributes answer "what's true about THIS address" — gate code, parking, pets, building hazards. They live on the address, not the contact: if the customer moves, the gate code doesn't follow them. One additive migration, no breaking change.

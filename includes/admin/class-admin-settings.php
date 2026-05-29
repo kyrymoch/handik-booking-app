@@ -19,33 +19,50 @@ class Handik_Booking_App_Admin_Settings {
 	protected $catalog;
 	/** @var Handik_Booking_App_Job_Requests_Service|null */
 	protected $job_requests;
+	/** @var Handik_Booking_App_Admin_Additional_Forms|null */
+	protected $additional_forms;
 
-	public function __construct( $settings, $catalog, $job_requests = null ) {
-		$this->settings     = $settings;
-		$this->catalog      = $catalog;
-		$this->job_requests = $job_requests;
+	public function __construct( $settings, $catalog, $job_requests = null, $additional_forms = null ) {
+		$this->settings         = $settings;
+		$this->catalog          = $catalog;
+		$this->job_requests     = $job_requests;
+		// Sprint 5 — Settings → Forms delegates to the Additional Forms
+		// renderer for the presets + pre-approvals config.
+		$this->additional_forms = $additional_forms;
 	}
 
 	public function render() {
 		$tab = Handik_Booking_App_Admin_Helpers::current_tab(
-			array( 'booking-flow', 'appearance', 'catalog', 'service-area', 'cal', 'notifications' ),
+			array( 'booking-flow', 'forms', 'appearance', 'catalog', 'service-area', 'cal', 'notifications', 'integrations' ),
 			'booking-flow'
 		);
 
-		Handik_Booking_App_Admin_Helpers::page_start( __( 'App Setup', 'handik-booking-app' ) );
+		Handik_Booking_App_Admin_Helpers::page_start( __( 'Settings', 'handik-booking-app' ) );
 		settings_errors( 'handik-booking-app' );
 
+		// Sprint 5 — Settings is now the single home for configuration. Forms
+		// (presets + pre-approvals) and Integrations moved in as tabs.
 		$tabs = array(
 			'booking-flow'  => __( 'Booking flow', 'handik-booking-app' ),
-			'appearance'    => __( 'Appearance', 'handik-booking-app' ),
+			'forms'         => __( 'Forms', 'handik-booking-app' ),
 			'catalog'       => __( 'Service catalog', 'handik-booking-app' ),
 			'service-area'  => __( 'Service area', 'handik-booking-app' ),
 			'cal'           => __( 'Cal.com', 'handik-booking-app' ),
 			'notifications' => __( 'Customer notifications', 'handik-booking-app' ),
+			'integrations'  => __( 'Integrations', 'handik-booking-app' ),
+			'appearance'    => __( 'Appearance', 'handik-booking-app' ),
 		);
 		echo Handik_Booking_App_Admin_Helpers::tabs_markup( $tabs, $tab, 'handik-booking-app-settings' );
 
 		$s = $this->settings->all();
+
+		// Forms tab renders its own POST forms (presets / pre-approvals), so
+		// it must NOT be wrapped in the shared settings <form>.
+		if ( 'forms' === $tab ) {
+			$this->render_forms_tab();
+			Handik_Booking_App_Admin_Helpers::page_end();
+			return;
+		}
 
 		echo '<form method="post">';
 		wp_nonce_field( 'handik_booking_app_save_settings', 'handik_booking_app_settings_nonce' );
@@ -66,6 +83,9 @@ class Handik_Booking_App_Admin_Settings {
 			case 'notifications':
 				$this->render_notifications_tab( $s );
 				break;
+			case 'integrations':
+				$this->render_integrations_tab( $s );
+				break;
 			default:
 				$this->render_booking_flow_tab( $s );
 		}
@@ -77,6 +97,80 @@ class Handik_Booking_App_Admin_Settings {
 		echo '</form>';
 
 		Handik_Booking_App_Admin_Helpers::page_end();
+	}
+
+	/**
+	 * Sprint 5 — Forms tab. Delegates to the Additional Forms renderer for
+	 * the presets + pre-approvals config (it manages its own POST forms +
+	 * origin-aware redirects).
+	 */
+	protected function render_forms_tab() {
+		echo '<p class="description" style="margin-top:8px">' . esc_html__( 'Public booking-form presets and per-preset phone pre-approvals. Direct & Project submissions still live under the Additional Forms page.', 'handik-booking-app' ) . '</p>';
+		if ( $this->additional_forms ) {
+			$this->additional_forms->render_settings_forms_tab();
+		} else {
+			echo '<div class="notice notice-warning inline"><p>' . esc_html__( 'Additional Forms module is not loaded.', 'handik-booking-app' ) . '</p></div>';
+		}
+	}
+
+	/**
+	 * Sprint 5 — Integrations tab. Vendor credentials moved here from the
+	 * Integrations & Logs page. Saved by the standard settings handler
+	 * (same nonce), which gates the credential keys behind MANAGE_INTEGRATIONS.
+	 *
+	 * @param array<string,mixed> $s Settings snapshot.
+	 */
+	protected function render_integrations_tab( array $s ) {
+		if ( ! current_user_can( Handik_Booking_App_Capabilities::MANAGE_INTEGRATIONS ) ) {
+			$cap_key = Handik_Booking_App_Capabilities::MANAGE_INTEGRATIONS;
+			echo '<section class="handik-admin-block">';
+			echo '<h2 class="handik-admin-section-title">' . esc_html__( 'Integrations', 'handik-booking-app' ) . '</h2>';
+			echo '<p>' . esc_html__( 'You don’t have permission to manage integration credentials.', 'handik-booking-app' ) . '</p>';
+			echo '<p>' . sprintf(
+				/* translators: %s: capability slug. */
+				esc_html__( 'Ask a site administrator to grant you the %s capability.', 'handik-booking-app' ),
+				'<code>' . esc_html( $cap_key ) . '</code>'
+			) . '</p>';
+			echo '</section>';
+			return;
+		}
+		?>
+		<section class="handik-admin-block">
+			<h2 class="handik-admin-section-title">OpenAI</h2>
+			<div class="handik-admin-grid">
+				<?php Handik_Booking_App_Admin_Helpers::field( 'openai_api_key', __( 'API Key', 'handik-booking-app' ), $s['openai_api_key'], 'password' ); ?>
+				<?php Handik_Booking_App_Admin_Helpers::field( 'openai_workflow_id', __( 'Workflow ID', 'handik-booking-app' ), $s['openai_workflow_id'] ); ?>
+				<?php Handik_Booking_App_Admin_Helpers::field( 'openai_api_base', __( 'API base', 'handik-booking-app' ), $s['openai_api_base'] ); ?>
+				<?php Handik_Booking_App_Admin_Helpers::field( 'openai_project_id', __( 'Project ID', 'handik-booking-app' ), $s['openai_project_id'] ); ?>
+				<?php Handik_Booking_App_Admin_Helpers::field( 'openai_organization_id', __( 'Organization ID', 'handik-booking-app' ), $s['openai_organization_id'] ); ?>
+				<?php Handik_Booking_App_Admin_Helpers::field( 'chatkit_script_url', __( 'Custom ChatKit bridge URL', 'handik-booking-app' ), $s['chatkit_script_url'] ); ?>
+			</div>
+		</section>
+		<section class="handik-admin-block">
+			<h2 class="handik-admin-section-title">Google Maps</h2>
+			<div class="handik-admin-grid">
+				<?php Handik_Booking_App_Admin_Helpers::field( 'google_maps_api_key', __( 'API key', 'handik-booking-app' ), $s['google_maps_api_key'], 'password' ); ?>
+				<?php Handik_Booking_App_Admin_Helpers::field( 'google_maps_country', __( 'Country', 'handik-booking-app' ), $s['google_maps_country'] ); ?>
+			</div>
+		</section>
+		<section class="handik-admin-block">
+			<h2 class="handik-admin-section-title">Twilio</h2>
+			<div class="handik-admin-grid">
+				<?php Handik_Booking_App_Admin_Helpers::field( 'twilio_account_sid', __( 'Account SID', 'handik-booking-app' ), $s['twilio_account_sid'] ); ?>
+				<?php Handik_Booking_App_Admin_Helpers::field( 'twilio_auth_token', __( 'Auth token', 'handik-booking-app' ), $s['twilio_auth_token'], 'password' ); ?>
+				<?php Handik_Booking_App_Admin_Helpers::field( 'twilio_verify_service_sid', __( 'Verify service SID', 'handik-booking-app' ), $s['twilio_verify_service_sid'] ); ?>
+			</div>
+		</section>
+		<section class="handik-admin-block">
+			<h2 class="handik-admin-section-title">GitHub (plugin updates)</h2>
+			<div class="handik-admin-grid">
+				<?php Handik_Booking_App_Admin_Helpers::field( 'github_repo_url', __( 'Repo URL', 'handik-booking-app' ), $s['github_repo_url'] ); ?>
+				<?php Handik_Booking_App_Admin_Helpers::field( 'github_repo_branch', __( 'Release branch', 'handik-booking-app' ), $s['github_repo_branch'] ); ?>
+				<?php Handik_Booking_App_Admin_Helpers::field( 'github_access_token', __( 'Access token', 'handik-booking-app' ), $s['github_access_token'], 'password' ); ?>
+				<?php Handik_Booking_App_Admin_Helpers::field( 'github_release_asset_pattern', __( 'Release asset pattern', 'handik-booking-app' ), $s['github_release_asset_pattern'] ); ?>
+			</div>
+		</section>
+		<?php
 	}
 
 	// =====================================================================

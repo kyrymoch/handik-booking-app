@@ -315,7 +315,7 @@ Top-level `Handik Booking` menu (`includes/class-admin.php`). Page renderers liv
 | `handik-booking-app-bookings`        | `Admin_Bookings`                              | unified Bookings list (cards + table), detail view, add booking flow, pull-from-Cal, bulk delete |
 | `handik-booking-app-crm`             | `Admin_People`                                | People & Requests list, person detail, addresses, requests focus lists, bulk delete |
 | `handik-booking-app-forms`           | `Admin_Additional_Forms`                      | Direct Submissions + Project Schedules sub-screens                    |
-| `handik-booking-app-app-settings`    | `Admin_Settings`                              | Tabs: app, integrations, notifications, appearance, etc.              |
+| `handik-booking-app-settings`        | `Admin_Settings`                              | Single config home (since 2.2.0). Tabs: Booking flow · Forms (presets + pre-approvals, delegated to `Admin_Additional_Forms`) · Service catalog · Service area · Cal.com · Notifications · Integrations · Appearance |
 | `handik-booking-app-operations`      | `Admin_Logs` + `Admin_System`                 | Logs, system info, migration status, transients clear                 |
 | `handik-booking-app-integrations`    | `Admin_Integrations`                          | Service catalog editor (booking types + pricing buckets)              |
 
