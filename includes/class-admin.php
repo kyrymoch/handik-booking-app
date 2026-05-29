@@ -435,6 +435,7 @@ class Handik_Booking_App_Admin {
 					'confirm'      => __( 'Confirm', 'handik-booking-app' ),
 					'copied'       => __( 'Copied', 'handik-booking-app' ),
 					'addressEdit'  => __( 'Edit address', 'handik-booking-app' ),
+					'approvalNoMatch' => __( 'No customers found.', 'handik-booking-app' ),
 					'fetchingChat' => __( 'Fetching chat history from OpenAI…', 'handik-booking-app' ),
 					'fetchedChat'  => __( 'Fetched %1$d messages (%2$d new).', 'handik-booking-app' ),
 					'noChatFound'  => __( 'OpenAI returned no messages for this thread.', 'handik-booking-app' ),

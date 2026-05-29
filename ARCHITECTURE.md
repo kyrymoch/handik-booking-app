@@ -152,6 +152,8 @@ POST  /admin/contact                  Create a new contact
 PATCH /admin/contact/{id}             Update a contact
 DEL   /admin/contact/{id}             Hard-delete contact (cascade)
 GET   /admin/contact/search           Lookup-as-you-type for "add booking" flow
+GET   /admin/customers/search          Customer 360 search for admin pickers
+                                      (pre-approval); wraps Customer_View_Service::search
 
 DEL   /admin/job-request/{id}         Hard-delete a draft / completed request
 
@@ -341,6 +343,8 @@ DB version stored in `wp_options.handik_booking_app_db_version`. Migrations are 
 | 1.5.2   | Migration_152          | `last_status_emailed` for cancel/reschedule email dedup              |
 | 1.6.0   | Migration_160          | `handik_bookings.project_work_day_id` so project rows surface in the unified Bookings list |
 | 1.6.1   | Migration_161          | `handik_bookings.external_contact_id` for Cal-only bookings the customer made outside our form |
+| 1.6.2   | Migration_162          | `handik_form_approvals` table — soft phone pre-approval gate for Additional Forms presets |
+| 1.6.3   | Migration_163          | `handik_form_approvals.contact_id` (+ index + one-time phone→contact backfill) for the pre-approval customer picker |
 
 ### Key tables
 

@@ -1950,7 +1950,124 @@
 		initBulkDeleteDrafts();
 		initPullFromCal();
 		initBulkMode();
+		initApprovalPicker();
 	} );
+
+	// ============================================================
+	// Sprint 2 — pre-approval customer picker.
+	//
+	// On the Additional Forms → preset edit screen, the "Add pre-
+	// approval" form has a customer search box. Typing (debounced)
+	// queries /admin/customers/search; picking a result fills the
+	// hidden contact_id + the phone field. The operator can still
+	// type a phone manually for a customer not yet in the CRM.
+	// ============================================================
+	function initApprovalPicker() {
+		const form = document.querySelector( '[data-handik-approval-form]' );
+		if ( ! form ) { return; }
+
+		const restBase  = form.dataset.handikRestBase || config.restBase;
+		const restNonce = form.dataset.handikRestNonce || config.restNonce;
+		const searchInput = form.querySelector( '[data-handik-approval-search]' );
+		const resultsList = form.querySelector( '[data-handik-approval-results]' );
+		const phoneInput  = form.querySelector( '[data-handik-approval-phone]' );
+		const contactIdInput = form.querySelector( '[data-handik-approval-contact-id]' );
+		const chosenBox   = form.querySelector( '[data-handik-approval-chosen]' );
+		const chosenName  = form.querySelector( '[data-handik-approval-chosen-name]' );
+		const clearBtn    = form.querySelector( '[data-handik-approval-clear]' );
+
+		if ( ! searchInput || ! resultsList ) { return; }
+
+		let timer = null;
+
+		function clearChoice() {
+			if ( contactIdInput ) { contactIdInput.value = ''; }
+			if ( chosenBox )      { chosenBox.hidden = true; }
+			if ( chosenName )     { chosenName.textContent = ''; }
+		}
+
+		function hideResults() {
+			resultsList.hidden = true;
+			resultsList.innerHTML = '';
+		}
+
+		function choose( r ) {
+			if ( contactIdInput ) { contactIdInput.value = String( r.id ); }
+			if ( phoneInput )     { phoneInput.value = r.phone || r.phone_display || ''; }
+			if ( chosenName ) {
+				chosenName.textContent = ( r.full_name || '' )
+					+ ( r.phone_display ? ' · ' + r.phone_display : '' )
+					+ ( r.is_spam ? ' · ⚠ spam' : ( r.is_returning ? ' · returning' : '' ) );
+			}
+			if ( chosenBox ) { chosenBox.hidden = false; }
+			if ( searchInput ) { searchInput.value = ''; }
+			hideResults();
+		}
+
+		function renderResults( results ) {
+			resultsList.innerHTML = '';
+			if ( ! results.length ) {
+				const li = document.createElement( 'li' );
+				li.style.padding = '8px 12px';
+				li.className = 'handik-admin-muted';
+				li.textContent = i18n.approvalNoMatch || 'No customers found.';
+				resultsList.appendChild( li );
+				resultsList.hidden = false;
+				return;
+			}
+			results.forEach( function ( r ) {
+				const li = document.createElement( 'li' );
+				li.tabIndex = 0;
+				li.style.padding = '8px 12px';
+				li.style.cursor = 'pointer';
+				li.style.borderBottom = '1px solid #f0f0f1';
+				li.innerHTML = '<strong>' + escapeHtml( r.full_name || '(no name)' ) + '</strong>'
+					+ ' <span class="handik-admin-muted">· ' + escapeHtml( r.phone_display || r.phone || '' ) + '</span>'
+					+ ( r.email ? ' <span class="handik-admin-muted">· ' + escapeHtml( r.email ) + '</span>' : '' )
+					+ ( r.is_spam ? ' <span style="color:#a30606">⚠</span>' : '' );
+				li.addEventListener( 'click', function () { choose( r ); } );
+				li.addEventListener( 'keydown', function ( e ) {
+					if ( 'Enter' === e.key || ' ' === e.key ) { e.preventDefault(); choose( r ); }
+				} );
+				resultsList.appendChild( li );
+			} );
+			resultsList.hidden = false;
+		}
+
+		searchInput.addEventListener( 'input', function () {
+			// Typing a new search invalidates any prior pick.
+			clearChoice();
+			if ( timer ) { window.clearTimeout( timer ); }
+			const q = searchInput.value.trim();
+			if ( q.length < 2 ) { hideResults(); return; }
+			timer = window.setTimeout( function () {
+				window.fetch( restBase + 'admin/customers/search?q=' + encodeURIComponent( q ), {
+					credentials: 'same-origin',
+					headers: { 'X-WP-Nonce': restNonce },
+				} )
+					.then( function ( r ) { return r.json(); } )
+					.then( function ( payload ) { renderResults( payload && payload.results ? payload.results : [] ); } )
+					.catch( function () { hideResults(); } );
+			}, 250 );
+		} );
+
+		if ( clearBtn ) {
+			clearBtn.addEventListener( 'click', function () {
+				clearChoice();
+				if ( phoneInput ) { phoneInput.value = ''; }
+			} );
+		}
+
+		// Manually editing the phone after a pick detaches the contact link
+		// (operator is overriding) — keep contact_id only if phone unchanged.
+		if ( phoneInput ) {
+			phoneInput.addEventListener( 'input', function () {
+				if ( contactIdInput && contactIdInput.value ) {
+					clearChoice();
+				}
+			} );
+		}
+	}
 
 	// ============================================================
 	// 2.1.26.3: generic bulk-mode toggler + selection apply for

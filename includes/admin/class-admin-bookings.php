@@ -131,6 +131,7 @@ class Handik_Booking_App_Admin_Bookings {
 		// phpcs:disable WordPress.Security.NonceVerification.Recommended
 		$filter_time   = isset( $_GET['filter_time'] ) ? sanitize_key( wp_unslash( $_GET['filter_time'] ) ) : 'all';
 		$filter_status = isset( $_GET['filter_status'] ) ? sanitize_key( wp_unslash( $_GET['filter_status'] ) ) : 'all';
+		$filter_source = isset( $_GET['filter_source'] ) ? sanitize_key( wp_unslash( $_GET['filter_source'] ) ) : 'all';
 		$query         = isset( $_GET['q'] ) ? sanitize_text_field( wp_unslash( $_GET['q'] ) ) : '';
 		$paged         = isset( $_GET['paged'] ) ? max( 1, absint( $_GET['paged'] ) ) : 1;
 		// phpcs:enable
@@ -175,9 +176,9 @@ class Handik_Booking_App_Admin_Bookings {
 		</p>
 		<?php
 
-		echo $this->filter_bar_markup( $filter_time, $filter_status, $query );
+		echo $this->filter_bar_markup( $filter_time, $filter_status, $query, $filter_source );
 
-		$rows = $this->load_filtered_bookings( $filter_time, $filter_status, $query );
+		$rows = $this->load_filtered_bookings( $filter_time, $filter_status, $query, $filter_source );
 
 		if ( empty( $rows ) ) {
 			echo '<div class="handik-admin-empty"><p>' . esc_html__( 'No bookings match these filters.', 'handik-booking-app' ) . '</p></div>';
@@ -314,8 +315,18 @@ class Handik_Booking_App_Admin_Bookings {
 		return $out;
 	}
 
-	protected function filter_bar_markup( $filter_time, $filter_status, $query ) {
+	protected function filter_bar_markup( $filter_time, $filter_status, $query, $filter_source = 'all' ) {
 		$page = 'handik-booking-app-bookings';
+		// Sprint 2 — source filter options. Subsumes the old Additional Forms
+		// Direct/Project sub-screens: those are just bookings filtered by
+		// source here.
+		$source_options = array(
+			'all'      => __( 'All sources', 'handik-booking-app' ),
+			'main'     => __( 'Main SPA', 'handik-booking-app' ),
+			'direct'   => __( 'Direct form', 'handik-booking-app' ),
+			'project'  => __( 'Project form', 'handik-booking-app' ),
+			'external' => __( 'External Cal', 'handik-booking-app' ),
+		);
 		$time_options = array(
 			'all'        => __( 'All', 'handik-booking-app' ),
 			'today'      => __( 'Today', 'handik-booking-app' ),
@@ -351,6 +362,7 @@ class Handik_Booking_App_Admin_Bookings {
 		$active_count = 0;
 		if ( $filter_time && 'all' !== $filter_time )       { $active_count++; }
 		if ( $filter_status && 'all' !== $filter_status )   { $active_count++; }
+		if ( $filter_source && 'all' !== $filter_source )   { $active_count++; }
 		if ( '' !== trim( (string) $query ) )               { $active_count++; }
 		$is_open      = $active_count > 0;
 		$summary_text = $active_count > 0
@@ -381,6 +393,14 @@ class Handik_Booking_App_Admin_Bookings {
 							<?php endforeach; ?>
 						</select>
 					</label>
+					<label class="handik-admin-filter">
+						<span><?php esc_html_e( 'Source', 'handik-booking-app' ); ?></span>
+						<select name="filter_source">
+							<?php foreach ( $source_options as $key => $label ) : ?>
+								<option value="<?php echo esc_attr( $key ); ?>"<?php selected( $filter_source, $key ); ?>><?php echo esc_html( $label ); ?></option>
+							<?php endforeach; ?>
+						</select>
+					</label>
 					<label class="handik-admin-filter handik-admin-filter--search">
 						<span><?php esc_html_e( 'Search by name or phone', 'handik-booking-app' ); ?></span>
 						<input type="search" name="q" value="<?php echo esc_attr( $query ); ?>" data-handik-debounced-submit placeholder="<?php esc_attr_e( 'e.g. Zinkin or 617…', 'handik-booking-app' ); ?>" />
@@ -394,7 +414,7 @@ class Handik_Booking_App_Admin_Bookings {
 		return (string) ob_get_clean();
 	}
 
-	protected function load_filtered_bookings( $filter_time, $filter_status, $query ) {
+	protected function load_filtered_bookings( $filter_time, $filter_status, $query, $filter_source = 'all' ) {
 		if ( ! $this->bookings ) {
 			return array();
 		}
@@ -472,6 +492,13 @@ class Handik_Booking_App_Admin_Bookings {
 				if ( ! $matches ) {
 					continue;
 				}
+			}
+
+			// Sprint 2 — source filter (main / direct / project / external).
+			// Row-only classification, no extra queries.
+			if ( 'all' !== $filter_source
+				&& Handik_Booking_App_Customer_View_Service::source_for_row( $row ) !== $filter_source ) {
+				continue;
 			}
 
 			if ( '' !== $query ) {
@@ -883,6 +910,7 @@ class Handik_Booking_App_Admin_Bookings {
 						<th><?php esc_html_e( 'When', 'handik-booking-app' ); ?></th>
 						<th><?php esc_html_e( 'Client', 'handik-booking-app' ); ?></th>
 						<th><?php esc_html_e( 'Task', 'handik-booking-app' ); ?></th>
+						<th><?php esc_html_e( 'Source', 'handik-booking-app' ); ?></th>
 						<th><?php esc_html_e( 'City', 'handik-booking-app' ); ?></th>
 						<th><?php esc_html_e( 'Duration', 'handik-booking-app' ); ?></th>
 						<th><?php esc_html_e( 'Status', 'handik-booking-app' ); ?></th>
@@ -945,7 +973,7 @@ class Handik_Booking_App_Admin_Bookings {
 						}
 						$is_past = empty( $row['start_time'] ) || $row['start_time'] < gmdate( 'Y-m-d H:i:s' );
 						if ( $is_past && ! $past_divider_inserted && ! empty( $past ) ) {
-							echo '<tr class="handik-admin-table-divider"><td colspan="' . ( $bulk_enabled ? 7 : 6 ) . '">' . esc_html__( 'Past bookings', 'handik-booking-app' ) . '</td></tr>';
+							echo '<tr class="handik-admin-table-divider"><td colspan="' . ( $bulk_enabled ? 8 : 7 ) . '">' . esc_html__( 'Past bookings', 'handik-booking-app' ) . '</td></tr>';
 							$past_divider_inserted = true;
 						}
 						$status = $this->bookings ? $this->bookings->effective_status( $row ) : (string) ( $row['status'] ?? '' );
@@ -994,6 +1022,7 @@ class Handik_Booking_App_Admin_Bookings {
 						<td><?php echo esc_html( Handik_Booking_App_Admin_Helpers::format_booking_window( $row, 'compact' ) ); ?></td>
 						<td><?php echo esc_html( $client_label ); ?></td>
 						<td><?php echo esc_html( $tasks ); ?></td>
+						<td><?php echo Handik_Booking_App_Admin_Helpers::booking_source_pill( $row ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></td>
 						<td><?php echo esc_html( Handik_Booking_App_Admin_Helpers::request_city( $request, $address ) ); ?></td>
 						<td><?php echo esc_html( ! empty( $row['duration_minutes'] ) ? $row['duration_minutes'] . ' min' : '—' ); ?></td>
 						<td><?php echo Handik_Booking_App_Admin_Helpers::status_pill_markup( $status ); ?></td>

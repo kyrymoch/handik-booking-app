@@ -27,6 +27,7 @@ class Handik_Booking_App_Migrations {
 		'1.6.0' => 'Handik_Booking_App_Migration_160',
 		'1.6.1' => 'Handik_Booking_App_Migration_161',
 		'1.6.2' => 'Handik_Booking_App_Migration_162',
+		'1.6.3' => 'Handik_Booking_App_Migration_163',
 	);
 
 	/**

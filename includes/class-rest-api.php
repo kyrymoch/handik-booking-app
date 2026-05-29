@@ -37,8 +37,10 @@ class Handik_Booking_App_REST_API {
 	protected $booking_presets;
 	/** @var Handik_Booking_App_Cal_Api_Service|null */
 	protected $cal_api;
+	/** @var Handik_Booking_App_Customer_View_Service|null */
+	protected $customer_view;
 
-	public function __construct( $app, $auth, $chatkit, $webhook, $messages = null, $bookings = null, $contacts = null, $addresses = null, $settings = null, $logger = null, $job_requests = null, $service_catalog = null, $cascade_delete = null, $direct_booking = null, $booking_presets = null, $cal_api = null ) {
+	public function __construct( $app, $auth, $chatkit, $webhook, $messages = null, $bookings = null, $contacts = null, $addresses = null, $settings = null, $logger = null, $job_requests = null, $service_catalog = null, $cascade_delete = null, $direct_booking = null, $booking_presets = null, $cal_api = null, $customer_view = null ) {
 		$this->app             = $app;
 		$this->auth            = $auth;
 		$this->chatkit         = $chatkit;
@@ -55,6 +57,7 @@ class Handik_Booking_App_REST_API {
 		$this->direct_booking  = $direct_booking;
 		$this->booking_presets = $booking_presets;
 		$this->cal_api         = $cal_api;
+		$this->customer_view   = $customer_view;
 
 		add_action( 'rest_api_init', array( $this, 'register_routes' ) );
 	}
@@ -204,6 +207,14 @@ class Handik_Booking_App_REST_API {
 		register_rest_route( $namespace, '/admin/contact/search', array(
 			'methods'             => WP_REST_Server::READABLE,
 			'callback'            => array( $this, 'admin_contact_search' ),
+			'permission_callback' => array( $this, 'admin_permission' ),
+		) );
+		// Sprint 2 — customer-centric search for admin pickers (pre-approval).
+		// Delegates to Customer_View_Service::search() for the richer shape
+		// (phone_display / is_returning / is_spam / last_seen).
+		register_rest_route( $namespace, '/admin/customers/search', array(
+			'methods'             => WP_REST_Server::READABLE,
+			'callback'            => array( $this, 'admin_customers_search' ),
 			'permission_callback' => array( $this, 'admin_permission' ),
 		) );
 		register_rest_route( $namespace, '/admin/address/(?P<id>\d+)', array(
@@ -1460,6 +1471,31 @@ class Handik_Booking_App_REST_API {
 				}, (array) $addresses ),
 			);
 		}
+		return rest_ensure_response( array( 'results' => $results ) );
+	}
+
+	/**
+	 * Sprint 2 — customer search for admin pickers. Thin wrapper over the
+	 * Customer 360 read-model so the pre-approval picker (and future add-
+	 * booking picker) share one search surface and shape.
+	 *
+	 * @param WP_REST_Request $request Request.
+	 * @return WP_REST_Response
+	 */
+	public function admin_customers_search( WP_REST_Request $request ) {
+		if ( ! $this->customer_view ) {
+			return rest_ensure_response( array( 'results' => array() ) );
+		}
+		$q = trim( (string) $request->get_param( 'q' ) );
+		if ( strlen( $q ) < 2 ) {
+			return rest_ensure_response( array( 'results' => array() ) );
+		}
+		$limit = (int) $request->get_param( 'limit' );
+		$limit = $limit > 0 ? min( 25, $limit ) : 10;
+		$exclude_spam = null === $request->get_param( 'exclude_spam' )
+			? true
+			: (bool) $request->get_param( 'exclude_spam' );
+		$results = $this->customer_view->search( $q, $limit, $exclude_spam );
 		return rest_ensure_response( array( 'results' => $results ) );
 	}
 

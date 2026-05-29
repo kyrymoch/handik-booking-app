@@ -3,7 +3,7 @@ Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.1.31.0
+Stable tag: 2.1.32.0
 License: Proprietary
 
 Single-page booking application with AI-assisted intake, multi-day project scheduling, and end-to-end Cal.com calendar sync.
@@ -81,6 +81,17 @@ Schema migration 1.6.1 adds `external_contact_id` for backfilling bookings made 
 Schema migration 1.6.0 adds `project_work_day_id` so multi-day project bookings show up in the unified admin Bookings list. Migrates automatically.
 
 == Changelog ==
+
+= 2.1.32.0 =
+* **Sprint 2 / Customer unification — pre-approval customer picker + Bookings source filter.** Builds on the Sprint 1 Customer 360 read-model. No breaking change; one additive migration that auto-runs.
+* **Migration 1.6.3** — adds nullable `contact_id` + `idx_contact_id` to `handik_form_approvals`, then a one-time backfill linking existing approvals to a contact when the normalized phone matches exactly one `handik_contacts` row (ambiguous many-per-phone matches are skipped). Idempotent (column guard + `contact_id IS NULL` clause).
+* **Pre-approval customer picker (closes roadmap "Боль 5").** The "Add pre-approval" form on the Additional Forms preset edit screen now has a debounced customer search box. Typing queries the new `GET /admin/customers/search` endpoint; picking a result fills the hidden `contact_id` + the phone field. The operator can still type a phone manually for a customer not yet in the CRM. Editing the phone after a pick detaches the contact link (explicit override). Picker JS lives in `booking-app-admin.js::initApprovalPicker`.
+* **New admin REST endpoint** `GET /admin/customers/search?q=&limit=&exclude_spam=` — thin wrapper over `Customer_View_Service::search()` (richer shape than the existing `/admin/contact/search`: `phone_display`, `is_returning`, `is_spam`, `last_seen`). Cap-gated by `admin_permission` (manage_options), nonce-verified.
+* **`Form_Approvals_Service::create()`** gains a `$contact_id` argument. When a customer was picked, the contact's canonical phone overrides the typed value (prevents desync). When no contact was picked, the service backfills the link if the phone already matches a known contact. The admin add-approval handler forwards the picked `contact_id`.
+* **Pre-approval list** gains a "Customer" column — linked to the Customer profile when the approval is tied to a contact, "Not in CRM" otherwise. Built on the Sprint 1 `Admin_Helpers::customer_link()`.
+* **Bookings list — Source filter + column (closes roadmap "Боль 3" partially).** New "Source" filter dropdown (All / Main SPA / Direct form / Project form / External Cal) and a new "Source" column in the table view rendered as a colour-coded pill. Classification is row-only (FK columns) via the new static `Customer_View_Service::source_for_row()` — no extra queries. This subsumes the old Additional Forms Direct/Project sub-screens conceptually: those submissions are just bookings filtered by source. (Full menu reorg is Sprint 6.)
+* **i18n** — one new admin key `approvalNoMatch`. Five new filter labels + column headers are translatable.
+* No customer-facing change. Migration auto-runs on the next admin load.
 
 = 2.1.31.0 =
 * **Sprint 1 / Customer unification — Customer 360 read-model + cross-links.** First sprint of the customer-unification roadmap. Introduces a single source of truth for "resolve the customer + address for any booking" and makes customer names clickable across the admin. No DB change, no migration, no breaking change.

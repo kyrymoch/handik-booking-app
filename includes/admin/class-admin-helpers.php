@@ -419,6 +419,24 @@ class Handik_Booking_App_Admin_Helpers {
 		return '<a href="' . esc_url( $url ) . '">' . esc_html( $name ) . '</a>';
 	}
 
+	/**
+	 * Sprint 2 — coloured "source" pill for the Bookings list. Classifies a
+	 * booking row by origin (main / direct / project / external) using only
+	 * its FK columns.
+	 *
+	 * @param array<string,mixed> $row handik_bookings row.
+	 * @return string Safe HTML.
+	 */
+	public static function booking_source_pill( array $row ) {
+		$source = class_exists( 'Handik_Booking_App_Customer_View_Service' )
+			? Handik_Booking_App_Customer_View_Service::source_for_row( $row )
+			: 'external';
+		$label = class_exists( 'Handik_Booking_App_Customer_View_Service' )
+			? Handik_Booking_App_Customer_View_Service::source_label( $source )
+			: ucfirst( $source );
+		return '<span class="handik-source-pill handik-source-pill--' . esc_attr( $source ) . '">' . esc_html( $label ) . '</span>';
+	}
+
 	public static function chip_markup( $href, $label, $count, $tone = 'muted' ) {
 		$count = (int) $count;
 		$active = $count > 0;

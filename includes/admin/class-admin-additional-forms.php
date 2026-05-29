@@ -382,15 +382,31 @@ class Handik_Booking_App_Admin_Additional_Forms {
 			echo '</tbody></table></div>';
 		}
 
-		// Add form.
-		echo '<form method="post" action="" style="margin:12px 0 24px;max-width:720px">';
+		// Add form. Sprint 2 — customer picker. The search box queries the
+		// existing /admin/customers/search REST endpoint (debounced in
+		// booking-app-admin.js → initApprovalPicker). Picking a result fills
+		// the hidden contact_id + phone; the operator can also just type a
+		// phone for a not-yet-in-CRM customer.
+		$rest_base = trailingslashit( rest_url( 'handik-booking-app/v1' ) );
+		echo '<form method="post" action="" style="margin:12px 0 24px;max-width:720px" data-handik-approval-form'
+			. ' data-handik-rest-base="' . esc_attr( esc_url_raw( $rest_base ) ) . '"'
+			. ' data-handik-rest-nonce="' . esc_attr( wp_create_nonce( 'wp_rest' ) ) . '">';
 		wp_nonce_field( self::NONCE_ACTION_APPROVAL_ADD, self::NONCE_FIELD_APPROVAL_ADD );
 		echo '<input type="hidden" name="preset_slug" value="' . esc_attr( $preset_slug ) . '">';
 		echo '<input type="hidden" name="preset_id" value="' . (int) $preset_id . '">';
+		echo '<input type="hidden" name="contact_id" value="" data-handik-approval-contact-id>';
 		echo '<table class="form-table" role="presentation"><tbody>';
+		// Customer search row.
+		echo '<tr><th scope="row"><label for="handik-approval-search">' . esc_html__( 'Find customer', 'handik-booking-app' ) . '</label></th>';
+		echo '<td>';
+		echo '<input type="search" id="handik-approval-search" class="regular-text" autocomplete="off" placeholder="' . esc_attr__( 'Search by name, phone or email…', 'handik-booking-app' ) . '" data-handik-approval-search>';
+		echo '<ul class="handik-approval-results" hidden data-handik-approval-results style="margin:4px 0 0;border:1px solid #dcdcde;border-radius:6px;max-width:520px;list-style:none;padding:0;max-height:240px;overflow:auto"></ul>';
+		echo '<p class="handik-approval-chosen" hidden data-handik-approval-chosen style="margin:6px 0 0"><strong data-handik-approval-chosen-name></strong> <button type="button" class="button-link" data-handik-approval-clear>' . esc_html__( 'clear', 'handik-booking-app' ) . '</button></p>';
+		echo '<p class="description">' . esc_html__( 'Pick an existing customer, or just type a phone below for someone not in the CRM yet.', 'handik-booking-app' ) . '</p>';
+		echo '</td></tr>';
 		echo '<tr><th scope="row"><label for="handik-approval-phone">' . esc_html__( 'Phone', 'handik-booking-app' ) . '</label></th>';
-		echo '<td><input type="tel" id="handik-approval-phone" name="phone" class="regular-text" placeholder="+1 555 123 4567" required>';
-		echo '<p class="description">' . esc_html__( 'E.164 or US-format. Normalized server-side so spacing / dashes do not matter.', 'handik-booking-app' ) . '</p></td></tr>';
+		echo '<td><input type="tel" id="handik-approval-phone" name="phone" class="regular-text" placeholder="+1 555 123 4567" required data-handik-approval-phone>';
+		echo '<p class="description">' . esc_html__( 'E.164 or US-format. Normalized server-side so spacing / dashes do not matter. Auto-filled when you pick a customer above.', 'handik-booking-app' ) . '</p></td></tr>';
 		echo '<tr><th scope="row"><label for="handik-approval-notes">' . esc_html__( 'Notes', 'handik-booking-app' ) . '</label></th>';
 		echo '<td><textarea id="handik-approval-notes" name="notes" rows="2" class="large-text" placeholder="' . esc_attr__( 'Who and what — visible only in admin.', 'handik-booking-app' ) . '"></textarea></td></tr>';
 		echo '<tr><th scope="row"><label for="handik-approval-expires">' . esc_html__( 'Expires (optional)', 'handik-booking-app' ) . '</label></th>';
@@ -406,9 +422,19 @@ class Handik_Booking_App_Admin_Additional_Forms {
 			echo '<p>' . esc_html__( 'No pre-approvals yet.', 'handik-booking-app' ) . '</p>';
 			return;
 		}
+		// Batch-load linked contacts so the Customer column can link to the
+		// profile without an N+1 lookup.
+		$linked_ids = array();
+		foreach ( $rows as $r ) {
+			$cid = (int) ( $r['contact_id'] ?? 0 );
+			if ( $cid > 0 ) { $linked_ids[] = $cid; }
+		}
+		$linked_contacts = ( $linked_ids && $this->contacts ) ? $this->contacts->get_many( $linked_ids ) : array();
+
 		echo '<table class="widefat striped" style="max-width:920px">';
 		echo '<thead><tr>';
 		echo '<th>' . esc_html__( 'Phone', 'handik-booking-app' ) . '</th>';
+		echo '<th>' . esc_html__( 'Customer', 'handik-booking-app' ) . '</th>';
 		echo '<th>' . esc_html__( 'Status', 'handik-booking-app' ) . '</th>';
 		echo '<th>' . esc_html__( 'Notes', 'handik-booking-app' ) . '</th>';
 		echo '<th>' . esc_html__( 'Created', 'handik-booking-app' ) . '</th>';
@@ -417,8 +443,13 @@ class Handik_Booking_App_Admin_Additional_Forms {
 		echo '</tr></thead><tbody>';
 		foreach ( $rows as $row ) {
 			$status = (string) ( $row['status'] ?? 'active' );
+			$cid    = (int) ( $row['contact_id'] ?? 0 );
+			$linked = $cid > 0 && isset( $linked_contacts[ $cid ] ) ? $linked_contacts[ $cid ] : null;
 			echo '<tr>';
 			echo '<td><code>' . esc_html( (string) $row['phone'] ) . '</code></td>';
+			// Sprint 2 — link to the Customer profile when the approval is
+			// tied to a known contact.
+			echo '<td>' . ( $linked ? Handik_Booking_App_Admin_Helpers::customer_link( $linked ) : '<span class="description">' . esc_html__( 'Not in CRM', 'handik-booking-app' ) . '</span>' ) . '</td>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
 			echo '<td>' . esc_html( ucfirst( $status ) );
 			if ( 'consumed' === $status && ! empty( $row['consumed_at'] ) ) {
 				echo ' <span class="description">(' . esc_html( (string) $row['consumed_at'] ) . ')</span>';
@@ -498,8 +529,9 @@ class Handik_Booking_App_Admin_Additional_Forms {
 		$phone      = sanitize_text_field( (string) wp_unslash( $_POST['phone'] ?? '' ) );
 		$notes      = sanitize_textarea_field( (string) wp_unslash( $_POST['notes'] ?? '' ) );
 		$expires_at = isset( $_POST['expires_at'] ) ? sanitize_text_field( (string) wp_unslash( $_POST['expires_at'] ) ) : '';
+		$contact_id = isset( $_POST['contact_id'] ) ? absint( wp_unslash( $_POST['contact_id'] ) ) : 0;
 
-		$result = $this->approvals->create( $slug, $phone, $notes, $expires_at );
+		$result = $this->approvals->create( $slug, $phone, $notes, $expires_at, $contact_id );
 		if ( ! empty( $result['error'] ) ) {
 			add_settings_error( 'handik_additional_forms', 'handik_form_approval_error', (string) $result['error'], 'error' );
 			set_transient( 'settings_errors', get_settings_errors(), 30 );

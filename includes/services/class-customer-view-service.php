@@ -287,6 +287,51 @@ class Handik_Booking_App_Customer_View_Service {
 	}
 
 	/**
+	 * Classify a booking row by source using ONLY its FK columns — no DB
+	 * queries. Cheap enough to call per-row in a list render. Mirrors the
+	 * (heavier) resolution `for_booking()` does, minus external_unmatched
+	 * vs external distinction (both report `external` here since telling
+	 * them apart needs the raw payload).
+	 *
+	 * @param array<string,mixed> $row handik_bookings row.
+	 * @return string One of the SOURCE_* constants (never external_unmatched).
+	 */
+	public static function source_for_row( array $row ) {
+		if ( ! empty( $row['job_request_id'] ) ) {
+			return self::SOURCE_MAIN;
+		}
+		if ( ! empty( $row['direct_request_id'] ) ) {
+			return self::SOURCE_DIRECT;
+		}
+		if ( ! empty( $row['project_work_day_id'] ) ) {
+			return self::SOURCE_PROJECT;
+		}
+		return self::SOURCE_EXTERNAL;
+	}
+
+	/**
+	 * Human label for a source key.
+	 *
+	 * @param string $source SOURCE_* key.
+	 * @return string
+	 */
+	public static function source_label( $source ) {
+		switch ( $source ) {
+			case self::SOURCE_MAIN:
+				return __( 'Main SPA', 'handik-booking-app' );
+			case self::SOURCE_DIRECT:
+				return __( 'Direct form', 'handik-booking-app' );
+			case self::SOURCE_PROJECT:
+				return __( 'Project form', 'handik-booking-app' );
+			case self::SOURCE_EXTERNAL:
+			case self::SOURCE_EXTERNAL_UNMATCHED:
+				return __( 'External Cal', 'handik-booking-app' );
+			default:
+				return ucfirst( (string) $source );
+		}
+	}
+
+	/**
 	 * Build the admin Customer-profile URL for a contact id.
 	 *
 	 * @param int $contact_id Contact id.

@@ -25,6 +25,7 @@ class Handik_Booking_App_Loader {
 			'includes/db/migrations/class-migration-160.php',
 			'includes/db/migrations/class-migration-161.php',
 			'includes/db/migrations/class-migration-162.php',
+			'includes/db/migrations/class-migration-163.php',
 			'includes/services/class-changelog-service.php',
 			'includes/services/class-appearance-service.php',
 			'includes/services/class-service-catalog-service.php',

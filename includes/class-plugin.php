@@ -126,7 +126,7 @@ class Handik_Booking_App_Plugin {
 		$this->assets         = new Handik_Booking_App_Assets( $this->appearance, $this->settings );
 		$this->frontend_app   = new Handik_Booking_App_Frontend_App( $this->assets, $this->appearance );
 		$this->shortcode      = new Handik_Booking_App_Shortcode( $this->frontend_app );
-		$this->rest_api       = new Handik_Booking_App_REST_API( $this->app_controller, $this->auth, $this->chatkit, $this->webhook, $this->messages, $this->bookings, $this->contacts, $this->addresses, $this->settings, $this->logger, $this->job_requests, $this->service_catalog, $this->cascade_delete, $this->direct_booking, $this->booking_presets, $this->cal_api );
+		$this->rest_api       = new Handik_Booking_App_REST_API( $this->app_controller, $this->auth, $this->chatkit, $this->webhook, $this->messages, $this->bookings, $this->contacts, $this->addresses, $this->settings, $this->logger, $this->job_requests, $this->service_catalog, $this->cascade_delete, $this->direct_booking, $this->booking_presets, $this->cal_api, $this->customer_view );
 		$this->admin          = new Handik_Booking_App_Admin( $this->settings, $this->assets, $this->contacts, $this->addresses, $this->job_requests, $this->bookings, $this->logger, $this->changelog, $this->service_catalog, $this->messages, $this->admin_additional_forms, $this->booking_presets, $this->customer_view );
 		$this->widget_registry = new Handik_Booking_App_Widget_Registry();
 

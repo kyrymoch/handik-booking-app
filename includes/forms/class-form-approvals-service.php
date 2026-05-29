@@ -51,19 +51,43 @@ class Handik_Booking_App_Form_Approvals_Service {
 	 * @param string|null $expires_at  ISO datetime or NULL for no expiry.
 	 * @return array{success?: true, id?: int, error?: string, status?: int}
 	 */
-	public function create( $preset_slug, $phone, $notes = '', $expires_at = null ) {
+	public function create( $preset_slug, $phone, $notes = '', $expires_at = null, $contact_id = null ) {
 		$slug = sanitize_title( (string) $preset_slug );
 		if ( '' === $slug ) {
 			return array( 'error' => __( 'Preset slug is required.', 'handik-booking-app' ), 'status' => 400 );
 		}
+
+		// Sprint 2 — when the admin picked a customer from the search picker,
+		// the contact is authoritative: pull the canonical phone off the
+		// contact so a stale typed value can't desync the approval from the
+		// customer the operator actually chose. When no contact was picked,
+		// backfill the link if the phone already matches a known contact.
+		$contact_id = (int) $contact_id;
+		if ( $contact_id > 0 && $this->contacts ) {
+			$contact = $this->contacts->get( $contact_id );
+			if ( $contact && ! empty( $contact['phone'] ) ) {
+				$phone = (string) $contact['phone'];
+			} else {
+				$contact_id = 0; // contact vanished — fall back to phone-only
+			}
+		}
+
 		$phone_e164 = $this->contacts ? $this->contacts->normalize_phone( $phone ) : (string) $phone;
 		if ( '' === $phone_e164 ) {
 			return array( 'error' => __( 'Phone number is required.', 'handik-booking-app' ), 'status' => 400 );
 		}
 
+		if ( $contact_id <= 0 && $this->contacts ) {
+			$existing = $this->contacts->find_by_email_or_phone( '', $phone_e164 );
+			if ( $existing && ! empty( $existing['id'] ) ) {
+				$contact_id = (int) $existing['id'];
+			}
+		}
+
 		$row = array(
 			'preset_slug' => $slug,
 			'phone'       => $phone_e164,
+			'contact_id'  => $contact_id > 0 ? $contact_id : null,
 			'notes'       => sanitize_textarea_field( (string) $notes ),
 			'created_by'  => (int) get_current_user_id(),
 			'created_at'  => current_time( 'mysql' ),
@@ -89,7 +113,7 @@ class Handik_Booking_App_Form_Approvals_Service {
 		if ( $this->logger ) {
 			$this->logger->info(
 				'Form approval created.',
-				array( 'id' => $id, 'preset_slug' => $slug, 'phone' => $phone_e164 )
+				array( 'id' => $id, 'preset_slug' => $slug, 'phone' => $phone_e164, 'contact_id' => $contact_id )
 			);
 		}
 		return array( 'success' => true, 'id' => $id );
