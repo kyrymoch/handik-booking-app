@@ -345,6 +345,7 @@ DB version stored in `wp_options.handik_booking_app_db_version`. Migrations are 
 | 1.6.1   | Migration_161          | `handik_bookings.external_contact_id` for Cal-only bookings the customer made outside our form |
 | 1.6.2   | Migration_162          | `handik_form_approvals` table — soft phone pre-approval gate for Additional Forms presets |
 | 1.6.3   | Migration_163          | `handik_form_approvals.contact_id` (+ index + one-time phone→contact backfill) for the pre-approval customer picker |
+| 1.6.4   | Migration_164          | Customer-level structured attributes on `handik_contacts` (language/payment enums, behavior flags, `tags_json`, `brand_preferences`) |
 
 ### Key tables
 

@@ -662,9 +662,20 @@
 				}
 				event.preventDefault();
 				const form = ctx.querySelector( '[data-handik-person-edit]' ) || ctx;
-				const body = collectFormFields( form, [ 'full_name', 'phone', 'email', 'notes' ] );
-				body.is_returning = !! form.querySelector( '[data-field="is_returning"]:checked' );
-				body.is_spam      = !! form.querySelector( '[data-field="is_spam"]:checked' );
+				// Sprint 3 — generic collect: every [data-field] in the edit
+				// form, with checkboxes sent as booleans. Covers core fields
+				// + the new structured attributes (enums / flags / tags /
+				// brand_preferences) without enumerating each one here.
+				const body = {};
+				form.querySelectorAll( '[data-field]' ).forEach( function ( el ) {
+					const name = el.dataset.field;
+					if ( ! name ) { return; }
+					if ( 'checkbox' === el.type ) {
+						body[ name ] = !! el.checked;
+					} else {
+						body[ name ] = el.value;
+					}
+				} );
 				try {
 					await adminFetch( ctx, 'admin/contact/' + contactId, { method: 'POST', body: body } );
 					toast( i18n.saved || 'Saved', 'success' );

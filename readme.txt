@@ -3,7 +3,7 @@ Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.1.32.0
+Stable tag: 2.1.33.0
 License: Proprietary
 
 Single-page booking application with AI-assisted intake, multi-day project scheduling, and end-to-end Cal.com calendar sync.
@@ -81,6 +81,15 @@ Schema migration 1.6.1 adds `external_contact_id` for backfilling bookings made 
 Schema migration 1.6.0 adds `project_work_day_id` so multi-day project bookings show up in the unified admin Bookings list. Migrates automatically.
 
 == Changelog ==
+
+= 2.1.33.0 =
+* **Sprint 3 / Customer unification — customer-level structured attributes.** Replaces the single free-text `notes` textarea as the only place to record what you know about a customer. Adds the service-CRM pattern (Jobber / Housecall Pro): enums + boolean flags for recurring attributes, a flexible tags multi-select, and `brand_preferences` short text — with `notes` kept as the free-form catch-all at the end of the form. One additive migration, no breaking change.
+* **Migration 1.6.4** — adds to `handik_contacts`: enums `language` (en/ru/both), `preferred_channel`, `preferred_time`, `payment_method_preferred`, `tips_well`, `payment_on_time`; booleans `do_not_text`, `requires_invoice`, `vip`, `do_not_service`, `scope_creeper`, `negotiates_hard`, `complains_after`, `eco_friendly_only`; `brand_preferences` text; and a JSON `tags_json` column. Indexes on `vip` + `do_not_service` for fast list filtering. All columns ship with safe DEFAULTs — existing data untouched; nothing is auto-migrated out of `notes` (operator repacks through usage). Idempotent.
+* **`Contacts_Service`** gains the canonical attribute schema (`attribute_enums()` / `attribute_booleans()`), shared by the sanitizer, the admin UI, the list filters, and (later) the notifications language switch + pre-visit briefing. New helpers: `normalize_tags()` (array or comma-string → de-duped, trimmed, capped 30×40), `decode_tags()`, `top_tags()` (most-used N for autocomplete). `admin_update()` now validates enums against the allowed set (invalid → unset), coerces booleans, normalizes + JSON-encodes tags, and stores `brand_preferences`.
+* **Customer edit form redesigned** — structured fields FIRST, grouped (Communication / Payment / Flags & preferences / Tags), free-form notes LAST. Enums render as `<select>`, flags as checkboxes, tags as a comma-separated input backed by a `<datalist>` of the top-20 used tags. The admin save path now collects every `[data-field]` generically (checkboxes as booleans) so new attributes flow through without per-field JS.
+* **REST** `PATCH /admin/contact/{id}` allowlist expanded from the canonical schema (core fields + all enums + all booleans + `brand_preferences` + `tags`). Same `admin_permission` gate.
+* **Customers list** — new quick-filter chips: **VIP**, **Russian-speaking** (language ru/both), **Do not service**; plus a free-form `?tag=` filter that composes with any chip. Each person row now surfaces VIP / do-not-service pills and up to 3 tag chips inline (with a "+N" overflow marker).
+* No customer-facing change. Migration auto-runs on next admin load. Existing notes preserved and still shown (now under the "Notes" sub-heading).
 
 = 2.1.32.0 =
 * **Sprint 2 / Customer unification — pre-approval customer picker + Bookings source filter.** Builds on the Sprint 1 Customer 360 read-model. No breaking change; one additive migration that auto-runs.

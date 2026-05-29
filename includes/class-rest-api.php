@@ -790,9 +790,18 @@ class Handik_Booking_App_REST_API {
 			return $this->admin_unavailable();
 		}
 		$id    = absint( $request['id'] );
+		// Sprint 3 — allow the customer-level structured attributes through
+		// alongside the core fields. The service validates enums against the
+		// allowed set and coerces booleans, so the allowlist here is just a
+		// surface filter built from the canonical schema.
+		$allowed = array_merge(
+			array( 'full_name', 'email', 'phone', 'notes', 'is_returning', 'is_spam', 'brand_preferences', 'tags' ),
+			array_keys( Handik_Booking_App_Contacts_Service::attribute_enums() ),
+			Handik_Booking_App_Contacts_Service::attribute_booleans()
+		);
 		$patch = array_intersect_key(
 			$request->get_params(),
-			array_flip( array( 'full_name', 'email', 'phone', 'notes', 'is_returning', 'is_spam' ) )
+			array_flip( $allowed )
 		);
 		$ok = $this->contacts->admin_update( $id, $patch );
 		return rest_ensure_response( array( 'success' => $ok ) );

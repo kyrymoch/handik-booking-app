@@ -122,6 +122,39 @@
 	}
 }
 
+/* Sprint 3 — customer attribute edit UI + list chips. */
+.handik-admin-attr-heading {
+	margin: 18px 0 8px;
+	font-size: 13px;
+	font-weight: 700;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	color: #50575e;
+}
+.handik-admin-attr-heading .handik-admin-muted {
+	text-transform: none;
+	letter-spacing: 0;
+	font-weight: 400;
+}
+.handik-admin-grid--checks {
+	grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+}
+.handik-admin-tag-chip {
+	display: inline-block;
+	padding: 1px 8px;
+	margin-left: 4px;
+	border-radius: 999px;
+	background: #f0f0f1;
+	color: #3c434a;
+	font-size: 11px;
+	font-weight: 600;
+	vertical-align: middle;
+}
+.handik-admin-tag-chip--more {
+	background: #e5e7eb;
+	color: #6b7280;
+}
+
 .handik-admin-field {
 	display: flex;
 	flex-direction: column;

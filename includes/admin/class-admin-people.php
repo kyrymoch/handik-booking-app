@@ -110,6 +110,17 @@ class Handik_Booking_App_Admin_People {
 			case 'no_address':
 				$args['no_address'] = true;
 				break;
+			// Sprint 3 — customer-attribute filters.
+			case 'vip':
+			case 'do_not_service':
+			case 'language_ru':
+				$args['attr'] = $filter;
+				break;
+		}
+		// Free-form tag filter (?tag=realtor) — composes with any chip.
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		if ( ! empty( $_GET['tag'] ) ) {
+			$args['tag'] = sanitize_text_field( wp_unslash( $_GET['tag'] ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
 		}
 
 		$rows = $this->contacts ? $this->contacts->list_people( $args ) : array();
@@ -150,10 +161,14 @@ class Handik_Booking_App_Admin_People {
 		// chips route to the same `drafts_old` focus list — one
 		// consistent definition of "Drafts".
 		$chips = array(
-			'all'           => __( 'All people', 'handik-booking-app' ),
-			'with_bookings' => __( 'With bookings', 'handik-booking-app' ),
-			'drafts_old'    => __( 'Drafts', 'handik-booking-app' ),
-			'no_address'    => __( 'No address', 'handik-booking-app' ),
+			'all'            => __( 'All people', 'handik-booking-app' ),
+			'with_bookings'  => __( 'With bookings', 'handik-booking-app' ),
+			'drafts_old'     => __( 'Drafts', 'handik-booking-app' ),
+			'no_address'     => __( 'No address', 'handik-booking-app' ),
+			// Sprint 3 — customer-attribute quick filters.
+			'vip'            => __( 'VIP', 'handik-booking-app' ),
+			'language_ru'    => __( 'Russian-speaking', 'handik-booking-app' ),
+			'do_not_service' => __( 'Do not service', 'handik-booking-app' ),
 		);
 		// Sprint 11 fix: preserve the search query + show_spam toggle on
 		// chip clicks. Was P2 — typing "Smith", clicking "With bookings"
@@ -260,10 +275,18 @@ class Handik_Booking_App_Admin_People {
 
 		ob_start();
 		?>
+		<?php
+		// Sprint 3 — surface VIP / do-not-service flags + up to 3 tags inline.
+		$tags = Handik_Booking_App_Contacts_Service::decode_tags( $row );
+		?>
 		<a class="<?php echo esc_attr( $cls ); ?>" href="<?php echo esc_url( $detail_url ); ?>">
 			<div class="handik-admin-person-row__name">
 				<strong><?php echo esc_html( (string) ( $row['full_name'] ?? __( 'Unnamed', 'handik-booking-app' ) ) ); ?></strong>
+				<?php if ( ! empty( $row['vip'] ) ) : ?><span class="handik-admin-pill handik-admin-pill--info">VIP</span><?php endif; ?>
+				<?php if ( ! empty( $row['do_not_service'] ) ) : ?><span class="handik-admin-pill handik-admin-pill--danger"><?php esc_html_e( 'do not service', 'handik-booking-app' ); ?></span><?php endif; ?>
 				<?php if ( ! empty( $row['is_spam'] ) ) : ?><span class="handik-admin-pill handik-admin-pill--danger"><?php esc_html_e( 'spam', 'handik-booking-app' ); ?></span><?php endif; ?>
+				<?php foreach ( array_slice( $tags, 0, 3 ) as $tag ) : ?><span class="handik-admin-tag-chip"><?php echo esc_html( $tag ); ?></span><?php endforeach; ?>
+				<?php if ( count( $tags ) > 3 ) : ?><span class="handik-admin-tag-chip handik-admin-tag-chip--more">+<?php echo (int) ( count( $tags ) - 3 ); ?></span><?php endif; ?>
 			</div>
 			<div class="handik-admin-person-row__phone"><?php echo esc_html( $phone ); ?></div>
 			<div class="handik-admin-person-row__counts"><?php echo esc_html( $counts_text ); ?></div>
@@ -488,13 +511,100 @@ class Handik_Booking_App_Admin_People {
 		return (string) ob_get_clean();
 	}
 
+	/**
+	 * Human labels for the enum attribute values. Keyed field => value =>
+	 * label. The leading '' option renders as "—" (unset).
+	 *
+	 * @return array<string, array<string, string>>
+	 */
+	protected function attribute_enum_labels() {
+		return array(
+			'language' => array(
+				'' => __( '—', 'handik-booking-app' ),
+				'en' => __( 'English', 'handik-booking-app' ),
+				'ru' => __( 'Russian', 'handik-booking-app' ),
+				'both' => __( 'Both', 'handik-booking-app' ),
+			),
+			'preferred_channel' => array(
+				'' => __( '—', 'handik-booking-app' ),
+				'sms' => __( 'SMS', 'handik-booking-app' ),
+				'email' => __( 'Email', 'handik-booking-app' ),
+				'call' => __( 'Call', 'handik-booking-app' ),
+				'no_preference' => __( 'No preference', 'handik-booking-app' ),
+			),
+			'preferred_time' => array(
+				'' => __( '—', 'handik-booking-app' ),
+				'morning' => __( 'Morning', 'handik-booking-app' ),
+				'afternoon' => __( 'Afternoon', 'handik-booking-app' ),
+				'evening' => __( 'Evening', 'handik-booking-app' ),
+				'no_preference' => __( 'No preference', 'handik-booking-app' ),
+			),
+			'payment_method_preferred' => array(
+				'' => __( '—', 'handik-booking-app' ),
+				'cash' => __( 'Cash', 'handik-booking-app' ),
+				'venmo' => __( 'Venmo', 'handik-booking-app' ),
+				'zelle' => __( 'Zelle', 'handik-booking-app' ),
+				'check' => __( 'Check', 'handik-booking-app' ),
+				'card' => __( 'Card', 'handik-booking-app' ),
+				'no_preference' => __( 'No preference', 'handik-booking-app' ),
+			),
+			'tips_well' => array(
+				'' => __( '—', 'handik-booking-app' ),
+				'always' => __( 'Always', 'handik-booking-app' ),
+				'sometimes' => __( 'Sometimes', 'handik-booking-app' ),
+				'never' => __( 'Never', 'handik-booking-app' ),
+				'unknown' => __( 'Unknown', 'handik-booking-app' ),
+			),
+			'payment_on_time' => array(
+				'' => __( '—', 'handik-booking-app' ),
+				'on_time' => __( 'On time', 'handik-booking-app' ),
+				'sometimes_late' => __( 'Sometimes late', 'handik-booking-app' ),
+				'chronically_late' => __( 'Chronically late', 'handik-booking-app' ),
+				'unknown' => __( 'Unknown', 'handik-booking-app' ),
+			),
+		);
+	}
+
+	/**
+	 * Labels for the boolean flags, grouped for the edit UI.
+	 *
+	 * @return array<string, string>
+	 */
+	protected function attribute_boolean_labels() {
+		return array(
+			'do_not_text'       => __( 'Do not text (no SMS)', 'handik-booking-app' ),
+			'requires_invoice'  => __( 'Requires invoice', 'handik-booking-app' ),
+			'vip'               => __( 'VIP', 'handik-booking-app' ),
+			'do_not_service'    => __( 'Do not service', 'handik-booking-app' ),
+			'scope_creeper'     => __( 'Scope creeper', 'handik-booking-app' ),
+			'negotiates_hard'   => __( 'Negotiates hard', 'handik-booking-app' ),
+			'complains_after'   => __( 'Complains after', 'handik-booking-app' ),
+			'eco_friendly_only' => __( 'Eco-friendly only', 'handik-booking-app' ),
+		);
+	}
+
+	protected function attribute_select_markup( $field, $value, $label ) {
+		$labels  = $this->attribute_enum_labels();
+		$options = isset( $labels[ $field ] ) ? $labels[ $field ] : array();
+		$html  = '<label class="handik-admin-field"><span>' . esc_html( $label ) . '</span><select data-field="' . esc_attr( $field ) . '">';
+		foreach ( $options as $opt_value => $opt_label ) {
+			$html .= '<option value="' . esc_attr( $opt_value ) . '"' . selected( (string) $value, (string) $opt_value, false ) . '>' . esc_html( $opt_label ) . '</option>';
+		}
+		$html .= '</select></label>';
+		return $html;
+	}
+
 	protected function person_edit_form_markup( array $contact ) {
+		$top_tags     = $this->contacts ? $this->contacts->top_tags( 20 ) : array();
+		$current_tags = Handik_Booking_App_Contacts_Service::decode_tags( $contact );
+		$bool_labels  = $this->attribute_boolean_labels();
 		ob_start();
 		?>
 		<?php /* Sprint 10 fix: persist `<details>` open state across
 		   reloads via sessionStorage (handler in booking-app-admin.js).
 		   Was P1 — the form snapped shut every time the page refreshed,
-		   forcing the owner to expand it again to keep editing. */ ?>
+		   forcing the owner to expand it again to keep editing.
+		   Sprint 3: structured attributes go FIRST, free-form notes last. */ ?>
 		<section class="handik-admin-block">
 			<details class="handik-admin-details" data-handik-person-edit data-handik-details-key="person-edit">
 				<summary><?php esc_html_e( 'Edit person', 'handik-booking-app' ); ?></summary>
@@ -504,7 +614,46 @@ class Handik_Booking_App_Admin_People {
 						<label class="handik-admin-field"><span><?php esc_html_e( 'Phone', 'handik-booking-app' ); ?></span><input type="tel" data-field="phone" autocomplete="tel" inputmode="tel" value="<?php echo esc_attr( (string) ( $contact['phone'] ?? '' ) ); ?>" /></label>
 						<label class="handik-admin-field"><span><?php esc_html_e( 'Email', 'handik-booking-app' ); ?></span><input type="email" data-field="email" autocomplete="email" inputmode="email" value="<?php echo esc_attr( (string) ( $contact['email'] ?? '' ) ); ?>" /></label>
 					</div>
-					<label class="handik-admin-field handik-admin-field--textarea"><span><?php esc_html_e( 'Admin notes', 'handik-booking-app' ); ?></span><textarea rows="3" data-field="notes"><?php echo esc_textarea( (string) ( $contact['notes'] ?? '' ) ); ?></textarea></label>
+
+					<h4 class="handik-admin-attr-heading"><?php esc_html_e( 'Communication', 'handik-booking-app' ); ?></h4>
+					<div class="handik-admin-grid">
+						<?php
+						echo $this->attribute_select_markup( 'language', (string) ( $contact['language'] ?? '' ), __( 'Language', 'handik-booking-app' ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+						echo $this->attribute_select_markup( 'preferred_channel', (string) ( $contact['preferred_channel'] ?? '' ), __( 'Preferred channel', 'handik-booking-app' ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+						echo $this->attribute_select_markup( 'preferred_time', (string) ( $contact['preferred_time'] ?? '' ), __( 'Preferred time', 'handik-booking-app' ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+						?>
+					</div>
+
+					<h4 class="handik-admin-attr-heading"><?php esc_html_e( 'Payment', 'handik-booking-app' ); ?></h4>
+					<div class="handik-admin-grid">
+						<?php
+						echo $this->attribute_select_markup( 'payment_method_preferred', (string) ( $contact['payment_method_preferred'] ?? '' ), __( 'Preferred method', 'handik-booking-app' ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+						echo $this->attribute_select_markup( 'tips_well', (string) ( $contact['tips_well'] ?? '' ), __( 'Tips', 'handik-booking-app' ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+						echo $this->attribute_select_markup( 'payment_on_time', (string) ( $contact['payment_on_time'] ?? '' ), __( 'Pays on time', 'handik-booking-app' ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+						?>
+					</div>
+
+					<h4 class="handik-admin-attr-heading"><?php esc_html_e( 'Flags & preferences', 'handik-booking-app' ); ?>
+						<span class="handik-admin-muted"><?php esc_html_e( '(internal only)', 'handik-booking-app' ); ?></span></h4>
+					<div class="handik-admin-grid handik-admin-grid--checks">
+						<?php foreach ( $bool_labels as $field => $label ) : ?>
+							<label class="handik-admin-checkbox"><input type="checkbox" data-field="<?php echo esc_attr( $field ); ?>" value="1"<?php checked( ! empty( $contact[ $field ] ) ); ?> /> <span><?php echo esc_html( $label ); ?></span></label>
+						<?php endforeach; ?>
+					</div>
+					<label class="handik-admin-field"><span><?php esc_html_e( 'Brand preferences', 'handik-booking-app' ); ?></span><input type="text" data-field="brand_preferences" value="<?php echo esc_attr( (string) ( $contact['brand_preferences'] ?? '' ) ); ?>" placeholder="<?php esc_attr_e( 'e.g. Bosch, no off-brand silicone', 'handik-booking-app' ); ?>" /></label>
+
+					<h4 class="handik-admin-attr-heading"><?php esc_html_e( 'Tags', 'handik-booking-app' ); ?></h4>
+					<label class="handik-admin-field"><span><?php esc_html_e( 'Tags (comma-separated)', 'handik-booking-app' ); ?></span>
+						<input type="text" data-field="tags" list="handik-tag-suggestions" value="<?php echo esc_attr( implode( ', ', $current_tags ) ); ?>" placeholder="<?php esc_attr_e( 'e.g. realtor, elderly, referred-by-X', 'handik-booking-app' ); ?>" /></label>
+					<?php if ( $top_tags ) : ?>
+						<datalist id="handik-tag-suggestions">
+							<?php foreach ( $top_tags as $t ) : ?><option value="<?php echo esc_attr( $t ); ?>"></option><?php endforeach; ?>
+						</datalist>
+					<?php endif; ?>
+
+					<h4 class="handik-admin-attr-heading"><?php esc_html_e( 'Notes', 'handik-booking-app' ); ?></h4>
+					<label class="handik-admin-field handik-admin-field--textarea"><span><?php esc_html_e( 'Admin notes (free-form)', 'handik-booking-app' ); ?></span><textarea rows="3" data-field="notes"><?php echo esc_textarea( (string) ( $contact['notes'] ?? '' ) ); ?></textarea></label>
+
 					<div class="handik-admin-grid">
 						<label class="handik-admin-checkbox"><input type="checkbox" data-field="is_returning" value="1"<?php checked( ! empty( $contact['is_returning'] ) ); ?> /> <span><?php esc_html_e( 'Mark as returning client', 'handik-booking-app' ); ?></span></label>
 						<label class="handik-admin-checkbox"><input type="checkbox" data-field="is_spam" value="1"<?php checked( ! empty( $contact['is_spam'] ) ); ?> /> <span><?php esc_html_e( 'Mark as test/spam (hidden by default)', 'handik-booking-app' ); ?></span></label>

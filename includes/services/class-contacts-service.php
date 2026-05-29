@@ -17,6 +17,131 @@ class Handik_Booking_App_Contacts_Service {
 		$this->logger = $logger;
 	}
 
+	// =====================================================================
+	// Customer-level structured attributes (Sprint 3 / migration 1.6.4).
+	//
+	// Single source of truth for the attribute schema, shared by the
+	// sanitizer (admin_update), the admin edit UI, the Customers-list
+	// filters, and — later — the notifications language switch (Sprint 8)
+	// and pre-visit briefing (Sprint 4). Enums map field => allowed values
+	// (first value is the implicit "unset" default and stays ''). Booleans
+	// are a flat list. Tags live in `tags_json`.
+	// =====================================================================
+
+	/**
+	 * @return array<string, array<int, string>> field => allowed enum values.
+	 */
+	public static function attribute_enums() {
+		return array(
+			'language'                 => array( '', 'en', 'ru', 'both' ),
+			'preferred_channel'        => array( '', 'sms', 'email', 'call', 'no_preference' ),
+			'preferred_time'           => array( '', 'morning', 'afternoon', 'evening', 'no_preference' ),
+			'payment_method_preferred' => array( '', 'cash', 'venmo', 'zelle', 'check', 'card', 'no_preference' ),
+			'tips_well'                => array( '', 'always', 'sometimes', 'never', 'unknown' ),
+			'payment_on_time'          => array( '', 'on_time', 'sometimes_late', 'chronically_late', 'unknown' ),
+		);
+	}
+
+	/**
+	 * @return array<int, string> boolean attribute field names.
+	 */
+	public static function attribute_booleans() {
+		return array(
+			'do_not_text',
+			'requires_invoice',
+			'vip',
+			'do_not_service',
+			'scope_creeper',
+			'negotiates_hard',
+			'complains_after',
+			'eco_friendly_only',
+		);
+	}
+
+	/**
+	 * Normalize a tags input (array OR comma-separated string) to a clean,
+	 * de-duped, lower-cased slug-ish array. Tags allow spaces (display) but
+	 * are trimmed + collapsed; capped at 30 tags / 40 chars each.
+	 *
+	 * @param mixed $input Array or comma-separated string.
+	 * @return array<int, string>
+	 */
+	public static function normalize_tags( $input ) {
+		if ( is_string( $input ) ) {
+			$input = explode( ',', $input );
+		}
+		if ( ! is_array( $input ) ) {
+			return array();
+		}
+		$out = array();
+		foreach ( $input as $tag ) {
+			$tag = trim( preg_replace( '/\s+/', ' ', (string) $tag ) );
+			if ( '' === $tag ) {
+				continue;
+			}
+			if ( function_exists( 'mb_substr' ) ) {
+				$tag = mb_substr( $tag, 0, 40 );
+			} else {
+				$tag = substr( $tag, 0, 40 );
+			}
+			$key = strtolower( $tag );
+			if ( ! isset( $out[ $key ] ) ) {
+				$out[ $key ] = $tag;
+			}
+			if ( count( $out ) >= 30 ) {
+				break;
+			}
+		}
+		return array_values( $out );
+	}
+
+	/**
+	 * Decode a contact row's tags_json to an array.
+	 *
+	 * @param array<string, mixed> $contact Contact row.
+	 * @return array<int, string>
+	 */
+	public static function decode_tags( array $contact ) {
+		$raw = $contact['tags_json'] ?? '';
+		if ( '' === $raw || null === $raw ) {
+			return array();
+		}
+		$decoded = json_decode( (string) $raw, true );
+		return is_array( $decoded ) ? array_values( array_filter( array_map( 'strval', $decoded ) ) ) : array();
+	}
+
+	/**
+	 * Top-N tags across all contacts, most-used first — powers the admin
+	 * tags-input autocomplete datalist.
+	 *
+	 * @param int $limit Max tags.
+	 * @return array<int, string>
+	 */
+	public function top_tags( $limit = 20 ) {
+		global $wpdb;
+		$table = Handik_Booking_App_DB::table( 'contacts' );
+		if ( ! Handik_Booking_App_DB::column_exists( $table, 'tags_json' ) ) {
+			return array();
+		}
+		$rows = $wpdb->get_col( "SELECT tags_json FROM {$table} WHERE tags_json IS NOT NULL AND tags_json <> '' AND tags_json <> '[]'" );
+		$counts = array();
+		foreach ( (array) $rows as $json ) {
+			$decoded = json_decode( (string) $json, true );
+			if ( ! is_array( $decoded ) ) {
+				continue;
+			}
+			foreach ( $decoded as $tag ) {
+				$tag = (string) $tag;
+				if ( '' === $tag ) {
+					continue;
+				}
+				$counts[ $tag ] = ( $counts[ $tag ] ?? 0 ) + 1;
+			}
+		}
+		arsort( $counts );
+		return array_slice( array_keys( $counts ), 0, max( 1, (int) $limit ) );
+	}
+
 	/**
 	 * @param array<string, mixed> $payload Payload.
 	 * @param int                  $contact_id Contact ID.
@@ -240,6 +365,30 @@ class Handik_Booking_App_Contacts_Service {
 			$update['is_spam'] = ! empty( $patch['is_spam'] ) ? 1 : 0;
 		}
 
+		// Sprint 3 — customer-level structured attributes. Enums are
+		// validated against the allowed set (anything else → '' unset);
+		// booleans coerced to 0/1; tags normalized + JSON-encoded;
+		// brand_preferences is short free text.
+		foreach ( self::attribute_enums() as $field => $allowed ) {
+			if ( array_key_exists( $field, $patch ) ) {
+				$value = sanitize_key( (string) $patch[ $field ] );
+				$update[ $field ] = in_array( $value, $allowed, true ) ? $value : '';
+			}
+		}
+		foreach ( self::attribute_booleans() as $field ) {
+			if ( array_key_exists( $field, $patch ) ) {
+				$update[ $field ] = ! empty( $patch[ $field ] ) ? 1 : 0;
+			}
+		}
+		if ( array_key_exists( 'brand_preferences', $patch ) ) {
+			$update['brand_preferences'] = sanitize_text_field( (string) $patch['brand_preferences'] );
+		}
+		if ( array_key_exists( 'tags', $patch ) || array_key_exists( 'tags_json', $patch ) ) {
+			$tags_input = array_key_exists( 'tags', $patch ) ? $patch['tags'] : $patch['tags_json'];
+			$tags       = self::normalize_tags( $tags_input );
+			$update['tags_json'] = $tags ? wp_json_encode( $tags ) : null;
+		}
+
 		if ( empty( $update ) ) {
 			return false;
 		}
@@ -274,6 +423,8 @@ class Handik_Booking_App_Contacts_Service {
 		$drafts_only   = ! empty( $args['drafts_only'] );
 		$no_address    = ! empty( $args['no_address'] );
 		$search        = isset( $args['search'] ) ? trim( (string) $args['search'] ) : '';
+		$attr          = isset( $args['attr'] ) ? sanitize_key( (string) $args['attr'] ) : '';
+		$tag           = isset( $args['tag'] ) ? trim( (string) $args['tag'] ) : '';
 		$limit         = isset( $args['limit'] ) ? max( 1, (int) $args['limit'] ) : 100;
 		$offset        = isset( $args['offset'] ) ? max( 0, (int) $args['offset'] ) : 0;
 
@@ -288,6 +439,28 @@ class Handik_Booking_App_Contacts_Service {
 			$params[] = $like;
 			$params[] = $like;
 			$params[] = $like;
+		}
+
+		// Sprint 3 — customer-attribute filters. Guarded by column_exists so
+		// a pre-migration call (or a failed migration) degrades to "no
+		// filter" instead of a SQL error.
+		$has_attr_cols = Handik_Booking_App_DB::column_exists( $contacts, 'vip' );
+		if ( $has_attr_cols && '' !== $attr ) {
+			if ( 'vip' === $attr ) {
+				$where[] = 'c.vip = 1';
+			} elseif ( 'do_not_service' === $attr ) {
+				$where[] = 'c.do_not_service = 1';
+			} elseif ( 'language_ru' === $attr ) {
+				$where[] = "c.language IN ( 'ru', 'both' )";
+			} elseif ( 'do_not_text' === $attr ) {
+				$where[] = 'c.do_not_text = 1';
+			}
+		}
+		if ( $has_attr_cols && '' !== $tag ) {
+			// tags_json is a JSON array of strings; match the quoted tag so
+			// "vip" doesn't match "vip-lite". Case-insensitive LIKE.
+			$where[]  = 'c.tags_json LIKE %s';
+			$params[] = '%' . $wpdb->esc_like( '"' . $tag . '"' ) . '%';
 		}
 
 		$having = array( '1=1' );
