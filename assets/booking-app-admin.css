@@ -208,6 +208,13 @@
 	text-decoration: underline;
 }
 
+/* Sprint 6 — Requests pipeline: highlight rows that need attention
+   (unsafe / partial_failed / rolled_back). */
+.handik-admin-row-attention {
+	background: #fff7ed !important;
+	box-shadow: inset 3px 0 0 #f59e0b;
+}
+
 .handik-admin-field {
 	display: flex;
 	flex-direction: column;

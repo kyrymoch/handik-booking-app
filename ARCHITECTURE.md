@@ -313,8 +313,9 @@ Top-level `Handik Booking` menu (`includes/class-admin.php`). Page renderers liv
 |--------------------------------------|-----------------------------------------------|-----------------------------------------------------------------------|
 | `handik-booking-app`                 | `Admin_Dashboard`                             | counts + Action-needed chips (Drafts, Ready-not-booked, Unsafe, Errors today) |
 | `handik-booking-app-bookings`        | `Admin_Bookings`                              | unified Bookings list (cards + table), detail view, add booking flow, pull-from-Cal, bulk delete |
-| `handik-booking-app-crm`             | `Admin_People`                                | People & Requests list, person detail, addresses, requests focus lists, bulk delete |
-| `handik-booking-app-forms`           | `Admin_Additional_Forms`                      | Direct Submissions + Project Schedules sub-screens                    |
+| `handik-booking-app-requests`        | `Admin_Requests`                              | Requests pipeline (since 2.3.0) — union of in-flight job_requests + direct + project, source/status filters, search |
+| `handik-booking-app-crm`             | `Admin_People`                                | Customers list, person detail, addresses, requests focus lists, bulk delete |
+| `handik-booking-app-additional-forms`| `Admin_Additional_Forms`                      | Hidden from menu since 2.3.0 (route kept). Legacy URLs redirect to Settings → Forms / Bookings / Requests; project-schedule detail still renders here |
 | `handik-booking-app-settings`        | `Admin_Settings`                              | Single config home (since 2.2.0). Tabs: Booking flow · Forms (presets + pre-approvals, delegated to `Admin_Additional_Forms`) · Service catalog · Service area · Cal.com · Notifications · Integrations · Appearance |
 | `handik-booking-app-operations`      | `Admin_Logs` + `Admin_System`                 | Logs, system info, migration status, transients clear                 |
 | `handik-booking-app-integrations`    | `Admin_Integrations`                          | Service catalog editor (booking types + pricing buckets)              |

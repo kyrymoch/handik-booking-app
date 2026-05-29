@@ -3,7 +3,7 @@ Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.2.0
+Stable tag: 2.3.0
 License: Proprietary
 
 Single-page booking application with AI-assisted intake, multi-day project scheduling, and end-to-end Cal.com calendar sync.
@@ -81,6 +81,14 @@ Schema migration 1.6.1 adds `external_contact_id` for backfilling bookings made 
 Schema migration 1.6.0 adds `project_work_day_id` so multi-day project bookings show up in the unified admin Bookings list. Migrates automatically.
 
 == Changelog ==
+
+= 2.3.0 =
+* **Sprint 6 / Customer unification — Requests pipeline + Additional Forms folded away (IA reorg, part 2).** The menu now reads Dashboard · Bookings · **Requests** · Customers · Settings · Logs · System. Submissions that used to hide in the Additional Forms tabs now live in the main flow. No DB change, no migration.
+* **New page: Requests** (`handik-booking-app-requests`). A single work-in-progress pipeline that unifies three previously-scattered sources: main-SPA `job_requests` with no booking yet (drafts / ready-not-booked / unsafe), in-flight `direct_booking_requests` (opened / ready, not yet booked or cancelled), and unconfirmed `project_scheduling_requests` (draft / selecting / selected / failed). Confirmed visits stay in Bookings — Requests is strictly the before-booking stage. Every row carries a colour-coded **Source** pill (reuses the Sprint 2 classifier) + a **Status** pill, links the customer name to their profile (main / direct) or opens the project-schedule detail (project), and rows needing attention (unsafe / partial-failed / rolled-back) are highlighted. Filters: Source (all / main / direct / project) + a coarse cross-source Status group (Drafts / Ready-not-booked / In progress / Needs attention) + name/phone/summary search.
+* **Additional Forms page folded away.** Presets moved to Settings → Forms (Sprint 5); Direct/Project submissions now surface in Bookings + Requests. The page is **removed from the visible menu** (`remove_submenu_page`) but its route stays REGISTERED so old bookmarks resolve and the project-schedule **detail** (which has no new home yet) keeps working. A GET hit on the legacy page now redirects: `tab=direct` → Bookings filtered to direct, `tab=project` (list) → Requests filtered to project, presets/edit/create → Settings → Forms (carrying `preset_id`). Project detail (`schedule_id` present) renders in place. POST handlers (save preset / pre-approval / cancel day) are untouched and still exit via their own origin-aware redirects.
+* **Bottom thumb-nav** updated to the new IA: Dashboard / Bookings / Requests / Customers / Settings. Menu labels: "People & Requests" → **Customers** (the slug `handik-booking-app-crm` is unchanged; the full People→Customers rename + timeline lands in Sprint 7).
+* **Scope note:** Requests is read + navigate for this release. Cross-source bulk actions (bulk-cancel / mark-abandoned / nudge) are deferred — bulk mutations across three heterogeneous tables are riskier and the nudge email depends on the Sprint 8 SMS/notifications work. The per-source bulk-delete (drafts) on Customers and the project-schedule cancel-day action are unchanged.
+* No customer-facing change. Old `?page=handik-booking-app-additional-forms&tab=…` URLs redirect to their new homes.
 
 = 2.2.0 =
 * **Sprint 5 / Customer unification — Settings consolidation (IA reorg, part 1).** Configuration now lives under one roof. The Settings page ("App Setup" renamed to **Settings**) gains two tabs — **Forms** and **Integrations** — so an operator no longer hunts across three pages to configure the plugin. Additive + backward-compatible: the old pages still work, with deprecation notices pointing at the new home. No DB change, no migration.

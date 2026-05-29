@@ -67,6 +67,7 @@ class Handik_Booking_App_Loader {
 			'includes/admin/class-admin-helpers.php',
 			'includes/admin/class-admin-dashboard.php',
 			'includes/admin/class-admin-bookings.php',
+			'includes/admin/class-admin-requests.php',
 			'includes/admin/class-admin-people.php',
 			'includes/admin/class-admin-settings.php',
 			'includes/admin/class-admin-logs.php',

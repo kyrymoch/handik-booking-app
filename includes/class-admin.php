@@ -49,6 +49,8 @@ class Handik_Booking_App_Admin {
 	protected $page_dashboard;
 	/** @var Handik_Booking_App_Admin_Bookings|null */
 	protected $page_bookings;
+	/** @var Handik_Booking_App_Admin_Requests|null */
+	protected $page_requests;
 	/** @var Handik_Booking_App_Admin_People|null */
 	protected $page_people;
 	/** @var Handik_Booking_App_Admin_Settings|null */
@@ -114,10 +116,19 @@ class Handik_Booking_App_Admin {
 		);
 		add_submenu_page( 'handik-booking-app', __( 'Dashboard', 'handik-booking-app' ), __( 'Dashboard', 'handik-booking-app' ), $cap, 'handik-booking-app', array( $this, 'render_dashboard' ) );
 		add_submenu_page( 'handik-booking-app', __( 'Bookings', 'handik-booking-app' ), __( 'Bookings', 'handik-booking-app' ), $cap, 'handik-booking-app-bookings', array( $this, 'render_bookings' ) );
-		add_submenu_page( 'handik-booking-app', __( 'People & Requests', 'handik-booking-app' ), __( 'People', 'handik-booking-app' ), $cap, 'handik-booking-app-crm', array( $this, 'render_people' ) );
+		// Sprint 6 — Requests pipeline (unifies drafts + in-flight direct/
+		// project submissions). Sits between Bookings and Customers.
+		add_submenu_page( 'handik-booking-app', __( 'Requests', 'handik-booking-app' ), __( 'Requests', 'handik-booking-app' ), $cap, Handik_Booking_App_Admin_Requests::PAGE_SLUG, array( $this, 'render_requests' ) );
+		add_submenu_page( 'handik-booking-app', __( 'Customers', 'handik-booking-app' ), __( 'Customers', 'handik-booking-app' ), $cap, 'handik-booking-app-crm', array( $this, 'render_people' ) );
 		add_submenu_page( 'handik-booking-app', __( 'Settings', 'handik-booking-app' ), __( 'Settings', 'handik-booking-app' ), $cap, 'handik-booking-app-settings', array( $this, 'render_settings' ) );
+		// Sprint 6 — the Additional Forms page is folded away: presets moved to
+		// Settings → Forms (Sprint 5), Direct/Project submissions into
+		// Bookings (filter source) + Requests. The route stays REGISTERED so
+		// old bookmarks + the project-schedule detail keep resolving, but it's
+		// removed from the visible menu via remove_submenu_page below.
 		if ( $this->page_additional_forms ) {
 			add_submenu_page( 'handik-booking-app', __( 'Additional Forms', 'handik-booking-app' ), __( 'Additional Forms', 'handik-booking-app' ), $cap, Handik_Booking_App_Admin_Additional_Forms::PAGE_SLUG, array( $this, 'render_additional_forms' ) );
+			remove_submenu_page( 'handik-booking-app', Handik_Booking_App_Admin_Additional_Forms::PAGE_SLUG );
 		}
 		add_submenu_page( 'handik-booking-app', __( 'Integrations & Logs', 'handik-booking-app' ), __( 'Logs', 'handik-booking-app' ), $cap, 'handik-booking-app-operations', array( $this, 'render_operations' ) );
 		add_submenu_page( 'handik-booking-app', __( 'System info', 'handik-booking-app' ), __( 'System', 'handik-booking-app' ), $cap, 'handik-booking-app-system', array( $this, 'render_system' ) );
@@ -534,6 +545,14 @@ class Handik_Booking_App_Admin {
 		$page->render();
 	}
 
+	public function render_requests() {
+		$page = $this->page_requests ?: ( $this->page_requests = new Handik_Booking_App_Admin_Requests(
+			$this->contacts,
+			$this->service_catalog
+		) );
+		$page->render();
+	}
+
 	public function render_people() {
 		$page = $this->page_people ?: ( $this->page_people = new Handik_Booking_App_Admin_People(
 			$this->contacts,
@@ -605,17 +624,20 @@ class Handik_Booking_App_Admin {
 		// from Setup → tabs and from the top WP submenu); kept Dashboard,
 		// Bookings, People, Setup, Logs. Forms admin is still discoverable
 		// from inside Setup; this just declutters the thumb-nav.
+		// Sprint 6 — thumb-nav mirrors the new IA: Dashboard / Bookings /
+		// Requests / Customers / Settings. Logs stays reachable from the WP
+		// submenu (power-user surface, not a daily thumb target).
 		$items = array(
-			'handik-booking-app'           => array( 'icon' => '🏠', 'label' => __( 'Dashboard', 'handik-booking-app' ) ),
-			'handik-booking-app-bookings'  => array( 'icon' => '📅', 'label' => __( 'Bookings', 'handik-booking-app' ) ),
-			'handik-booking-app-crm'       => array( 'icon' => '👥', 'label' => __( 'People', 'handik-booking-app' ) ),
-			'handik-booking-app-settings'  => array( 'icon' => '⚙️', 'label' => __( 'Setup', 'handik-booking-app' ) ),
-			'handik-booking-app-operations'=> array( 'icon' => '📜', 'label' => __( 'Logs', 'handik-booking-app' ) ),
+			'handik-booking-app'                       => array( 'icon' => '🏠', 'label' => __( 'Dashboard', 'handik-booking-app' ) ),
+			'handik-booking-app-bookings'              => array( 'icon' => '📅', 'label' => __( 'Bookings', 'handik-booking-app' ) ),
+			Handik_Booking_App_Admin_Requests::PAGE_SLUG => array( 'icon' => '📥', 'label' => __( 'Requests', 'handik-booking-app' ) ),
+			'handik-booking-app-crm'                   => array( 'icon' => '👥', 'label' => __( 'Customers', 'handik-booking-app' ) ),
+			'handik-booking-app-settings'              => array( 'icon' => '⚙️', 'label' => __( 'Settings', 'handik-booking-app' ) ),
 		);
 
-		// Sprint 10 fix: when the current page is the Additional Forms
-		// admin (which we removed from the bottom nav above), highlight
-		// Setup so the active state isn't blank.
+		// When the current page is the (now hidden) Additional Forms admin,
+		// highlight Settings so the active state isn't blank. The project
+		// detail still renders there.
 		$active_slug = $page;
 		if ( 'handik-booking-app-additional-forms' === $page ) {
 			$active_slug = 'handik-booking-app-settings';

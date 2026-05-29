@@ -71,6 +71,11 @@ class Handik_Booking_App_Admin_Additional_Forms {
 		// kept for forward use as these lists migrate into Bookings/Requests).
 		$this->customer_view = $customer_view;
 
+		// Sprint 6 — fold the standalone page into the new IA. A GET hit on
+		// the legacy page redirects to the new home (Settings → Forms /
+		// Bookings / Requests), EXCEPT the project-schedule detail which has
+		// no new home yet and stays here. Runs before any output.
+		add_action( 'admin_init', array( $this, 'maybe_redirect_legacy_page' ) );
 		add_action( 'admin_init', array( $this, 'maybe_save_preset' ) );
 		add_action( 'admin_init', array( $this, 'maybe_cancel_day' ) );
 		// 2.1.30.0 — Pre-approval add / revoke handlers (form-post pattern,
@@ -79,6 +84,57 @@ class Handik_Booking_App_Admin_Additional_Forms {
 		add_action( 'admin_init', array( $this, 'maybe_save_approval' ) );
 		add_action( 'admin_init', array( $this, 'maybe_revoke_approval' ) );
 		add_action( 'admin_init', array( $this, 'maybe_run_approval_self_test' ) );
+	}
+
+	/**
+	 * Sprint 6 — redirect legacy Additional Forms URLs to their new homes.
+	 * Only fires on GET navigation to this page; POST handlers (save / cancel
+	 * day) run on their own hooks and exit via their own redirects. The
+	 * project-schedule DETAIL (schedule_id present) stays here.
+	 */
+	public function maybe_redirect_legacy_page() {
+		if ( ! is_admin() ) {
+			return;
+		}
+		$method = isset( $_SERVER['REQUEST_METHOD'] ) ? strtoupper( sanitize_text_field( wp_unslash( $_SERVER['REQUEST_METHOD'] ) ) ) : 'GET';
+		if ( 'GET' !== $method ) {
+			return;
+		}
+		// phpcs:disable WordPress.Security.NonceVerification.Recommended
+		$page = isset( $_GET['page'] ) ? sanitize_key( wp_unslash( $_GET['page'] ) ) : '';
+		if ( self::PAGE_SLUG !== $page ) {
+			return;
+		}
+		$tab         = isset( $_GET['tab'] ) ? sanitize_key( wp_unslash( $_GET['tab'] ) ) : 'presets';
+		$schedule_id = isset( $_GET['schedule_id'] ) ? absint( wp_unslash( $_GET['schedule_id'] ) ) : 0;
+		$preset_id   = isset( $_GET['preset_id'] ) ? sanitize_text_field( wp_unslash( $_GET['preset_id'] ) ) : '';
+		// phpcs:enable
+
+		// Project detail keeps living here (no new home yet).
+		if ( 'project' === $tab && $schedule_id > 0 ) {
+			return;
+		}
+
+		if ( 'direct' === $tab ) {
+			$target = add_query_arg(
+				array( 'page' => 'handik-booking-app-bookings', 'filter_source' => 'direct' ),
+				admin_url( 'admin.php' )
+			);
+		} elseif ( 'project' === $tab ) {
+			$target = add_query_arg(
+				array( 'page' => Handik_Booking_App_Admin_Requests::PAGE_SLUG, 'filter_source' => 'project' ),
+				admin_url( 'admin.php' )
+			);
+		} else {
+			// presets list / preset edit / create → Settings → Forms.
+			$args = array( 'page' => self::SETTINGS_PAGE_SLUG, 'tab' => 'forms' );
+			if ( '' !== $preset_id ) {
+				$args['preset_id'] = $preset_id;
+			}
+			$target = add_query_arg( $args, admin_url( 'admin.php' ) );
+		}
+		wp_safe_redirect( $target );
+		exit;
 	}
 
 	public function render() {
