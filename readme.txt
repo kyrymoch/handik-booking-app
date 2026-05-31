@@ -3,7 +3,7 @@ Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.7.2
+Stable tag: 2.7.3
 License: Proprietary
 
 Single-page booking application with AI-assisted intake, multi-day project scheduling, and end-to-end Cal.com calendar sync.
@@ -81,6 +81,13 @@ Schema migration 1.6.1 adds `external_contact_id` for backfilling bookings made 
 Schema migration 1.6.0 adds `project_work_day_id` so multi-day project bookings show up in the unified admin Bookings list. Migrates automatically.
 
 == Changelog ==
+
+= 2.7.3 =
+* **Fix — Virtual Assistant: a "yes" no longer breaks the booking step.** The assistant only prepares the recommendation; the actual booking is owned by the "Book a time" button and confirmed inside Cal.com. Previously, any reply after a ready estimate — including a simple "yes", "ok", or "sounds good" — restarted the assistant's "preparing recommendation" cycle, disabled the Book a time button, and could leave the customer stuck on "this is taking too long" (and, with the old workflow prompt, a false "your booking is confirmed" reply).
+* The Virtual Assistant step now treats a short, content-free acknowledgement after a ready estimate as a no-op: it keeps the ready state, keeps Book a time enabled, skips the recommendation cycle, and shows a brief reminder that the booking is confirmed only after the Cal.com step. The chat bridge now passes the customer's message text to the app so it can tell an acknowledgement ("yes" / "ok" / "book it" / "let's do it", plus common Russian equivalents) apart from genuine new job details.
+* Booking readiness is now sticky: once the assistant is ready and a booking URL exists, a follow-up message keeps Book a time available while the assistant replies, and the button only changes if a fresh result actually changes the scope/routing. If a ChatKit reply hangs after the ready state, Book a time stays usable. New client logs: assistant_acknowledgement_detected / kept_booking_button_enabled / skipped_full_recommendation_cycle.
+* Assistant wording + booking-ownership rules (never ask "would you like to proceed", never claim the booking is confirmed, answer scope/time/cost/materials/safety/access only, end with "You can use the Book a time button below when you're ready") are enforced in the OpenAI workflow instructions; no plugin code ships those strings.
+* No schema change, no new endpoint. Verified with a standalone harness (acknowledgement detection positives/negatives incl. "yes but also paint the ceiling" → not an ack; gate transitions for ack / substantive-follow-up / first-turn).
 
 = 2.7.2 =
 * **Fix — "Continue" still stuck on the Additional Forms "Tell us how to reach you" step when picking a saved address.** The 2.7.1 fix landed in the main booking SPA, but the direct/project booking forms are a separate flow and were the ones affected. Root cause: when a returning customer picks a saved address, it is marked verified (`is_valid`), but Google Places fires an `input` event when it finishes binding to the address field — and that bind can complete *after* the saved-address pick has re-rendered the field. The stale, now-detached field's event (empty value) wiped the just-applied address and silently un-verified it, so the `is_valid`-gated Continue did nothing. Owner-reported, reproduced end-to-end in a headless-DOM harness.
