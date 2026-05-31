@@ -1177,6 +1177,13 @@
 	};
 
 	HandikBookingForm.prototype.onInput = function ( input ) {
+		// Ignore events from an input that's no longer in the document. Google
+		// Places fires an `input` event when it binds to a field, but binding
+		// can complete AFTER a re-render has already swapped that field out
+		// (e.g. the customer picked a saved address while Maps was still
+		// loading). Acting on the stale, detached field's (empty) value would
+		// wipe the freshly-applied address and silently un-verify it.
+		if ( input && false === input.isConnected ) { return; }
 		var model = input.getAttribute( 'data-model' );
 		if ( ! model ) { return; }
 		var value = input.value;
@@ -1195,7 +1202,15 @@
 			var typed = ( typeof input.__handikUserTyped === 'function' )
 				? !! input.__handikUserTyped()
 				: true;
-			if ( typed ) {
+			// ...AND only when the text actually changed. Google Places fires a
+			// stray `input` on bind, and browsers re-fire `input` with the same
+			// prefilled value — neither is a real edit. Because the guard above
+			// isn't attached until Places finishes loading, without this check a
+			// saved-address pick (already is_valid) gets silently un-verified
+			// and Continue stops advancing on the "Tell us how to reach you"
+			// step. Owner-reported.
+			var changed = String( value ) !== String( this.state.address.address_full || '' );
+			if ( changed && typed ) {
 				this.state.address.is_valid  = false;
 				this.state.address.address_id = 0;
 			}
