@@ -972,6 +972,57 @@
 			};
 		}
 
+		// True when the customer message is a short, content-free
+		// acknowledgement ("yes", "ok", "sounds good", "book it", "let's do
+		// it", …) rather than new job detail. Used only AFTER the assistant is
+		// already ready to book, to keep Book a time enabled and skip another
+		// recommendation cycle. Deliberately conservative: anything with a
+		// question mark or that looks like it carries scope is treated as a
+		// real message, so we never swallow new job details.
+		isAssistantAcknowledgement( text ) {
+			let normalized = String( text || '' ).toLowerCase().trim();
+			if ( ! normalized ) {
+				return false;
+			}
+			// Drop leading/trailing punctuation + emoji, collapse whitespace.
+			normalized = normalized
+				.replace( /[!.,……]+$/u, '' )
+				.replace( /[\p{Extended_Pictographic}️]/gu, '' )
+				.replace( /\s{2,}/g, ' ' )
+				.trim();
+			if ( ! normalized ) {
+				// Message was only an emoji (e.g. 👍) — treat as acknowledgement.
+				return true;
+			}
+			if ( normalized.includes( '?' ) ) {
+				return false;
+			}
+			// A real follow-up that happens to start with "yes" still carries
+			// scope ("yes but also paint the ceiling"). Cap length + word count.
+			if ( normalized.length > 40 || normalized.split( ' ' ).length > 5 ) {
+				return false;
+			}
+			const phrases = [
+				'yes', 'yeah', 'yep', 'yup', 'ya', 'y', 'ok', 'okay', 'k', 'kk',
+				'sure', 'sounds good', 'sound good', 'sounds great', 'looks good',
+				'good', 'great', 'perfect', 'awesome', 'cool', 'nice',
+				'book it', 'book', 'lets book', "let's book", 'lets do it',
+				"let's do it", 'do it', 'go ahead', 'go', 'proceed', 'confirm',
+				'confirmed', 'yes please', 'ok thanks', 'okay thanks', 'thanks',
+				'thank you', 'that works', 'works for me', 'works', 'all good',
+				'sounds perfect', 'lets go', "let's go",
+				// Common short Russian affirmatives — a customer may reply in RU.
+				'да', 'ок', 'окей', 'хорошо', 'давай', 'давайте', 'поехали',
+				'го', 'отлично', 'супер', 'спасибо'
+			];
+			if ( phrases.includes( normalized ) ) {
+				return true;
+			}
+			// Affirmative lead-in with a tiny tail ("yes go ahead", "ok book it").
+			const leads = [ 'yes', 'yeah', 'yep', 'ok', 'okay', 'sure', 'да', 'ок' ];
+			return leads.some( ( lead ) => normalized === lead || normalized.startsWith( lead + ' ' ) );
+		}
+
 		stepCanContinue( step ) {
 			switch ( step ) {
 				case 'task_selection':

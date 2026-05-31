@@ -871,16 +871,20 @@
 					record.handledSignature = null;
 					record.lastStructuredPayload = null;
 				}
-				if ( 'composer.submit' === detail.name && typeof record.options.onComposerSubmit === 'function' ) {
-					record.options.onComposerSubmit( {
-						attachmentsCount: detail.data && detail.data.attachmentsCount ? detail.data.attachmentsCount : 0
-					} );
-				}
 				if ( 'composer.submit' === detail.name ) {
 					// detail.data here usually holds the user-typed string (or an array
 					// of content parts). recordMessage() de-dupes hashes so an extra
 					// fire of message-event later won't double-record.
 					const userText = extractMessageText( detail.data || detail );
+					// Pass the text to the SPA so it can tell a content-free
+					// acknowledgement ("yes" / "ok") apart from new job detail and
+					// keep the Book a time button enabled after a ready estimate.
+					if ( typeof record.options.onComposerSubmit === 'function' ) {
+						record.options.onComposerSubmit( {
+							attachmentsCount: detail.data && detail.data.attachmentsCount ? detail.data.attachmentsCount : 0,
+							text: userText
+						} );
+					}
 					if ( userText ) {
 						recordMessage( 'user', userText, { source: 'composer.submit' } );
 					}
