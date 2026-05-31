@@ -273,6 +273,142 @@ class Handik_Booking_App_Contacts_Service {
 		return (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$table}" );
 	}
 
+	/**
+	 * Sprint 11 — find groups of contacts that share a phone OR email
+	 * (normalized at write time, so a plain equality GROUP BY is correct).
+	 * Returns each group as `array{ key: phone|email, members: array<int> }`.
+	 * Spam-flagged contacts are included so the operator can also clean them.
+	 *
+	 * @param int $limit Max groups to return.
+	 * @return array<int, array{key: string, kind: string, members: array<int, array<string,mixed>>}>
+	 */
+	public function find_duplicate_groups( $limit = 50 ) {
+		global $wpdb;
+		$table = Handik_Booking_App_DB::table( 'contacts' );
+		$limit = max( 1, (int) $limit );
+		$out   = array();
+
+		$phone_groups = $wpdb->get_results(
+			"SELECT phone, GROUP_CONCAT(id ORDER BY id) AS ids
+			 FROM {$table}
+			 WHERE phone IS NOT NULL AND phone <> ''
+			 GROUP BY phone HAVING COUNT(*) > 1
+			 ORDER BY COUNT(*) DESC, MIN(id) ASC LIMIT {$limit}",
+			ARRAY_A
+		);
+		foreach ( (array) $phone_groups as $g ) {
+			$ids = array_map( 'intval', explode( ',', (string) $g['ids'] ) );
+			$out[] = array(
+				'key'     => (string) $g['phone'],
+				'kind'    => 'phone',
+				'members' => $this->get_many( $ids ),
+			);
+		}
+
+		$email_groups = $wpdb->get_results(
+			"SELECT email, GROUP_CONCAT(id ORDER BY id) AS ids
+			 FROM {$table}
+			 WHERE email IS NOT NULL AND email <> ''
+			 GROUP BY email HAVING COUNT(*) > 1
+			 ORDER BY COUNT(*) DESC, MIN(id) ASC LIMIT {$limit}",
+			ARRAY_A
+		);
+		foreach ( (array) $email_groups as $g ) {
+			$ids = array_map( 'intval', explode( ',', (string) $g['ids'] ) );
+			$key = strtolower( (string) $g['email'] );
+			$dup = false;
+			foreach ( $out as $existing ) {
+				if ( 'phone' === $existing['kind'] && $this->members_overlap( $existing['members'], $ids ) ) {
+					$dup = true; break;
+				}
+			}
+			if ( ! $dup ) {
+				$out[] = array(
+					'key'     => $key,
+					'kind'    => 'email',
+					'members' => $this->get_many( $ids ),
+				);
+			}
+		}
+		return $out;
+	}
+
+	protected function members_overlap( array $existing_members, array $ids ) {
+		$ex_ids = array_map( static function ( $m ) { return (int) ( $m['id'] ?? 0 ); }, $existing_members );
+		return (bool) array_intersect( $ex_ids, $ids );
+	}
+
+	/**
+	 * Sprint 11 — merge: reparent every child row (addresses / job_requests /
+	 * direct_booking_requests / project_scheduling_requests / messages /
+	 * bookings.external_contact_id / form_approvals) from $loser_id onto
+	 * $winner_id, then hard-delete the loser. Fills empty fields on the
+	 * winner from the loser (name / email / notes). Idempotent on a
+	 * non-existent loser; rejects merging into self.
+	 *
+	 * @param int $winner_id Surviving contact id.
+	 * @param int $loser_id  Contact id to absorb + delete.
+	 * @return bool
+	 */
+	public function merge_into( $winner_id, $loser_id ) {
+		global $wpdb;
+		$winner_id = (int) $winner_id;
+		$loser_id  = (int) $loser_id;
+		if ( $winner_id <= 0 || $loser_id <= 0 || $winner_id === $loser_id ) {
+			return false;
+		}
+		$winner = $this->get( $winner_id );
+		$loser  = $this->get( $loser_id );
+		if ( ! $winner || ! $loser ) {
+			return false;
+		}
+
+		// Fill empty winner fields from loser.
+		$fill = array();
+		foreach ( array( 'full_name', 'first_name', 'last_name', 'email', 'notes', 'birthday' ) as $col ) {
+			if ( empty( $winner[ $col ] ) && ! empty( $loser[ $col ] ) ) {
+				$fill[ $col ] = $loser[ $col ];
+			}
+		}
+		if ( $fill ) {
+			$wpdb->update( Handik_Booking_App_DB::table( 'contacts' ), $fill, array( 'id' => $winner_id ) );
+		}
+
+		// Reparent child rows. Each guarded by table_exists so a partial
+		// install (Additional Forms tables missing) doesn't fatal.
+		$reparent = function ( $short, $col ) use ( $loser_id, $winner_id ) {
+			global $wpdb;
+			$t = Handik_Booking_App_DB::table( $short );
+			if ( ! $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $t ) ) ) {
+				return;
+			}
+			$wpdb->update( $t, array( $col => $winner_id ), array( $col => $loser_id ) );
+		};
+		$reparent( 'addresses', 'contact_id' );
+		$reparent( 'job_requests', 'contact_id' );
+		$reparent( 'messages', 'contact_id' );
+		$reparent( 'direct_booking_requests', 'contact_id' );
+		$reparent( 'project_scheduling_requests', 'contact_id' );
+		$reparent( 'bookings', 'external_contact_id' );
+		$reparent( 'form_approvals', 'contact_id' );
+
+		// Hard-delete the loser.
+		$wpdb->delete( Handik_Booking_App_DB::table( 'contacts' ), array( 'id' => $loser_id ) );
+
+		if ( $this->logger ) {
+			$this->logger->info(
+				'Contacts merged.',
+				array(
+					'winner_id' => $winner_id,
+					'loser_id'  => $loser_id,
+					'admin_id'  => get_current_user_id(),
+					'filled'    => array_keys( $fill ),
+				)
+			);
+		}
+		return true;
+	}
+
 	public function count_spam() {
 		global $wpdb;
 		$table = Handik_Booking_App_DB::table( 'contacts' );
@@ -387,6 +523,16 @@ class Handik_Booking_App_Contacts_Service {
 			$tags_input = array_key_exists( 'tags', $patch ) ? $patch['tags'] : $patch['tags_json'];
 			$tags       = self::normalize_tags( $tags_input );
 			$update['tags_json'] = $tags ? wp_json_encode( $tags ) : null;
+		}
+
+		// Sprint 11 — birthday/anniversary. Empty string clears.
+		if ( array_key_exists( 'birthday', $patch ) ) {
+			$raw = trim( (string) $patch['birthday'] );
+			if ( '' === $raw ) {
+				$update['birthday'] = null;
+			} elseif ( preg_match( '/^\d{4}-\d{2}-\d{2}$/', $raw ) ) {
+				$update['birthday'] = $raw;
+			}
 		}
 
 		if ( empty( $update ) ) {

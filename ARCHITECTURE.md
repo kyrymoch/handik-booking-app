@@ -352,6 +352,7 @@ DB version stored in `wp_options.handik_booking_app_db_version`. Migrations are 
 | 1.6.5   | Migration_165          | Property-level attributes on `handik_addresses` (building/parking enums, masked access codes, pet/hazard flags, `property_notes`) — powers the pre-visit briefing |
 | 1.6.6   | Migration_166          | Notification idempotency stamps: `handik_bookings.reminder_24h_sent_at` / `reminder_2h_sent_at` / `review_request_sent_at`, `handik_job_requests.nudge_1_sent_at` / `nudge_2_sent_at` |
 | 1.6.7   | Migration_167          | Per-booking money fields on `handik_bookings` (`actual_amount_cents`, `materials_amount_cents`, `payment_status`, `payment_method_used`, `invoice_number`, `mileage_miles`) — powers the Reports page |
+| 1.6.8   | Migration_168          | `handik_contacts.birthday DATE NULL` — operator-facing retention reminder field |
 
 ### Key tables
 

@@ -117,6 +117,14 @@ class Handik_Booking_App_Admin_People {
 			Handik_Booking_App_Admin_Helpers::page_end();
 			return;
 		}
+		// Sprint 11 — dedupe screen: lists contacts that share a phone or
+		// email and offers a merge action per group. Same page, different
+		// filter key so the chip preserves search/spam toggles.
+		if ( 'dedupe' === $filter ) {
+			echo $this->render_dedupe_list();
+			Handik_Booking_App_Admin_Helpers::page_end();
+			return;
+		}
 
 		// Standard people list.
 		$args = array(
@@ -192,6 +200,8 @@ class Handik_Booking_App_Admin_People {
 			'vip'            => __( 'VIP', 'handik-booking-app' ),
 			'language_ru'    => __( 'Russian-speaking', 'handik-booking-app' ),
 			'do_not_service' => __( 'Do not service', 'handik-booking-app' ),
+			// Sprint 11 — duplicate cleanup.
+			'dedupe'         => __( 'Find duplicates', 'handik-booking-app' ),
 		);
 		// Sprint 11 fix: preserve the search query + show_spam toggle on
 		// chip clicks. Was P2 — typing "Smith", clicking "With bookings"
@@ -302,20 +312,33 @@ class Handik_Booking_App_Admin_People {
 		// Sprint 3 — surface VIP / do-not-service flags + up to 3 tags inline.
 		$tags = Handik_Booking_App_Contacts_Service::decode_tags( $row );
 		?>
-		<a class="<?php echo esc_attr( $cls ); ?>" href="<?php echo esc_url( $detail_url ); ?>">
-			<div class="handik-admin-person-row__name">
+		<?php
+		// Sprint 11 — inline call/sms quick actions. The row outer is a
+		// `<div>` (not `<a>`) so we can nest tel:/sms: links + a profile
+		// link without invalid HTML. data-href makes the whole row tappable
+		// to the profile via JS (initRowLink), keeping the single-tap
+		// behaviour for the common case.
+		$tel = $phone ? Handik_Booking_App_Admin_Helpers::tel_url( $phone ) : '';
+		$sms = $phone ? Handik_Booking_App_Admin_Helpers::sms_url( $phone ) : '';
+		?>
+		<div class="<?php echo esc_attr( $cls ); ?> handik-admin-row-link" data-href="<?php echo esc_url( $detail_url ); ?>" tabindex="0">
+			<a class="handik-admin-person-row__name" href="<?php echo esc_url( $detail_url ); ?>">
 				<strong><?php echo esc_html( (string) ( $row['full_name'] ?? __( 'Unnamed', 'handik-booking-app' ) ) ); ?></strong>
 				<?php if ( ! empty( $row['vip'] ) ) : ?><span class="handik-admin-pill handik-admin-pill--info">VIP</span><?php endif; ?>
 				<?php if ( ! empty( $row['do_not_service'] ) ) : ?><span class="handik-admin-pill handik-admin-pill--danger"><?php esc_html_e( 'do not service', 'handik-booking-app' ); ?></span><?php endif; ?>
 				<?php if ( ! empty( $row['is_spam'] ) ) : ?><span class="handik-admin-pill handik-admin-pill--danger"><?php esc_html_e( 'spam', 'handik-booking-app' ); ?></span><?php endif; ?>
 				<?php foreach ( array_slice( $tags, 0, 3 ) as $tag ) : ?><span class="handik-admin-tag-chip"><?php echo esc_html( $tag ); ?></span><?php endforeach; ?>
 				<?php if ( count( $tags ) > 3 ) : ?><span class="handik-admin-tag-chip handik-admin-tag-chip--more">+<?php echo (int) ( count( $tags ) - 3 ); ?></span><?php endif; ?>
+			</a>
+			<div class="handik-admin-person-row__phone">
+				<?php echo esc_html( $phone ); ?>
+				<?php if ( $tel ) : ?><a class="handik-admin-icon-btn is-call is-inline" href="<?php echo esc_url( $tel ); ?>" aria-label="<?php echo esc_attr( sprintf( __( 'Call %s', 'handik-booking-app' ), $phone ) ); ?>" title="<?php esc_attr_e( 'Call', 'handik-booking-app' ); ?>">📞</a><?php endif; ?>
+				<?php if ( $sms ) : ?><a class="handik-admin-icon-btn is-sms is-inline" href="<?php echo esc_url( $sms ); ?>" aria-label="<?php echo esc_attr( sprintf( __( 'SMS %s', 'handik-booking-app' ), $phone ) ); ?>" title="<?php esc_attr_e( 'SMS', 'handik-booking-app' ); ?>">✉</a><?php endif; ?>
 			</div>
-			<div class="handik-admin-person-row__phone"><?php echo esc_html( $phone ); ?></div>
 			<div class="handik-admin-person-row__counts"><?php echo esc_html( $counts_text ); ?></div>
 			<div class="handik-admin-person-row__last"><?php echo esc_html( __( 'Last seen:', 'handik-booking-app' ) . ' ' . $last_seen_text ); ?></div>
 			<div class="handik-admin-person-row__cta" aria-hidden="true">→</div>
-		</a>
+		</div>
 		<?php
 		return (string) ob_get_clean();
 	}
@@ -416,6 +439,67 @@ class Handik_Booking_App_Admin_People {
 						</li>
 					<?php endforeach; ?>
 				</ul>
+			<?php endif; ?>
+		</section>
+		<?php
+		return (string) ob_get_clean();
+	}
+
+	/**
+	 * Sprint 11 — duplicate-contacts cleanup screen. Each group is two or
+	 * more contacts that share an E.164-normalized phone OR an email.
+	 * Operator picks the winner (radio) and one or more losers (checkbox),
+	 * clicks Merge — every child row reparents onto the winner, the losers
+	 * are hard-deleted. Cap-gated client-side (the Merge button is only
+	 * rendered for MANAGE_DELETE holders).
+	 */
+	protected function render_dedupe_list() {
+		$groups       = $this->contacts ? $this->contacts->find_duplicate_groups( 50 ) : array();
+		$can_merge    = current_user_can( Handik_Booking_App_Capabilities::MANAGE_DELETE );
+		$rest_base    = trailingslashit( rest_url( 'handik-booking-app/v1' ) );
+
+		ob_start();
+		?>
+		<section class="handik-admin-block">
+			<h3 class="handik-admin-section-title"><?php esc_html_e( 'Find duplicates', 'handik-booking-app' ); ?></h3>
+			<p class="handik-admin-muted" style="max-width:760px">
+				<?php esc_html_e( 'Contacts grouped by an identical phone or email. Pick the row to keep (Winner), tick the others to merge in, click Merge. Every booking / address / request / message reparents onto the winner; losers are hard-deleted.', 'handik-booking-app' ); ?>
+			</p>
+			<?php if ( empty( $groups ) ) : ?>
+				<p><?php esc_html_e( 'No duplicates found.', 'handik-booking-app' ); ?></p>
+			<?php else : ?>
+				<?php foreach ( $groups as $g_idx => $g ) :
+					$gid = 'dupe-' . $g_idx;
+					?>
+					<div class="handik-admin-block handik-admin-dupe-group"
+						data-handik-dupe-group
+						data-rest-base="<?php echo esc_attr( esc_url_raw( $rest_base ) ); ?>"
+						data-rest-nonce="<?php echo esc_attr( wp_create_nonce( 'wp_rest' ) ); ?>">
+						<h4><?php echo esc_html( ucfirst( $g['kind'] ) ); ?>: <code><?php echo esc_html( $g['key'] ); ?></code> <span class="handik-admin-muted">· <?php echo (int) count( $g['members'] ); ?> <?php esc_html_e( 'contacts', 'handik-booking-app' ); ?></span></h4>
+						<table class="widefat striped" style="max-width:920px">
+							<thead><tr><th><?php esc_html_e( 'Winner', 'handik-booking-app' ); ?></th><th><?php esc_html_e( 'Merge', 'handik-booking-app' ); ?></th><th><?php esc_html_e( 'Name', 'handik-booking-app' ); ?></th><th><?php esc_html_e( 'Phone', 'handik-booking-app' ); ?></th><th><?php esc_html_e( 'Email', 'handik-booking-app' ); ?></th></tr></thead>
+							<tbody>
+							<?php foreach ( $g['members'] as $i => $m ) :
+								$id = (int) ( $m['id'] ?? 0 );
+								$profile_url = Handik_Booking_App_Customer_View_Service::profile_url( $id );
+								?>
+								<tr>
+									<td><input type="radio" name="<?php echo esc_attr( $gid ); ?>-winner" value="<?php echo esc_attr( (string) $id ); ?>" data-handik-dupe-winner<?php echo 0 === $i ? ' checked' : ''; ?> /></td>
+									<td><input type="checkbox" value="<?php echo esc_attr( (string) $id ); ?>" data-handik-dupe-loser<?php echo 0 !== $i ? ' checked' : ''; ?> /></td>
+									<td><a href="<?php echo esc_url( $profile_url ); ?>"><?php echo esc_html( (string) ( $m['full_name'] ?? '—' ) ); ?></a></td>
+									<td><?php echo esc_html( (string) ( $m['phone'] ?? '' ) ); ?></td>
+									<td><?php echo esc_html( (string) ( $m['email'] ?? '' ) ); ?></td>
+								</tr>
+							<?php endforeach; ?>
+							</tbody>
+						</table>
+						<?php if ( $can_merge ) : ?>
+							<p><button type="button" class="button button-primary" data-handik-dupe-merge>🔀 <?php esc_html_e( 'Merge selected into winner', 'handik-booking-app' ); ?></button> <span class="handik-admin-muted" data-handik-dupe-status></span></p>
+						<?php else : ?>
+							<p class="handik-admin-muted"><?php esc_html_e( 'Merging requires the Manage-delete capability.', 'handik-booking-app' ); ?></p>
+						<?php endif; ?>
+					</div>
+				<?php endforeach; ?>
 			<?php endif; ?>
 		</section>
 		<?php
@@ -732,6 +816,7 @@ class Handik_Booking_App_Admin_People {
 						<?php endforeach; ?>
 					</div>
 					<label class="handik-admin-field"><span><?php esc_html_e( 'Brand preferences', 'handik-booking-app' ); ?></span><input type="text" data-field="brand_preferences" value="<?php echo esc_attr( (string) ( $contact['brand_preferences'] ?? '' ) ); ?>" placeholder="<?php esc_attr_e( 'e.g. Bosch, no off-brand silicone', 'handik-booking-app' ); ?>" /></label>
+				<label class="handik-admin-field"><span><?php esc_html_e( 'Birthday / anniversary', 'handik-booking-app' ); ?></span><input type="date" data-field="birthday" value="<?php echo esc_attr( (string) ( $contact['birthday'] ?? '' ) ); ?>" /></label>
 
 					<h4 class="handik-admin-attr-heading"><?php esc_html_e( 'Tags', 'handik-booking-app' ); ?></h4>
 					<label class="handik-admin-field"><span><?php esc_html_e( 'Tags (comma-separated)', 'handik-booking-app' ); ?></span>

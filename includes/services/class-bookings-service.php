@@ -501,6 +501,68 @@ class Handik_Booking_App_Bookings_Service {
 		);
 	}
 
+	/**
+	 * Sprint 11 — sum of actual_amount_cents for COMPLETED bookings whose
+	 * start_time falls in the window. Used by the Dashboard money strip.
+	 * Falls back to the assistant high estimate when actual is empty,
+	 * matching Admin_Reports::build_report().
+	 *
+	 * @param string $from_utc Window start (mysql, UTC).
+	 * @param string $to_utc   Window end (mysql, UTC).
+	 * @return int Cents.
+	 */
+	public function sum_gross_in_window( $from_utc, $to_utc ) {
+		global $wpdb;
+		$bk = Handik_Booking_App_DB::table( 'bookings' );
+		$jr = Handik_Booking_App_DB::table( 'job_requests' );
+		// COALESCE actual cents → fallback parsed from the request's app_state
+		// json (total_estimate_high), so a half-filled month still totals.
+		$sql = $wpdb->prepare(
+			"SELECT bk.id, bk.actual_amount_cents, bk.status, bk.admin_status_override, jr.app_state
+			 FROM {$bk} bk LEFT JOIN {$jr} jr ON jr.id = bk.job_request_id
+			 WHERE bk.start_time >= %s AND bk.start_time < %s",
+			$from_utc,
+			$to_utc
+		);
+		$rows  = $wpdb->get_results( $sql, ARRAY_A );
+		$total = 0;
+		foreach ( (array) $rows as $r ) {
+			$status = trim( (string) ( $r['admin_status_override'] ?? '' ) );
+			if ( '' === $status ) {
+				$status = (string) ( $r['status'] ?? '' );
+			}
+			if ( 'completed' !== $status ) {
+				continue;
+			}
+			if ( null !== $r['actual_amount_cents'] && '' !== $r['actual_amount_cents'] ) {
+				$total += (int) $r['actual_amount_cents'];
+				continue;
+			}
+			$state = is_string( $r['app_state'] ?? null ) ? json_decode( (string) $r['app_state'], true ) : null;
+			if ( is_array( $state ) && ! empty( $state['total_estimate_high'] ) ) {
+				$total += (int) round( ( (float) $state['total_estimate_high'] ) * 100 );
+			}
+		}
+		return $total;
+	}
+
+	/**
+	 * Sprint 11 — count COMPLETED bookings with payment_status='unpaid' OR
+	 * 'partial'. Drives the Dashboard outstanding chip.
+	 *
+	 * @return int
+	 */
+	public function count_outstanding() {
+		global $wpdb;
+		$bk = Handik_Booking_App_DB::table( 'bookings' );
+		// status check: either base 'completed' OR admin_status_override='completed'.
+		$sql = "SELECT COUNT(*) FROM {$bk}
+				WHERE payment_status IN ( 'unpaid', 'partial' )
+				AND ( ( status = 'completed' AND ( admin_status_override IS NULL OR admin_status_override = '' OR admin_status_override = 'completed' ) )
+				   OR admin_status_override = 'completed' )";
+		return (int) $wpdb->get_var( $sql );
+	}
+
 	public function avg_duration_in_window( $from_utc, $to_utc ) {
 		global $wpdb;
 		$table = Handik_Booking_App_DB::table( 'bookings' );

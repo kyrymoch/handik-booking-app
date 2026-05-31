@@ -2072,6 +2072,88 @@ a.handik-admin-today-card-link:focus-visible .handik-admin-today-card {
 	gap: 8px;
 }
 
+/* Sprint 11 — section divider in Bookings list. */
+.handik-admin-divider--section {
+	background: #f0f6fc;
+	color: #1e3a8a;
+	font-weight: 700;
+	letter-spacing: 0.02em;
+	text-transform: uppercase;
+	padding: 6px 12px;
+	border-radius: 6px;
+	margin: 12px 0 6px;
+}
+
+/* Sprint 11 — Active now badge + row highlight. */
+.handik-admin-active-badge {
+	display: inline-block;
+	margin-left: 6px;
+	padding: 1px 8px;
+	border-radius: 999px;
+	background: #16a34a;
+	color: #fff;
+	font-size: 11px;
+	font-weight: 700;
+	animation: handik-pulse 1.6s ease-in-out infinite;
+}
+.handik-admin-row-active { background: #f0fdf4 !important; box-shadow: inset 3px 0 0 #16a34a; }
+@keyframes handik-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.65; } }
+
+/* Sprint 11 — payment pills + status quick-edit. */
+.handik-pay-pill {
+	display: inline-block;
+	padding: 1px 8px;
+	border-radius: 999px;
+	font-size: 11px;
+	font-weight: 600;
+}
+.handik-pay-pill--ok     { background: #dcfce7; color: #14532d; }
+.handik-pay-pill--warn   { background: #fef3c7; color: #92400e; }
+.handik-pay-pill--danger { background: #fee2e2; color: #991b1b; }
+.handik-admin-quick-status-edit { font-size: 11px; }
+.handik-admin-status-cell { white-space: nowrap; }
+
+/* Sprint 11 — inline icon buttons (call/sms in lists). */
+.handik-admin-icon-btn.is-inline {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 28px;
+	height: 28px;
+	margin-left: 4px;
+	border-radius: 6px;
+	background: #f6f7f7;
+	color: #1d2327;
+	text-decoration: none;
+}
+.handik-admin-icon-btn.is-inline:hover { background: #e9eaea; }
+
+/* Sprint 11 — inline note edit box. */
+.handik-admin-inline-note textarea {
+	width: 100%;
+	margin: 6px 0;
+}
+.handik-admin-inline-note p { margin: 4px 0; }
+
+/* Sprint 11 — visit row actions (dashboard). The row was a single <a>;
+   now it's a clickable <li> with sibling <div>s + tap-to-call buttons,
+   so we need flex + padding (was on the old __link inner element). */
+.handik-admin-visit-row__actions {
+	display: inline-flex;
+	gap: 4px;
+	margin-left: auto;
+}
+.handik-admin-visit-row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 12px 14px;
+	flex-wrap: wrap;
+	cursor: pointer;
+}
+
+/* --------- Reduced motion -------------------------------------------- */
+
 /* --------- Reduced motion -------------------------------------------- */
 
 @media (prefers-reduced-motion: reduce) {

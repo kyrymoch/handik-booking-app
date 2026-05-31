@@ -3,7 +3,7 @@ Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.6.0
+Stable tag: 2.7.0
 License: Proprietary
 
 Single-page booking application with AI-assisted intake, multi-day project scheduling, and end-to-end Cal.com calendar sync.
@@ -81,6 +81,26 @@ Schema migration 1.6.1 adds `external_contact_id` for backfilling bookings made 
 Schema migration 1.6.0 adds `project_work_day_id` so multi-day project bookings show up in the unified admin Bookings list. Migrates automatically.
 
 == Changelog ==
+
+= 2.7.0 =
+* **Sprint 11 / Operator daily workflow.** Twelve operator-facing improvements to the admin in one release. One additive migration. Owner-driven (post-2.6.0 dogfooding).
+* **Bookings list — Today / Tomorrow / Upcoming / Past sections.** An ongoing visit (started, not yet finished) used to fall straight into Past; now Today is always at the top. Each section gets its own divider; Tomorrow and Upcoming are split from Today so the order matches the operator's mental model. Empty sections are skipped.
+* **Bookings list — "● now" badge on the active row.** Pulsing green badge + row highlight on the booking whose time window contains right-now (not cancelled / completed). Useful glance from the phone on the way out.
+* **Bookings list — Payment column** with status pills (✓ paid / ◐ partial / ✕ unpaid). Tells at a glance who still owes money.
+* **Bookings list — Payment filter** (Any / Outstanding / Paid / Not recorded). Composes with the existing time / status / source filters + search.
+* **Bookings list — quick status change** on a cell (`change` button in the Status column). Modal lets the operator flip booked → completed without opening the detail page; reuses the existing `POST /admin/booking/{id}/status`.
+* **Bookings detail — Payment block moved up** for completed visits (the operator's first task after a job is to record what was charged). Future visits keep the old position below address.
+* **Bookings detail — inline-edit private note** in the actions bar. Click Edit → textarea → Save (`POST /admin/booking/{id}/notes`). No more modal round-trip for a one-line note.
+* **Bookings detail — Auto-fill payment dialog on "Mark completed".** Replaces the plain confirm with a 3-field dialog (Amount / Status / Method) so the most common after-visit data entry happens in one tap. Skip-payment keeps the old behavior.
+* **Dashboard — Money strip.** New section: This week (completed) / This month (completed) gross + Outstanding bookings count, with a link to Reports. Uses `Bookings_Service::sum_gross_in_window()` — completed rows only, falls back to the assistant high estimate when actual is blank.
+* **Dashboard — Outstanding chip** in Action needed. Routes to Bookings filtered to `completed` + `outstanding`. New `Bookings_Service::count_outstanding()`.
+* **Dashboard — tap-to-call / SMS** on each next-visit row. The row outer is now a `<div data-href>` + JS row-link, so nested `<a tel:>` / `<a sms:>` work without invalid HTML.
+* **Customers list — inline call / SMS** on each row (same pattern). Tapping the name still opens the profile.
+* **Customers — birthday / anniversary field.** Migration 1.6.8 adds `handik_contacts.birthday DATE NULL`; added to the customer edit form + REST allowlist. Operator-facing retention reminder; consumable by a future cron.
+* **Customers — Find duplicates screen** (new filter chip). Groups contacts that share an E.164-normalized phone OR email; per-group pick a winner (radio) + losers (checkboxes), click Merge. `Contacts_Service::merge_into()` reparents every child row (addresses / job_requests / direct_booking_requests / project_scheduling_requests / messages / bookings.external_contact_id / form_approvals) onto the winner, fills empty winner fields from the loser, hard-deletes the loser. New `POST /admin/contacts/merge` (MANAGE_DELETE gated).
+* **Migration 1.6.8** — `handik_contacts.birthday DATE NULL`. Safe DEFAULT NULL, idempotent.
+* Verified with a 17-assertion harness (sum_gross with completed + actual + estimate-fallback + override; count_outstanding; duplicate grouping with cross-group overlap suppression; merge fill-empty / reparent / delete / self-merge rejection; birthday valid / empty / invalid; payment pills).
+* No customer-facing change.
 
 = 2.6.0 =
 * **Sprint 10 / Money & Tax — per-booking payment fields + Reports page.** Closes the loop with the operator's tax/accounting workflow. One additive migration; revenue numbers come straight from the bookings the operator already manages.

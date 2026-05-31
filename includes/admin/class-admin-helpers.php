@@ -420,6 +420,31 @@ class Handik_Booking_App_Admin_Helpers {
 	}
 
 	/**
+	 * Sprint 11 — payment status pill for the Bookings list. Shows ✓ paid /
+	 * ◐ partial / ✕ unpaid; empty cell otherwise (no payment recorded yet —
+	 * a future visit, or completed but not yet money-tagged).
+	 *
+	 * @param array<string,mixed> $row handik_bookings row.
+	 * @return string Safe HTML.
+	 */
+	public static function payment_pill_markup( array $row ) {
+		$status = trim( (string) ( $row['payment_status'] ?? '' ) );
+		if ( '' === $status ) {
+			return '<span class="handik-admin-muted">—</span>';
+		}
+		$labels = array(
+			'paid'    => array( '✓', 'paid', 'ok' ),
+			'partial' => array( '◐', 'partial', 'warn' ),
+			'unpaid'  => array( '✕', 'unpaid', 'danger' ),
+		);
+		if ( ! isset( $labels[ $status ] ) ) {
+			return esc_html( $status );
+		}
+		list( $icon, $label, $tone ) = $labels[ $status ];
+		return '<span class="handik-pay-pill handik-pay-pill--' . esc_attr( $tone ) . '">' . esc_html( $icon . ' ' . $label ) . '</span>';
+	}
+
+	/**
 	 * Sprint 2 — coloured "source" pill for the Bookings list. Classifies a
 	 * booking row by origin (main / direct / project / external) using only
 	 * its FK columns.

@@ -132,6 +132,8 @@ class Handik_Booking_App_Admin_Bookings {
 		$filter_time   = isset( $_GET['filter_time'] ) ? sanitize_key( wp_unslash( $_GET['filter_time'] ) ) : 'all';
 		$filter_status = isset( $_GET['filter_status'] ) ? sanitize_key( wp_unslash( $_GET['filter_status'] ) ) : 'all';
 		$filter_source = isset( $_GET['filter_source'] ) ? sanitize_key( wp_unslash( $_GET['filter_source'] ) ) : 'all';
+		// Sprint 11 — payment filter (any | outstanding | paid).
+		$filter_payment = isset( $_GET['filter_payment'] ) ? sanitize_key( wp_unslash( $_GET['filter_payment'] ) ) : 'all';
 		$query         = isset( $_GET['q'] ) ? sanitize_text_field( wp_unslash( $_GET['q'] ) ) : '';
 		$paged         = isset( $_GET['paged'] ) ? max( 1, absint( $_GET['paged'] ) ) : 1;
 		// Sprint 9 — list / week view toggle + week navigation offset.
@@ -180,9 +182,9 @@ class Handik_Booking_App_Admin_Bookings {
 		<?php
 
 		echo $this->view_toggle_markup( $view, $filter_time, $filter_status, $query, $filter_source );
-		echo $this->filter_bar_markup( $filter_time, $filter_status, $query, $filter_source );
+		echo $this->filter_bar_markup( $filter_time, $filter_status, $query, $filter_source, $filter_payment );
 
-		$rows = $this->load_filtered_bookings( $filter_time, $filter_status, $query, $filter_source );
+		$rows = $this->load_filtered_bookings( $filter_time, $filter_status, $query, $filter_source, $filter_payment );
 
 		// Sprint 9 — Week view: 7-day grid of the selected week, built from
 		// the same filtered set. Self-contained; no pagination.
@@ -198,24 +200,41 @@ class Handik_Booking_App_Admin_Bookings {
 			return;
 		}
 
-		// Split upcoming vs past, upcoming asc, past desc.
-		$now = gmdate( 'Y-m-d H:i:s' );
-		$upcoming = array();
-		$past     = array();
+		// Sprint 11 — split into Today / Tomorrow / Upcoming-later / Past so
+		// a visit that already started (e.g. ongoing 2h job) stays at the
+		// top instead of falling into Past. Today/tomorrow ranges are in
+		// the org timezone (matches the dashboard's strip), then converted
+		// back to UTC for the comparison since start_time is stored as UTC.
+		$tz             = new DateTimeZone( Handik_Booking_App_Admin_Helpers::TIMEZONE );
+		$utc            = new DateTimeZone( 'UTC' );
+		$now_et         = new DateTimeImmutable( 'now', $tz );
+		$today_start    = $now_et->setTime( 0, 0 )->setTimezone( $utc )->format( 'Y-m-d H:i:s' );
+		$today_end      = $now_et->setTime( 0, 0 )->modify( '+1 day' )->setTimezone( $utc )->format( 'Y-m-d H:i:s' );
+		$tomorrow_end   = $now_et->setTime( 0, 0 )->modify( '+2 days' )->setTimezone( $utc )->format( 'Y-m-d H:i:s' );
+
+		$today = $tomorrow = $upcoming = $past = array();
 		foreach ( $rows as $row ) {
 			$start = (string) ( $row['start_time'] ?? '' );
-			if ( $start && $start >= $now ) {
-				$upcoming[] = $row;
-			} else {
+			if ( '' === $start ) {
+				$upcoming[] = $row; // not scheduled yet — keep visible up top
+				continue;
+			}
+			if ( $start < $today_start ) {
 				$past[] = $row;
+			} elseif ( $start < $today_end ) {
+				$today[] = $row;
+			} elseif ( $start < $tomorrow_end ) {
+				$tomorrow[] = $row;
+			} else {
+				$upcoming[] = $row;
 			}
 		}
-		usort( $upcoming, static function( $a, $b ) {
-			return strcmp( (string) ( $a['start_time'] ?? '' ), (string) ( $b['start_time'] ?? '' ) );
-		} );
-		usort( $past, static function( $a, $b ) {
-			return strcmp( (string) ( $b['start_time'] ?? '' ), (string) ( $a['start_time'] ?? '' ) );
-		} );
+		$by_start_asc = static function ( $a, $b ) { return strcmp( (string) ( $a['start_time'] ?? '' ), (string) ( $b['start_time'] ?? '' ) ); };
+		$by_start_desc = static function ( $a, $b ) { return strcmp( (string) ( $b['start_time'] ?? '' ), (string) ( $a['start_time'] ?? '' ) ); };
+		usort( $today, $by_start_asc );
+		usort( $tomorrow, $by_start_asc );
+		usort( $upcoming, $by_start_asc );
+		usort( $past, $by_start_desc );
 
 		// Sprint 10 fix: pagination. Was capped at 500 rows total with no
 		// paging UI — at 10k bookings the owner silently lost everything
@@ -223,7 +242,7 @@ class Handik_Booking_App_Admin_Bookings {
 		// (covers 18+ months for solo-owner volumes), and the page
 		// slices to PAGE_SIZE here. We always show all upcoming (rare
 		// to have >50 future bookings) and paginate the PAST set.
-		$total_upcoming = count( $upcoming );
+		$total_upcoming = count( $today ) + count( $tomorrow ) + count( $upcoming );
 		$total_past     = count( $past );
 		$total_pages    = max( 1, (int) ceil( $total_past / self::PAGE_SIZE ) );
 		$paged          = min( $paged, $total_pages );
@@ -232,7 +251,7 @@ class Handik_Booking_App_Admin_Bookings {
 
 		// Sprint 7 (admin perf): bulk-load decorations (request/contact/address)
 		// once and pass them down to the card + table loops.
-		$decorations = $this->decorate_bookings( array_merge( $upcoming, $past_page ) );
+		$decorations = $this->decorate_bookings( array_merge( $today, $tomorrow, $upcoming, $past_page ) );
 
 		echo '<div class="handik-admin-bookings-list"'
 			. ( $can_bulk_delete ? ' data-handik-bulk-section data-bulk-endpoint="' . esc_attr( esc_url_raw( $bulk_endpoint ) ) . '" data-rest-nonce="' . esc_attr( wp_create_nonce( 'wp_rest' ) ) . '" data-bulk-kind="bookings"' : '' )
@@ -262,10 +281,19 @@ class Handik_Booking_App_Admin_Bookings {
 				echo '</div>';
 			}
 		};
+		$section = function ( $label, array $rows_subset ) use ( $cards_render ) {
+			if ( empty( $rows_subset ) ) {
+				return;
+			}
+			echo '<div class="handik-admin-divider handik-admin-divider--section"><span>' . esc_html( $label ) . '</span></div>';
+			foreach ( $rows_subset as $r ) {
+				$cards_render( $r, false );
+			}
+		};
 		echo '<div class="handik-admin-bookings-cards" data-handik-bookings-cards>';
-		foreach ( $upcoming as $row ) {
-			$cards_render( $row, false );
-		}
+		$section( __( 'Today', 'handik-booking-app' ), $today );
+		$section( __( 'Tomorrow', 'handik-booking-app' ), $tomorrow );
+		$section( __( 'Upcoming', 'handik-booking-app' ), $upcoming );
 		if ( $past_page ) {
 			$divider = sprintf(
 				/* translators: 1 = page row count, 2 = total past rows */
@@ -280,7 +308,7 @@ class Handik_Booking_App_Admin_Bookings {
 		}
 		echo '</div>';
 
-		echo $this->bookings_table_markup( $upcoming, $past_page, $decorations, $can_bulk_delete );
+		echo $this->bookings_table_markup( $today, $tomorrow, $upcoming, $past_page, $decorations, $can_bulk_delete );
 
 		echo $this->pagination_markup( $paged, $total_pages, $total_upcoming, $total_past );
 		echo '</div>';
@@ -453,7 +481,7 @@ class Handik_Booking_App_Admin_Bookings {
 		return $out;
 	}
 
-	protected function filter_bar_markup( $filter_time, $filter_status, $query, $filter_source = 'all' ) {
+	protected function filter_bar_markup( $filter_time, $filter_status, $query, $filter_source = 'all', $filter_payment = 'all' ) {
 		$page = 'handik-booking-app-bookings';
 		// Sprint 2 — source filter options. Subsumes the old Additional Forms
 		// Direct/Project sub-screens: those are just bookings filtered by
@@ -539,6 +567,19 @@ class Handik_Booking_App_Admin_Bookings {
 							<?php endforeach; ?>
 						</select>
 					</label>
+					<label class="handik-admin-filter">
+						<span><?php esc_html_e( 'Payment', 'handik-booking-app' ); ?></span>
+						<select name="filter_payment">
+							<?php foreach ( array(
+								'all'         => __( 'Any', 'handik-booking-app' ),
+								'outstanding' => __( 'Outstanding', 'handik-booking-app' ),
+								'paid'        => __( 'Paid', 'handik-booking-app' ),
+								'none'        => __( 'Not recorded', 'handik-booking-app' ),
+							) as $k => $lbl ) : ?>
+								<option value="<?php echo esc_attr( $k ); ?>"<?php selected( $filter_payment, $k ); ?>><?php echo esc_html( $lbl ); ?></option>
+							<?php endforeach; ?>
+						</select>
+					</label>
 					<label class="handik-admin-filter handik-admin-filter--search">
 						<span><?php esc_html_e( 'Search by name or phone', 'handik-booking-app' ); ?></span>
 						<input type="search" name="q" value="<?php echo esc_attr( $query ); ?>" data-handik-debounced-submit placeholder="<?php esc_attr_e( 'e.g. Zinkin or 617…', 'handik-booking-app' ); ?>" />
@@ -552,7 +593,7 @@ class Handik_Booking_App_Admin_Bookings {
 		return (string) ob_get_clean();
 	}
 
-	protected function load_filtered_bookings( $filter_time, $filter_status, $query, $filter_source = 'all' ) {
+	protected function load_filtered_bookings( $filter_time, $filter_status, $query, $filter_source = 'all', $filter_payment = 'all' ) {
 		if ( ! $this->bookings ) {
 			return array();
 		}
@@ -637,6 +678,20 @@ class Handik_Booking_App_Admin_Bookings {
 			if ( 'all' !== $filter_source
 				&& Handik_Booking_App_Customer_View_Service::source_for_row( $row ) !== $filter_source ) {
 				continue;
+			}
+
+			// Sprint 11 — payment filter.
+			if ( 'all' !== $filter_payment ) {
+				$ps = (string) ( $row['payment_status'] ?? '' );
+				if ( 'outstanding' === $filter_payment && ! in_array( $ps, array( 'unpaid', 'partial' ), true ) ) {
+					continue;
+				}
+				if ( 'paid' === $filter_payment && 'paid' !== $ps ) {
+					continue;
+				}
+				if ( 'none' === $filter_payment && '' !== $ps ) {
+					continue;
+				}
 			}
 
 			if ( '' !== $query ) {
@@ -1034,9 +1089,19 @@ class Handik_Booking_App_Admin_Bookings {
 	 * @param array<int, array<string, mixed>>                                                $past        Past rows.
 	 * @param array<int, array{request: ?array, contact: ?array, address: ?array}>|null      $decorations Bulk decorations keyed by booking id (Sprint 7 perf).
 	 */
-	protected function bookings_table_markup( array $upcoming, array $past, ?array $decorations = null, $bulk_enabled = false ) {
+	protected function bookings_table_markup( array $today_rows, array $tomorrow_rows, array $upcoming, array $past, ?array $decorations = null, $bulk_enabled = false ) {
 		global $wpdb;
-		$rows = array_merge( $upcoming, $past );
+		// Sprint 11 — stitch the four sections back into one ordered list,
+		// remembering which section divider to print and where, plus an
+		// "active now" highlight on the row whose window contains now.
+		$sections = array(
+			array( 'label' => __( 'Today', 'handik-booking-app' ), 'rows' => $today_rows ),
+			array( 'label' => __( 'Tomorrow', 'handik-booking-app' ), 'rows' => $tomorrow_rows ),
+			array( 'label' => __( 'Upcoming', 'handik-booking-app' ), 'rows' => $upcoming ),
+			array( 'label' => __( 'Past bookings', 'handik-booking-app' ), 'rows' => $past ),
+		);
+		$now_utc_ts = time();
+		$colspan    = $bulk_enabled ? 9 : 8;
 
 		ob_start();
 		?>
@@ -1052,13 +1117,16 @@ class Handik_Booking_App_Admin_Bookings {
 						<th><?php esc_html_e( 'City', 'handik-booking-app' ); ?></th>
 						<th><?php esc_html_e( 'Duration', 'handik-booking-app' ); ?></th>
 						<th><?php esc_html_e( 'Status', 'handik-booking-app' ); ?></th>
+						<th><?php esc_html_e( 'Payment', 'handik-booking-app' ); ?></th>
 					</tr>
 				</thead>
 				<tbody>
 					<?php
-					$past_divider_inserted = false;
 					$back_params = $this->detail_back_params();
-					foreach ( $rows as $row ) :
+					foreach ( $sections as $section ) :
+						if ( empty( $section['rows'] ) ) { continue; }
+						echo '<tr class="handik-admin-table-divider"><td colspan="' . (int) $colspan . '">' . esc_html( $section['label'] ) . '</td></tr>';
+						foreach ( $section['rows'] as $row ) :
 						$detail_url = Handik_Booking_App_Admin_Helpers::admin_url_for(
 							'handik-booking-app-bookings',
 							array_merge( array( 'booking_id' => (int) $row['id'] ), $back_params )
@@ -1109,12 +1177,16 @@ class Handik_Booking_App_Admin_Bookings {
 							$contact = ( $cid && $this->contacts ) ? $this->contacts->get( $cid ) : null;
 							$address = ( $aid && $this->addresses ) ? $this->addresses->get( $aid ) : null;
 						}
-						$is_past = empty( $row['start_time'] ) || $row['start_time'] < gmdate( 'Y-m-d H:i:s' );
-						if ( $is_past && ! $past_divider_inserted && ! empty( $past ) ) {
-							echo '<tr class="handik-admin-table-divider"><td colspan="' . ( $bulk_enabled ? 8 : 7 ) . '">' . esc_html__( 'Past bookings', 'handik-booking-app' ) . '</td></tr>';
-							$past_divider_inserted = true;
-						}
 						$status = $this->bookings ? $this->bookings->effective_status( $row ) : (string) ( $row['status'] ?? '' );
+						// Sprint 11 — "Active now" badge on the row whose
+						// time window contains right-now.
+						$start_ts = ! empty( $row['start_time'] ) ? strtotime( (string) $row['start_time'] . ' UTC' ) : 0;
+						$end_ts   = ! empty( $row['end_time'] ) ? strtotime( (string) $row['end_time'] . ' UTC' ) : 0;
+						if ( $end_ts <= $start_ts && $start_ts > 0 ) {
+							$dur    = (int) ( $row['duration_minutes'] ?? 0 );
+							$end_ts = $start_ts + ( $dur > 0 ? $dur * 60 : HOUR_IN_SECONDS );
+						}
+						$active_now = $start_ts > 0 && $start_ts <= $now_utc_ts && $now_utc_ts <= $end_ts && ! in_array( $status, array( 'cancelled', 'completed' ), true );
 						// 1.6.1 — extract external attendee from raw_webhook_json
 						// when this row has no linked source (4th-source case).
 						$external_name  = '';
@@ -1151,21 +1223,31 @@ class Handik_Booking_App_Admin_Bookings {
 							? (string) ( $contact['full_name'] ?? '' )
 							: ( '' !== $external_name ? $external_name : ( '' !== $external_email ? $external_email : __( 'Unknown', 'handik-booking-app' ) ) );
 					?>
-					<tr class="handik-admin-row-link" tabindex="0" data-href="<?php echo esc_url( $detail_url ); ?>" data-row-id="<?php echo esc_attr( (string) (int) $row['id'] ); ?>">
+					<tr class="handik-admin-row-link<?php echo $active_now ? ' handik-admin-row-active' : ''; ?>" tabindex="0" data-href="<?php echo esc_url( $detail_url ); ?>" data-row-id="<?php echo esc_attr( (string) (int) $row['id'] ); ?>">
 						<?php if ( $bulk_enabled ) : ?>
 							<td class="handik-admin-bulk-td">
 								<input type="checkbox" data-handik-bulk-row value="<?php echo esc_attr( (string) (int) $row['id'] ); ?>" class="handik-admin-bulk-cb" aria-label="<?php esc_attr_e( 'Select booking', 'handik-booking-app' ); ?>" />
 							</td>
 						<?php endif; ?>
-						<td><?php echo esc_html( Handik_Booking_App_Admin_Helpers::format_booking_window( $row, 'compact' ) ); ?></td>
+						<td><?php echo esc_html( Handik_Booking_App_Admin_Helpers::format_booking_window( $row, 'compact' ) ); ?>
+							<?php if ( $active_now ) : ?><span class="handik-admin-active-badge" title="<?php esc_attr_e( 'Active now', 'handik-booking-app' ); ?>">● <?php esc_html_e( 'now', 'handik-booking-app' ); ?></span><?php endif; ?>
+						</td>
 						<td><?php echo esc_html( $client_label ); ?></td>
 						<td><?php echo esc_html( $tasks ); ?></td>
 						<td><?php echo Handik_Booking_App_Admin_Helpers::booking_source_pill( $row ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></td>
 						<td><?php echo esc_html( Handik_Booking_App_Admin_Helpers::request_city( $request, $address ) ); ?></td>
 						<td><?php echo esc_html( ! empty( $row['duration_minutes'] ) ? $row['duration_minutes'] . ' min' : '—' ); ?></td>
-						<td><?php echo Handik_Booking_App_Admin_Helpers::status_pill_markup( $status ); ?></td>
+						<td class="handik-admin-status-cell"
+							data-handik-quick-status
+							data-booking-id="<?php echo (int) $row['id']; ?>"
+							data-rest-base="<?php echo esc_attr( esc_url_raw( trailingslashit( rest_url( 'handik-booking-app/v1' ) ) ) ); ?>"
+							data-rest-nonce="<?php echo esc_attr( wp_create_nonce( 'wp_rest' ) ); ?>"
+							data-current="<?php echo esc_attr( $status ); ?>">
+							<?php echo Handik_Booking_App_Admin_Helpers::status_pill_markup( $status ); ?>
+						</td>
+						<td><?php echo Handik_Booking_App_Admin_Helpers::payment_pill_markup( $row ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></td>
 					</tr>
-					<?php endforeach; ?>
+					<?php endforeach; endforeach; ?>
 				</tbody>
 			</table>
 		</div>
@@ -1365,6 +1447,14 @@ class Handik_Booking_App_Admin_Bookings {
 		echo $this->sticky_action_bar_markup( $booking, $contact, $full_address );
 		echo $this->actions_bar_markup( $booking );
 		echo $this->at_a_glance_markup( $booking, $contact, $full_address, $request );
+		// Sprint 11 — for completed bookings, Payment is the FIRST thing the
+		// operator wants after the visit (record charge + materials + tip).
+		// Pull the money block right after at-a-glance for completed rows;
+		// future visits keep the old position below address.
+		$is_completed = 'completed' === ( $this->bookings ? $this->bookings->effective_status( $booking ) : (string) ( $booking['status'] ?? '' ) );
+		if ( $is_completed ) {
+			echo $this->payment_block_markup( $booking );
+		}
 		// Sprint 4 — pre-visit briefing (customer + property attributes +
 		// internal flags), assembled from the Customer 360 read-model.
 		echo $this->pre_visit_briefing_markup( $contact, $address );
@@ -1389,9 +1479,10 @@ class Handik_Booking_App_Admin_Bookings {
 			echo $this->external_preset_block_markup( $booking );
 		}
 		echo $this->address_block_markup( $full_address );
-		// Sprint 10 — money fields (what was actually charged, materials,
-		// payment, invoice, mileage). Feeds the Reports page.
-		echo $this->payment_block_markup( $booking );
+		// Future/booked rows: payment still discoverable below address.
+		if ( ! $is_completed ) {
+			echo $this->payment_block_markup( $booking );
+		}
 		echo $this->technical_block_markup( $request, $booking );
 		if ( $request ) {
 			echo $this->chat_logs_block_markup( $request, $booking );
@@ -1750,12 +1841,21 @@ class Handik_Booking_App_Admin_Bookings {
 			<?php endif; ?>
 			<span class="handik-admin-current-status"><?php esc_html_e( 'Current status:', 'handik-booking-app' ); ?> <?php echo Handik_Booking_App_Admin_Helpers::status_pill_markup( $current_status ); ?></span>
 		</div>
-		<?php if ( ! empty( $booking['admin_notes'] ) ) : ?>
-			<div class="handik-admin-callout">
-				<strong><?php esc_html_e( 'Private note', 'handik-booking-app' ); ?></strong>
-				<p data-handik-admin-notes-display><?php echo nl2br( esc_html( (string) $booking['admin_notes'] ) ); ?></p>
-			</div>
-		<?php endif; ?>
+		<?php // Sprint 11 — inline-edit private note (was modal-only via the Note button). ?>
+		<div class="handik-admin-callout handik-admin-inline-note" data-handik-inline-note data-booking-id="<?php echo (int) $booking['id']; ?>"
+			data-rest-base="<?php echo esc_attr( esc_url_raw( $rest ) ); ?>"
+			data-rest-nonce="<?php echo esc_attr( wp_create_nonce( 'wp_rest' ) ); ?>">
+			<strong><?php esc_html_e( 'Private note', 'handik-booking-app' ); ?></strong>
+			<p data-handik-inline-note-view<?php echo empty( $booking['admin_notes'] ) ? ' class="handik-admin-muted"' : ''; ?>>
+				<?php echo empty( $booking['admin_notes'] )
+					? esc_html__( 'Click Edit to add a note', 'handik-booking-app' )
+					: nl2br( esc_html( (string) $booking['admin_notes'] ) ); ?>
+			</p>
+			<textarea data-handik-inline-note-edit hidden rows="3"><?php echo esc_textarea( (string) ( $booking['admin_notes'] ?? '' ) ); ?></textarea>
+			<button type="button" class="button-link" data-handik-inline-note-toggle>✏️ <?php esc_html_e( 'Edit', 'handik-booking-app' ); ?></button>
+			<button type="button" class="button button-small" data-handik-inline-note-save hidden>💾 <?php esc_html_e( 'Save', 'handik-booking-app' ); ?></button>
+			<button type="button" class="button-link" data-handik-inline-note-cancel hidden><?php esc_html_e( 'Cancel', 'handik-booking-app' ); ?></button>
+		</div>
 		<?php
 		return (string) ob_get_clean();
 	}

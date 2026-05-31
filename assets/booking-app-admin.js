@@ -642,9 +642,19 @@
 						patchBookingStatus( target, 'cancelled' );
 					}
 					if ( 'mark-completed' === action ) {
-						const ok = await openModal( { title: i18n.completeTitle || 'Mark completed', body: i18n.confirmComplete || 'Are you sure?' } );
-						if ( ! ok ) { return; }
+						// Sprint 11 — Auto-fill payment: instead of a plain confirm,
+						// ask for the actual charge + method right here so the
+						// operator doesn't have to scroll to the Payment block.
+						const pay = await openPaymentDialog( {
+							title: i18n.completeTitle || 'Mark completed',
+						} );
+						if ( null === pay ) { return; }
 						await adminFetch( ctx, 'admin/booking/' + bookingId + '/status', { body: { status: 'completed' } } );
+						if ( pay.actual_amount || pay.payment_method_used || pay.payment_status ) {
+							try {
+								await adminFetch( ctx, 'admin/booking/' + bookingId + '/payment', { body: pay } );
+							} catch ( e ) { /* status already saved — payment is best-effort */ }
+						}
 						toast( i18n.saved || 'Saved', 'success' );
 						patchBookingStatus( target, 'completed' );
 					}
@@ -2040,7 +2050,166 @@
 		initBulkMode();
 		initApprovalPicker();
 		initBookingPayment();
+		initInlineNote();
+		initQuickStatus();
+		initDupeMerge();
 	} );
+
+	// Sprint 11 — Auto-fill payment dialog opened when marking Completed.
+	// Returns { actual_amount, payment_status, payment_method_used } or null.
+	function openPaymentDialog( opts ) {
+		opts = opts || {};
+		return new Promise( function ( resolve ) {
+			const backdrop = document.createElement( 'div' );
+			backdrop.className = 'handik-admin-modal-backdrop';
+			backdrop.innerHTML =
+				'<div class="handik-admin-modal" role="dialog" aria-modal="true">' +
+					'<h3>' + escapeHtml( opts.title || 'Mark completed' ) + '</h3>' +
+					'<div class="handik-admin-modal__body">' +
+						'<p class="handik-admin-muted">Record what was charged (optional — leave blank to mark Completed without money fields).</p>' +
+						'<label class="handik-admin-field"><span>Amount charged ($)</span><input type="number" step="0.01" min="0" data-field="actual_amount" autofocus /></label>' +
+						'<div class="handik-admin-grid">' +
+							'<label class="handik-admin-field"><span>Status</span><select data-field="payment_status">' +
+								'<option value="">—</option><option value="paid" selected>Paid</option><option value="partial">Partial</option><option value="unpaid">Unpaid</option>' +
+							'</select></label>' +
+							'<label class="handik-admin-field"><span>Method</span><select data-field="payment_method_used">' +
+								'<option value="">—</option><option value="cash">Cash</option><option value="venmo">Venmo</option><option value="zelle">Zelle</option><option value="check">Check</option><option value="card">Card</option><option value="other">Other</option>' +
+							'</select></label>' +
+						'</div>' +
+					'</div>' +
+					'<div class="handik-admin-modal__actions">' +
+						'<button type="button" class="button" data-action="cancel">Cancel</button>' +
+						'<button type="button" class="button" data-action="skip">Skip payment</button>' +
+						'<button type="button" class="button button-primary" data-action="save">Mark completed</button>' +
+					'</div>' +
+				'</div>';
+			function close( result ) {
+				if ( backdrop.parentNode ) { backdrop.parentNode.removeChild( backdrop ); }
+				resolve( result );
+			}
+			backdrop.addEventListener( 'click', function ( e ) {
+				if ( e.target === backdrop ) { close( null ); return; }
+				const btn = e.target.closest( '[data-action]' );
+				if ( ! btn ) { return; }
+				if ( 'cancel' === btn.dataset.action ) { close( null ); return; }
+				if ( 'skip' === btn.dataset.action ) { close( {} ); return; }
+				if ( 'save' === btn.dataset.action ) {
+					const out = {};
+					backdrop.querySelectorAll( '[data-field]' ).forEach( function ( el ) { out[ el.dataset.field ] = el.value; } );
+					close( out );
+				}
+			} );
+			document.body.appendChild( backdrop );
+		} );
+	}
+
+	// Sprint 11 — inline-edit private note in the booking detail actions bar.
+	function initInlineNote() {
+		document.querySelectorAll( '[data-handik-inline-note]' ).forEach( function ( box ) {
+			const view  = box.querySelector( '[data-handik-inline-note-view]' );
+			const edit  = box.querySelector( '[data-handik-inline-note-edit]' );
+			const tg    = box.querySelector( '[data-handik-inline-note-toggle]' );
+			const save  = box.querySelector( '[data-handik-inline-note-save]' );
+			const cancel = box.querySelector( '[data-handik-inline-note-cancel]' );
+			if ( ! view || ! edit || ! tg || ! save || ! cancel ) { return; }
+			function enterEdit() {
+				view.hidden = true; edit.hidden = false; save.hidden = false; cancel.hidden = false; tg.hidden = true; edit.focus();
+			}
+			function exitEdit() {
+				view.hidden = false; edit.hidden = true; save.hidden = true; cancel.hidden = true; tg.hidden = false;
+			}
+			tg.addEventListener( 'click', enterEdit );
+			cancel.addEventListener( 'click', exitEdit );
+			save.addEventListener( 'click', function () {
+				const value = edit.value;
+				withButtonLoading( save, function () {
+					return adminFetch( box, 'admin/booking/' + box.dataset.bookingId + '/notes', { body: { admin_notes: value } } )
+						.then( function () {
+							view.textContent = value || ( i18n.placeholder || 'Click Edit to add a note' );
+							view.classList.toggle( 'handik-admin-muted', ! value );
+							exitEdit();
+							toast( i18n.saved || 'Saved', 'success' );
+						} )
+						.catch( function () { toast( i18n.saveFailed || 'Save failed', 'error' ); } );
+				} );
+			} );
+		} );
+	}
+
+	// Sprint 11 — quick status change directly from the Bookings table cell.
+	function initQuickStatus() {
+		document.querySelectorAll( '[data-handik-quick-status]' ).forEach( function ( cell ) {
+			cell.addEventListener( 'click', function ( ev ) {
+				ev.stopPropagation(); // don't trigger the row-click → detail
+				// Stop propagation again on bubble: outer .handik-admin-row-link
+				// has a JS click handler that opens the booking detail.
+			} );
+			cell.addEventListener( 'dblclick', function ( ev ) {
+				ev.stopPropagation();
+				openQuickStatus( cell );
+			} );
+			// Mobile-friendly: long-press alternative — fall back to a small
+			// inline link "change" so the cell isn't dblclick-only.
+			const link = document.createElement( 'button' );
+			link.type = 'button';
+			link.className = 'button-link handik-admin-quick-status-edit';
+			link.textContent = i18n.change || 'change';
+			link.style.marginLeft = '6px';
+			link.addEventListener( 'click', function ( ev ) { ev.stopPropagation(); openQuickStatus( cell ); } );
+			cell.appendChild( link );
+		} );
+	}
+	function openQuickStatus( cell ) {
+		const current = cell.dataset.current || '';
+		const options = [ [ '', '— Auto —' ], [ 'booked', 'Booked' ], [ 'confirmed', 'Confirmed' ], [ 'completed', 'Completed' ], [ 'cancelled', 'Cancelled' ] ];
+		const opts = options.map( function ( o ) { return '<option value="' + o[ 0 ] + '"' + ( current === o[ 0 ] ? ' selected' : '' ) + '>' + escapeHtml( o[ 1 ] ) + '</option>'; } ).join( '' );
+		const backdrop = document.createElement( 'div' );
+		backdrop.className = 'handik-admin-modal-backdrop';
+		backdrop.innerHTML = '<div class="handik-admin-modal" role="dialog"><h3>Status</h3><div class="handik-admin-modal__body"><label class="handik-admin-field"><span>New status</span><select data-quick-status>' + opts + '</select></label></div><div class="handik-admin-modal__actions"><button type="button" class="button" data-action="cancel">Cancel</button><button type="button" class="button button-primary" data-action="save">Save</button></div></div>';
+		function close() { if ( backdrop.parentNode ) backdrop.parentNode.removeChild( backdrop ); }
+		backdrop.addEventListener( 'click', function ( e ) {
+			if ( e.target === backdrop ) return close();
+			const b = e.target.closest( '[data-action]' );
+			if ( ! b ) return;
+			if ( 'cancel' === b.dataset.action ) return close();
+			if ( 'save' === b.dataset.action ) {
+				const sel = backdrop.querySelector( '[data-quick-status]' );
+				adminFetch( cell, 'admin/booking/' + cell.dataset.bookingId + '/status', { body: { status: sel.value } } )
+					.then( function () { toast( i18n.saved || 'Saved', 'success' ); window.location.reload(); } )
+					.catch( function () { toast( i18n.saveFailed || 'Save failed', 'error' ); } );
+				close();
+			}
+		} );
+		document.body.appendChild( backdrop );
+	}
+
+	// Sprint 11 — duplicate-contacts merge action.
+	function initDupeMerge() {
+		document.querySelectorAll( '[data-handik-dupe-group]' ).forEach( function ( group ) {
+			const btn = group.querySelector( '[data-handik-dupe-merge]' );
+			const status = group.querySelector( '[data-handik-dupe-status]' );
+			if ( ! btn ) { return; }
+			btn.addEventListener( 'click', async function () {
+				const winnerInput = group.querySelector( '[data-handik-dupe-winner]:checked' );
+				if ( ! winnerInput ) { toast( 'Pick a winner first', 'error' ); return; }
+				const winnerId = winnerInput.value;
+				const losers = Array.from( group.querySelectorAll( '[data-handik-dupe-loser]:checked' ) )
+					.map( function ( i ) { return i.value; } )
+					.filter( function ( v ) { return v !== winnerId; } );
+				if ( ! losers.length ) { toast( 'Select at least one loser', 'error' ); return; }
+				if ( ! window.confirm( 'Merge ' + losers.length + ' contact(s) into the winner? This deletes the losers.' ) ) { return; }
+				let failed = 0;
+				for ( const lid of losers ) {
+					try {
+						await adminFetch( group, 'admin/contacts/merge', { body: { winner_id: winnerId, loser_id: lid } } );
+					} catch ( e ) { failed++; }
+				}
+				if ( status ) { status.textContent = failed ? ( 'Merged with ' + failed + ' failure(s)' ) : 'Merged'; }
+				toast( failed ? ( 'Merged with errors' ) : 'Merged', failed ? 'error' : 'success' );
+				if ( ! failed ) { window.setTimeout( function () { window.location.reload(); }, 500 ); }
+			} );
+		} );
+	}
 
 	// ============================================================
 	// Sprint 10 — per-booking payment/money save.

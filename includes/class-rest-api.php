@@ -195,6 +195,12 @@ class Handik_Booking_App_REST_API {
 			'callback'            => array( $this, 'admin_contacts_bulk_delete' ),
 			'permission_callback' => array( $this, 'admin_delete_permission' ),
 		) );
+		// Sprint 11 — merge two contacts (loser → winner).
+		register_rest_route( $namespace, '/admin/contacts/merge', array(
+			'methods'             => WP_REST_Server::CREATABLE,
+			'callback'            => array( $this, 'admin_contacts_merge' ),
+			'permission_callback' => array( $this, 'admin_delete_permission' ),
+		) );
 		register_rest_route( $namespace, '/admin/booking/(?P<id>\d+)', array(
 			'methods'             => WP_REST_Server::DELETABLE,
 			'callback'            => array( $this, 'admin_booking_delete' ),
@@ -826,7 +832,7 @@ class Handik_Booking_App_REST_API {
 		// allowed set and coerces booleans, so the allowlist here is just a
 		// surface filter built from the canonical schema.
 		$allowed = array_merge(
-			array( 'full_name', 'email', 'phone', 'notes', 'is_returning', 'is_spam', 'brand_preferences', 'tags' ),
+			array( 'full_name', 'email', 'phone', 'notes', 'is_returning', 'is_spam', 'brand_preferences', 'tags', 'birthday' ),
 			array_keys( Handik_Booking_App_Contacts_Service::attribute_enums() ),
 			Handik_Booking_App_Contacts_Service::attribute_booleans()
 		);
@@ -1175,6 +1181,22 @@ class Handik_Booking_App_REST_API {
 	 * posting. Capped at 100 per call — contact cascade is much
 	 * heavier than booking delete.
 	 */
+	/**
+	 * Sprint 11 — merge two contacts. Body: { winner_id, loser_id }.
+	 * Cascades child rows from loser → winner, fills empty winner fields
+	 * from loser, hard-deletes the loser. Gated by MANAGE_DELETE because
+	 * it's a destructive cascade.
+	 */
+	public function admin_contacts_merge( WP_REST_Request $request ) {
+		if ( ! $this->contacts || ! method_exists( $this->contacts, 'merge_into' ) ) {
+			return $this->admin_unavailable();
+		}
+		$winner = absint( $request->get_param( 'winner_id' ) );
+		$loser  = absint( $request->get_param( 'loser_id' ) );
+		$ok     = $this->contacts->merge_into( $winner, $loser );
+		return rest_ensure_response( array( 'success' => (bool) $ok ) );
+	}
+
 	public function admin_contacts_bulk_delete( WP_REST_Request $request ) {
 		if ( ! $this->cascade_delete ) {
 			return $this->admin_unavailable();

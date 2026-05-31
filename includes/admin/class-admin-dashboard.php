@@ -85,6 +85,7 @@ class Handik_Booking_App_Admin_Dashboard {
 
 		echo '<div class="handik-admin-dashboard">';
 		echo $this->today_strip_markup( $data );
+		echo $this->money_strip_markup( $data ); // Sprint 11 — gross + outstanding
 		echo $this->next_visits_markup( $data['next_visits'] );
 		echo $this->action_needed_markup( $data );
 		echo $this->month_at_a_glance_markup( $data );
@@ -150,7 +151,14 @@ class Handik_Booking_App_Admin_Dashboard {
 			'ready_not_booked'  => $this->job_requests ? $this->job_requests->count_ready_not_booked( 7 ) : 0,
 			'unsafe_7d'         => $this->job_requests ? $this->job_requests->count_unsafe_in_last_days( 7 ) : 0,
 			'errors_24h'        => $this->logger ? $this->logger->count_recent_errors( 24 ) : 0,
+			// Sprint 11 — payment outstanding chip.
+			'outstanding'       => ( $this->bookings && method_exists( $this->bookings, 'count_outstanding' ) ) ? $this->bookings->count_outstanding() : 0,
 		);
+
+		// Sprint 11 — Money strip (week + month gross from actual_amount,
+		// falls back to assistant estimate when actual is blank).
+		$week_gross_cents  = ( $this->bookings && method_exists( $this->bookings, 'sum_gross_in_window' ) ) ? $this->bookings->sum_gross_in_window( $this->to_utc( $today_start_et ), $this->to_utc( $week_end_et ) ) : 0;
+		$month_gross_cents = ( $this->bookings && method_exists( $this->bookings, 'sum_gross_in_window' ) ) ? $this->bookings->sum_gross_in_window( $this->to_utc( $month_start_et ), $this->to_utc( $month_end_et ) ) : 0;
 
 		$data = array(
 			'today_count'        => $today_count,
@@ -167,6 +175,9 @@ class Handik_Booking_App_Admin_Dashboard {
 			'month_count'        => $month_count,
 			'month_revenue'      => (float) $month_revenue,
 			'month_avg_minutes'  => (float) $month_avg_min,
+			// Sprint 11 — money strip (cents).
+			'week_gross_cents'   => (int) $week_gross_cents,
+			'month_gross_cents'  => (int) $month_gross_cents,
 			// Sprint 11 fix: stamp when the dashboard data was actually
 			// computed so the page can render "Refreshed Xs ago" and
 			// the owner knows whether they're looking at fresh-from-DB
@@ -296,6 +307,37 @@ class Handik_Booking_App_Admin_Dashboard {
 
 	// -------- block 2: next 5 visits --------------------------------------
 
+	/**
+	 * Sprint 11 — money strip: week + month gross. Links to Reports for
+	 * the breakdown / CSV. Only renders when the bookings table actually
+	 * has a money field populated this period (else zero is noise).
+	 */
+	protected function money_strip_markup( array $data ) {
+		$w_cents = (int) ( $data['week_gross_cents'] ?? 0 );
+		$m_cents = (int) ( $data['month_gross_cents'] ?? 0 );
+		$outstanding = (int) ( $data['counts']['outstanding'] ?? 0 );
+		if ( 0 === $w_cents && 0 === $m_cents && 0 === $outstanding ) {
+			return '';
+		}
+		$reports_url = Handik_Booking_App_Admin_Helpers::admin_url_for( 'handik-booking-app-reports', array( 'period' => 'year' ) );
+		$money = static function ( $c ) { return '$' . number_format_i18n( (int) $c / 100, 2 ); };
+		ob_start();
+		?>
+		<section class="handik-admin-dashboard__section handik-admin-money-strip">
+			<header class="handik-admin-dashboard__section-header">
+				<h2><?php esc_html_e( 'Money', 'handik-booking-app' ); ?></h2>
+				<a class="handik-admin-muted" href="<?php echo esc_url( $reports_url ); ?>"><?php esc_html_e( 'Reports →', 'handik-booking-app' ); ?></a>
+			</header>
+			<div class="handik-admin-cust-stats__grid">
+				<div class="handik-admin-cust-stats__cell"><span class="handik-admin-cust-stats__label"><?php esc_html_e( 'This week (completed)', 'handik-booking-app' ); ?></span><strong class="handik-admin-cust-stats__value"><?php echo esc_html( $money( $w_cents ) ); ?></strong></div>
+				<div class="handik-admin-cust-stats__cell"><span class="handik-admin-cust-stats__label"><?php esc_html_e( 'This month (completed)', 'handik-booking-app' ); ?></span><strong class="handik-admin-cust-stats__value"><?php echo esc_html( $money( $m_cents ) ); ?></strong></div>
+				<div class="handik-admin-cust-stats__cell"><span class="handik-admin-cust-stats__label"><?php esc_html_e( 'Outstanding bookings', 'handik-booking-app' ); ?></span><strong class="handik-admin-cust-stats__value"><?php echo (int) $outstanding; ?></strong></div>
+			</div>
+		</section>
+		<?php
+		return (string) ob_get_clean();
+	}
+
 	protected function next_visits_markup( array $rows ) {
 		// Sprint 7 (admin perf): bulk-load decorations once for the 5-row
 		// visit list. Each row used to fan out 3 single-row `get()` calls
@@ -396,19 +438,27 @@ class Handik_Booking_App_Admin_Dashboard {
 
 		$status_label = $this->bookings ? $this->bookings->effective_status( $booking ) : (string) ( $booking['status'] ?? '' );
 
+		// Sprint 11 — inline tap-to-call/SMS on the next-visit row. Same
+		// pattern as Customers list: outer is a <div> with data-href +
+		// JS row-link, so nested <a tel:> doesn't violate HTML.
+		$phone = $contact ? (string) ( $contact['phone'] ?? '' ) : '';
+		$tel   = $phone ? Handik_Booking_App_Admin_Helpers::tel_url( $phone ) : '';
+		$sms   = $phone ? Handik_Booking_App_Admin_Helpers::sms_url( $phone ) : '';
 		ob_start();
 		?>
-		<li class="handik-admin-visit-row">
-			<a class="handik-admin-visit-row__link" href="<?php echo esc_url( $detail_url ); ?>">
-				<div class="handik-admin-visit-row__when"><?php echo esc_html( $when_text ); ?></div>
-				<div class="handik-admin-visit-row__who">
-					<strong><?php echo esc_html( $client ); ?></strong>
-					<?php if ( $city ) : ?><span class="handik-admin-visit-row__city"><?php echo esc_html( $city ); ?></span><?php endif; ?>
-				</div>
-				<div class="handik-admin-visit-row__what"><?php echo esc_html( $tasks_label ); ?></div>
-				<div class="handik-admin-visit-row__status"><?php echo Handik_Booking_App_Admin_Helpers::status_pill_markup( $status_label ); ?></div>
-				<div class="handik-admin-visit-row__cta" aria-hidden="true">→</div>
-			</a>
+		<li class="handik-admin-visit-row handik-admin-row-link" data-href="<?php echo esc_url( $detail_url ); ?>" tabindex="0">
+			<div class="handik-admin-visit-row__when"><?php echo esc_html( $when_text ); ?></div>
+			<div class="handik-admin-visit-row__who">
+				<strong><?php echo esc_html( $client ); ?></strong>
+				<?php if ( $city ) : ?><span class="handik-admin-visit-row__city"><?php echo esc_html( $city ); ?></span><?php endif; ?>
+			</div>
+			<div class="handik-admin-visit-row__what"><?php echo esc_html( $tasks_label ); ?></div>
+			<div class="handik-admin-visit-row__status"><?php echo Handik_Booking_App_Admin_Helpers::status_pill_markup( $status_label ); ?></div>
+			<div class="handik-admin-visit-row__actions">
+				<?php if ( $tel ) : ?><a class="handik-admin-icon-btn is-call is-inline" href="<?php echo esc_url( $tel ); ?>" title="<?php esc_attr_e( 'Call', 'handik-booking-app' ); ?>">📞</a><?php endif; ?>
+				<?php if ( $sms ) : ?><a class="handik-admin-icon-btn is-sms is-inline" href="<?php echo esc_url( $sms ); ?>" title="<?php esc_attr_e( 'SMS', 'handik-booking-app' ); ?>">✉</a><?php endif; ?>
+				<a class="handik-admin-icon-btn is-inline" href="<?php echo esc_url( $detail_url ); ?>" title="<?php esc_attr_e( 'Open', 'handik-booking-app' ); ?>">→</a>
+			</div>
 		</li>
 		<?php
 		return (string) ob_get_clean();
@@ -423,6 +473,12 @@ class Handik_Booking_App_Admin_Dashboard {
 		$ready_url  = Handik_Booking_App_Admin_Helpers::admin_url_for( 'handik-booking-app-crm', array( 'filter' => 'ready_not_booked' ) );
 		$unsafe_url = Handik_Booking_App_Admin_Helpers::admin_url_for( 'handik-booking-app-crm', array( 'filter' => 'unsafe' ) );
 		$errors_url = Handik_Booking_App_Admin_Helpers::admin_url_for( 'handik-booking-app-operations', array( 'tab' => 'logs', 'filter_level' => 'error', 'filter_time' => '24h' ) );
+		// Sprint 11 — outstanding chip links to Bookings filtered to
+		// completed + unpaid/partial so the operator can chase payments.
+		$unpaid_url = Handik_Booking_App_Admin_Helpers::admin_url_for(
+			'handik-booking-app-bookings',
+			array( 'filter_status' => 'completed', 'filter_payment' => 'outstanding' )
+		);
 
 		ob_start();
 		?>
@@ -433,6 +489,7 @@ class Handik_Booking_App_Admin_Dashboard {
 			<div class="handik-admin-chip-row">
 				<?php echo Handik_Booking_App_Admin_Helpers::chip_markup( $drafts_url, __( 'drafts', 'handik-booking-app' ), $counts['drafts_24h'], 'warning' ); ?>
 				<?php echo Handik_Booking_App_Admin_Helpers::chip_markup( $ready_url, __( 'ready, not booked', 'handik-booking-app' ), $counts['ready_not_booked'], 'warning' ); ?>
+				<?php echo Handik_Booking_App_Admin_Helpers::chip_markup( $unpaid_url, __( 'unpaid', 'handik-booking-app' ), (int) ( $counts['outstanding'] ?? 0 ), 'warning' ); ?>
 				<?php echo Handik_Booking_App_Admin_Helpers::chip_markup( $unsafe_url, __( 'unsafe in 7d', 'handik-booking-app' ), $counts['unsafe_7d'], 'danger' ); ?>
 				<?php echo Handik_Booking_App_Admin_Helpers::chip_markup( $errors_url, __( 'errors today', 'handik-booking-app' ), $counts['errors_24h'], 'danger' ); ?>
 			</div>
