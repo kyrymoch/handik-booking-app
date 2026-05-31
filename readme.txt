@@ -3,7 +3,7 @@ Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.7.1
+Stable tag: 2.7.2
 License: Proprietary
 
 Single-page booking application with AI-assisted intake, multi-day project scheduling, and end-to-end Cal.com calendar sync.
@@ -81,6 +81,11 @@ Schema migration 1.6.1 adds `external_contact_id` for backfilling bookings made 
 Schema migration 1.6.0 adds `project_work_day_id` so multi-day project bookings show up in the unified admin Bookings list. Migrates automatically.
 
 == Changelog ==
+
+= 2.7.2 =
+* **Fix — "Continue" still stuck on the Additional Forms "Tell us how to reach you" step when picking a saved address.** The 2.7.1 fix landed in the main booking SPA, but the direct/project booking forms are a separate flow and were the ones affected. Root cause: when a returning customer picks a saved address, it is marked verified (`is_valid`), but Google Places fires an `input` event when it finishes binding to the address field — and that bind can complete *after* the saved-address pick has re-rendered the field. The stale, now-detached field's event (empty value) wiped the just-applied address and silently un-verified it, so the `is_valid`-gated Continue did nothing. Owner-reported, reproduced end-to-end in a headless-DOM harness.
+* Fix is two guards in the address `input` handler, applied to BOTH the Additional Forms flow and the main SPA for parity: (1) ignore `input` events from a field that is no longer in the document (a stale Places bind after a re-render); (2) only un-verify the address when the text actually changed, so a stray same-value event (Places bind / browser autofill) can't clear a saved or Places-picked address. Typing a real edit still re-requires Places validation.
+* No schema change, no new endpoint. Verified with a jsdom harness driving the real `booking-forms.js` (pick saved address → Places binds → Continue still advances; real edit still invalidates) plus the existing main-SPA + contacts harnesses.
 
 = 2.7.1 =
 * **Fix — "Continue" stuck on the address step for returning customers.** On the main booking flow's "Tell us how to reach you" step, picking a saved address from the "Choose a saved address or enter a new one" dropdown didn't enable the Continue button, and that address could show as a blank option. Cause: a saved address is allowed to store the structured parts (street / city / state / ZIP) without a combined `address_full` string, and the picker copied only `address_full` — leaving it empty, which keeps Continue muted. The picker now composes a full address from the structured parts when `address_full` is blank (matching the Additional Forms flow), so both the dropdown label and the Continue gate work. Owner-reported.

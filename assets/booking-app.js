@@ -3766,6 +3766,12 @@
 			this.root.querySelectorAll( '[data-model]' ).forEach( ( input ) => {
 				const eventName = 'checkbox' === input.type || 'select-one' === input.type ? 'change' : 'input';
 				input.addEventListener( eventName, () => {
+					// Ignore events from a field detached by a prior re-render
+					// (e.g. Google Places firing its bind-time `input` on the
+					// old address input after the customer picked a saved
+					// address). Acting on its stale value would clobber the
+					// freshly-applied address state.
+					if ( false === input.isConnected ) { return; }
 					let value = 'checkbox' === input.type ? input.checked : input.value;
 					const model = input.getAttribute( 'data-model' );
 					if ( 'contact.full_name' === model ) {
@@ -3803,7 +3809,12 @@
 							this.state.isReturningClient = false;
 						}
 					}
-					if ( 'address.address_full' === model ) {
+					// Only invalidate when the text actually changed. A stray
+					// same-value `input` (Places bind, autofill re-fill) is not
+					// a real edit and must not un-verify a saved / Places-picked
+					// address; otherwise Continue stops working right after the
+					// customer picks a saved address.
+					if ( 'address.address_full' === model && String( value ) !== String( this.state.address.address_full || '' ) ) {
 						this.state.address.is_valid = false;
 						this.state.address.address_id = 0;
 						// Sprint 10 fix: clear the persistent "ZIP not in
