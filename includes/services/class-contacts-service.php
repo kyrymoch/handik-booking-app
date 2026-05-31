@@ -340,11 +340,16 @@ class Handik_Booking_App_Contacts_Service {
 
 	/**
 	 * Sprint 11 — merge: reparent every child row (addresses / job_requests /
-	 * direct_booking_requests / project_scheduling_requests / messages /
+	 * direct_booking_requests / project_scheduling_requests /
 	 * bookings.external_contact_id / form_approvals) from $loser_id onto
 	 * $winner_id, then hard-delete the loser. Fills empty fields on the
 	 * winner from the loser (name / email / notes). Idempotent on a
 	 * non-existent loser; rejects merging into self.
+	 *
+	 * Note: handik_messages has no contact_id column (it is keyed by
+	 * request_id → job_requests.id). Chat transcripts follow their parent
+	 * job_request, which is reparented below, so messages need no explicit
+	 * step here.
 	 *
 	 * @param int $winner_id Surviving contact id.
 	 * @param int $loser_id  Contact id to absorb + delete.
@@ -386,7 +391,6 @@ class Handik_Booking_App_Contacts_Service {
 		};
 		$reparent( 'addresses', 'contact_id' );
 		$reparent( 'job_requests', 'contact_id' );
-		$reparent( 'messages', 'contact_id' );
 		$reparent( 'direct_booking_requests', 'contact_id' );
 		$reparent( 'project_scheduling_requests', 'contact_id' );
 		$reparent( 'bookings', 'external_contact_id' );

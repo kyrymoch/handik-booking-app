@@ -3,7 +3,7 @@ Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.7.0
+Stable tag: 2.7.1
 License: Proprietary
 
 Single-page booking application with AI-assisted intake, multi-day project scheduling, and end-to-end Cal.com calendar sync.
@@ -81,6 +81,11 @@ Schema migration 1.6.1 adds `external_contact_id` for backfilling bookings made 
 Schema migration 1.6.0 adds `project_work_day_id` so multi-day project bookings show up in the unified admin Bookings list. Migrates automatically.
 
 == Changelog ==
+
+= 2.7.1 =
+* **Fix — "Continue" stuck on the address step for returning customers.** On the main booking flow's "Tell us how to reach you" step, picking a saved address from the "Choose a saved address or enter a new one" dropdown didn't enable the Continue button, and that address could show as a blank option. Cause: a saved address is allowed to store the structured parts (street / city / state / ZIP) without a combined `address_full` string, and the picker copied only `address_full` — leaving it empty, which keeps Continue muted. The picker now composes a full address from the structured parts when `address_full` is blank (matching the Additional Forms flow), so both the dropdown label and the Continue gate work. Owner-reported.
+* **Fix — contact merge wrote to a non-existent column.** `Contacts_Service::merge_into()` (2.7.0 Find-duplicates / Merge) reparented `handik_messages` by `contact_id`, but that table is keyed by `request_id` and has no `contact_id` column — so every merge logged an "Unknown column" DB error. The step was also redundant: chat transcripts already follow their parent job_request, which is reparented. Removed the erroring line; merges now run clean. `messages` is no longer in the explicit reparent list.
+* No schema change, no new endpoint, no customer-facing change beyond the address-step fix. Verified with standalone harnesses (31-assertion contacts/merge + cascade; 8-assertion saved-address Continue gate).
 
 = 2.7.0 =
 * **Sprint 11 / Operator daily workflow.** Twelve operator-facing improvements to the admin in one release. One additive migration. Owner-driven (post-2.6.0 dogfooding).
