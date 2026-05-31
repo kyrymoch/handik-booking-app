@@ -1677,6 +1677,27 @@
 			}
 		}
 
+		// Build a human-readable / submittable address string for a saved
+		// address row. Saved rows are allowed to have an empty `address_full`
+		// as long as `address_line_1` is set (see Addresses_Service::create),
+		// so we fall back to the structured parts. This keeps the dropdown
+		// labels readable AND keeps state.address.address_full non-empty —
+		// otherwise stepCanContinue('address_details') stays false and the
+		// Continue button never un-mutes. Mirrors the Additional Forms flow.
+		composeSavedAddress( item ) {
+			const full = String( ( item && item.address_full ) || '' ).trim();
+			if ( full ) {
+				return full;
+			}
+			const parts = [
+				( item && item.address_line_1 ) || '',
+				( item && item.city ) || '',
+				( item && item.state ) || '',
+				( item && item.zip_code ) || ''
+			].map( ( part ) => String( part || '' ).trim() ).filter( Boolean );
+			return parts.join( ', ' );
+		}
+
 		isServiceableZip( zip ) {
 			const list = Array.isArray( config.serviceableZips ) ? config.serviceableZips : [];
 			if ( ! list.length ) {
@@ -3367,7 +3388,7 @@
 			if ( isReturningProfile && this.state.savedAddressLoading ) {
 				savedAddressMarkup = '<div class="handik-saved-address-loading" role="status" aria-live="polite"><div class="handik-saved-address-loading__bar"></div><div class="handik-saved-address-loading__bar is-short"></div><span>' + this.escape( 'Checking saved addresses...' ) + '</span></div>';
 			} else if ( addressOptions.length ) {
-				savedAddressMarkup = '<label class="handik-field"><span>' + this.escape( config.strings.savedAddressLabel || 'Choose a saved address or enter a new one' ) + '</span><select id="handik-saved-address" autocomplete="off"><option value="">' + this.escape( config.strings.savedAddressPlaceholder || 'Choose saved address' ) + '</option>' + addressOptions.map( ( item ) => '<option value="' + item.id + '">' + this.escape( item.address_full ) + '</option>' ).join( '' ) + '</select></label>';
+				savedAddressMarkup = '<label class="handik-field"><span>' + this.escape( config.strings.savedAddressLabel || 'Choose a saved address or enter a new one' ) + '</span><select id="handik-saved-address" autocomplete="off"><option value="">' + this.escape( config.strings.savedAddressPlaceholder || 'Choose saved address' ) + '</option>' + addressOptions.map( ( item ) => '<option value="' + item.id + '">' + this.escape( this.composeSavedAddress( item ) ) + '</option>' ).join( '' ) + '</select></label>';
 			} else if ( isReturningProfile ) {
 				savedAddressMarkup = '<p class="handik-field__help handik-field__help--empty" role="status">' + this.escape( 'No saved addresses yet — enter the address below.' ) + '</p>';
 			}
@@ -3866,7 +3887,7 @@
 					if ( chosen ) {
 						this.state.address = {
 							address_id: chosen.id,
-							address_full: chosen.address_full || '',
+							address_full: this.composeSavedAddress( chosen ),
 							address_line_1: chosen.address_line_1 || '',
 							address_unit: chosen.address_unit || '',
 							city: chosen.city || '',
