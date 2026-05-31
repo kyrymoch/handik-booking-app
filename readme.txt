@@ -3,7 +3,7 @@ Contributors: handik
 Requires at least: 6.4
 Requires PHP: 7.4
 Tested up to: 6.6
-Stable tag: 2.7.3
+Stable tag: 2.7.4
 License: Proprietary
 
 Single-page booking application with AI-assisted intake, multi-day project scheduling, and end-to-end Cal.com calendar sync.
@@ -81,6 +81,12 @@ Schema migration 1.6.1 adds `external_contact_id` for backfilling bookings made 
 Schema migration 1.6.0 adds `project_work_day_id` so multi-day project bookings show up in the unified admin Bookings list. Migrates automatically.
 
 == Changelog ==
+
+= 2.7.4 =
+* **Fix — Virtual Assistant "thinking" hint no longer hangs on a clarifying question.** When the assistant needs more detail and replies with a plain question (no booking estimate yet), the "Reviewing your request… / this is taking too long" hint used to stay on screen — it was waiting for a "ready to book" result that a question turn never produces. The hint now clears as soon as the assistant's reply appears, regardless of whether that reply carries a booking recommendation. The status hint is now strictly "assistant is composing a reply", nothing more.
+* The assistant message detection no longer depends on fragile role/type metadata from ChatKit: any message that is not the customer's own text (matched against the text they just sent) is treated as the assistant's reply and clears the hint. A user-message echo can no longer be mistaken for a reply, and vice-versa.
+* **Completes 2.7.3.** The 2.7.3 "a 'yes' no longer breaks the booking step" change shipped with the chat-bridge half applied but the booking-app gate half not actually wired (an internal patch didn't land), so the acknowledgement handling was dormant. It is now fully wired and shares one code path with the new clarifying-question fix: a content-free "yes"/"ok" after a ready estimate keeps Book a time enabled and skips the recommendation cycle; a substantive follow-up keeps Book a time available while the assistant replies; the booking is still confirmed only inside Cal.com.
+* No schema change, no new endpoint. Verified with two standalone harnesses driving the real extracted methods (status-block lifecycle incl. clarifying-question clear + user-echo guard; acknowledgement detection positives/negatives).
 
 = 2.7.3 =
 * **Fix — Virtual Assistant: a "yes" no longer breaks the booking step.** The assistant only prepares the recommendation; the actual booking is owned by the "Book a time" button and confirmed inside Cal.com. Previously, any reply after a ready estimate — including a simple "yes", "ok", or "sounds good" — restarted the assistant's "preparing recommendation" cycle, disabled the Book a time button, and could leave the customer stuck on "this is taking too long" (and, with the old workflow prompt, a false "your booking is confirmed" reply).
