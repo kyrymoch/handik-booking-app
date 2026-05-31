@@ -201,6 +201,10 @@
 				assistantFallbackMessage: '',
 				assistantUserMessageSent: false,
 				assistantThreadId: '',
+				// The exact text of the last user message (lower-cased), so the
+				// `message` activity echo of that same text isn't mistaken for an
+				// assistant reply when we decide whether to clear the status block.
+				assistantLastUserText: '',
 				contact: { first_name: '', last_name: '', full_name: '', email: '', phone: '' },
 				touched: { full_name: false, email: false, phone: false },
 				// Sprint 6 — phone-first OTP flow.
@@ -970,6 +974,124 @@
 				unsafe: !! state.unsafe,
 				has_user_message: !! state.has_user_message
 			};
+		}
+
+		// A new user turn started in the assistant chat. Shared by
+		// onComposerSubmit (composer.submit event) and onMessageActivity (the
+		// user-role `message` echo) so the two entry points behave identically.
+		// `text` is the user's message; `wasReady` tells us whether the
+		// assistant was already ready to book before this turn.
+		//
+		// The crucial rule: booking is owned by the "Book a time" button +
+		// Cal.com, never by the chat turn. When the assistant is already ready
+		// and the new message is a content-free acknowledgement ("yes"/"ok"),
+		// we do NOT restart the recommendation cycle or disable Book a time.
+		beginAssistantUserTurn( text, wasReady ) {
+			this.state.assistantUserMessageSent = true;
+			this.state.assistantLastUserText = String( text || '' ).toLowerCase().trim();
+			this.clearAssistantFallbackMessage();
+			this.clearAssistantStuckBanner();
+			if ( this.assistantUnlockTimer ) {
+				window.clearTimeout( this.assistantUnlockTimer );
+				this.assistantUnlockTimer = null;
+			}
+
+			if ( wasReady && this.isAssistantAcknowledgement( text ) ) {
+				// Trivial acknowledgement after a ready estimate: keep the ready
+				// state, keep Book a time enabled, skip the recommendation cycle
+				// (no status block).
+				this.logClient( 'info', 'assistant_acknowledgement_detected', {
+					request_id: this.state.requestId,
+					kept_booking_button_enabled: true,
+					skipped_full_recommendation_cycle: true
+				} );
+				this.notify(
+					'info',
+					'',
+					'Great — please use the Book a time button below to choose an available slot. Your booking is confirmed only after you complete the Cal.com step.',
+					6000
+				);
+				this.setAssistantContinueBusy( false );
+				return;
+			}
+
+			this.logClient( 'info', 'User submitted assistant message.', {
+				request_id: this.state.requestId,
+				was_ready: !! wasReady
+			} );
+			this.state.assistantAwaitingResponse = true;
+			this.startAssistantStatusBlock();
+
+			if ( wasReady ) {
+				// Substantive follow-up while already ready: keep Book a time
+				// available while the assistant replies (sticky readiness). The
+				// fresh result reconciles readiness when it lands.
+				this.logClient( 'info', 'kept_booking_button_enabled', {
+					request_id: this.state.requestId,
+					reason: 'sticky_ready_substantive_followup'
+				} );
+				this.setAssistantContinueBusy( false );
+				return;
+			}
+
+			// Not yet ready: full preparing cycle.
+			this.state.assistantRoutingPending = true;
+			this.state.assistantResponseSeen = false;
+			this.state.assistantReadyForBooking = false;
+			this.setAssistantContinueBusy( false );
+		}
+
+		// The assistant produced a visible reply for the current turn. This is
+		// the ONLY thing the "thinking / taking too long" status block waits
+		// for — it must fire even when the reply is a plain clarifying question
+		// that carries no structured routing result (so onComplete never runs).
+		// Idempotent: safe to call from both the message-activity path and the
+		// structured-result path.
+		endAssistantTurnWithReply( source ) {
+			if ( ! this.state.assistantAwaitingResponse && ! this.assistantStatusActive ) {
+				return;
+			}
+			this.clearAssistantStatusBlock();
+			this.clearAssistantStuckBanner();
+			this.clearAssistantFallbackMessage();
+			if ( this.assistantUnlockTimer ) {
+				window.clearTimeout( this.assistantUnlockTimer );
+				this.assistantUnlockTimer = null;
+			}
+			this.state.assistantResponseSeen = true;
+			this.state.assistantAwaitingResponse = false;
+			// Keep CTA pending only until a routing result is saved; a pure
+			// clarifying-question turn legitimately has no saved result yet.
+			this.state.assistantRoutingPending = ! this.state.assistantResultSaved;
+			this.logClient( 'info', 'Assistant reply detected; status block cleared.', {
+				request_id: this.state.requestId,
+				source: source || 'unknown'
+			} );
+			this.setAssistantContinueBusy( false );
+		}
+
+		// Best-effort plain-text from a ChatKit `message` activity detail, used
+		// only to tell the user's own echoed message apart from an assistant
+		// reply when the role metadata is missing.
+		extractAssistantActivityText( detail ) {
+			if ( ! detail || 'object' !== typeof detail ) {
+				return '';
+			}
+			const candidates = [
+				detail.content,
+				detail.text,
+				detail.message,
+				detail.body,
+				detail.data && detail.data.content,
+				detail.data && detail.data.text,
+				detail.data && detail.data.message
+			];
+			for ( const candidate of candidates ) {
+				if ( 'string' === typeof candidate && candidate.trim() ) {
+					return candidate.trim();
+				}
+			}
+			return '';
 		}
 
 		// True when the customer message is a short, content-free
@@ -3083,68 +3205,49 @@
 						const messageType = detail && ( detail.type || detail.message_type || ( detail.message && detail.message.type ) ) ? String( detail.type || detail.message_type || detail.message.type ).toLowerCase() : '';
 						const direction = detail && ( detail.direction || ( detail.message && detail.message.direction ) ) ? String( detail.direction || detail.message.direction ).toLowerCase() : '';
 						const source = detail && ( detail.source || detail.origin || ( detail.message && ( detail.message.source || detail.message.origin ) ) ) ? String( detail.source || detail.origin || detail.message.source || detail.message.origin ).toLowerCase() : '';
-						// 2.1.29.1 P0 fix: the original "contains" checks were
-						// `false !== messageType.indexOf( 'user' )`. String.indexOf
-						// returns -1 (not false) when the needle is missing, so
-						// `false !== -1` evaluates to true for every messageType
-						// value — both isUserLike AND isAssistantLike were always
-						// true, the if/else-if always picked the user branch, and
-						// assistant message events never cleared the status block
-						// or restored assistantReadyForBooking. Fix: use the
-						// canonical `-1 !== indexOf` "contains" check.
 						const isUserLike = 'user' === role || -1 !== messageType.indexOf( 'user' ) || 'outgoing' === direction || 'user' === source || 'client' === source;
-						const isAssistantLike = 'assistant' === role || -1 !== messageType.indexOf( 'assistant' ) || -1 !== messageType.indexOf( 'output' ) || 'incoming' === direction || 'assistant' === source;
-						if ( isUserLike ) {
-							this.startAssistantStatusBlock();
+
+						// Guard: ChatKit also fires a `message` event echoing the
+						// user's OWN text. If the metadata is ambiguous (no role),
+						// match it against the text we just submitted so we don't
+						// treat the echo as an assistant reply.
+						const activityText = this.extractAssistantActivityText( detail );
+						const echoesUserText = !! ( activityText && this.state.assistantLastUserText &&
+							activityText.toLowerCase().trim() === this.state.assistantLastUserText );
+
+						if ( isUserLike || echoesUserText ) {
+							// The user-message bookkeeping is owned by onComposerSubmit
+							// (the composer.submit event), which fires first and has
+							// the full text for acknowledgement detection. Doing it
+							// again here would tear down a sticky-ready state and
+							// restart the status block on the user echo, so this path
+							// is now a no-op beyond recording that a message exists.
 							this.state.assistantUserMessageSent = true;
-							this.state.assistantRoutingPending = true;
-							this.state.assistantAwaitingResponse = true;
-							this.state.assistantResponseSeen = false;
-							this.state.assistantReadyForBooking = false;
-							this.clearAssistantFallbackMessage();
-							this.clearAssistantStuckBanner();
-							if ( this.assistantUnlockTimer ) {
-								window.clearTimeout( this.assistantUnlockTimer );
-								this.assistantUnlockTimer = null;
-							}
-							this.setAssistantContinueBusy( false );
-						} else if ( isAssistantLike ) {
-							this.clearAssistantStatusBlock();
-							this.logClient( 'info', 'Assistant final message detected.', {
-								request_id: this.state.requestId
-							} );
-							this.state.assistantResponseSeen = true;
-							this.state.assistantAwaitingResponse = false;
-							this.state.assistantRoutingPending = ! this.state.assistantResultSaved;
-							this.clearAssistantFallbackMessage();
-							this.clearAssistantStuckBanner();
-							if ( this.assistantUnlockTimer ) {
-								window.clearTimeout( this.assistantUnlockTimer );
-								this.assistantUnlockTimer = null;
-							}
-							this.setAssistantContinueBusy( false );
+							return;
 						}
+
+						// Anything that is NOT the user's own message, arriving while
+						// we're waiting on the assistant, IS the assistant's reply —
+						// even a plain clarifying question with no structured result
+						// (enough_information=false), which is exactly the turn that
+						// used to leave the "thinking / taking too long" block stuck.
+						// Don't gate on the unreliable isAssistantLike metadata.
+						this.endAssistantTurnWithReply( 'message-activity' );
 					},
-					onComposerSubmit: () => {
-						this.startAssistantStatusBlock();
-						this.logClient( 'info', 'User submitted assistant message.', {
-							request_id: this.state.requestId
-						} );
-						this.state.assistantUserMessageSent = true;
-						this.state.assistantRoutingPending = true;
-						this.state.assistantAwaitingResponse = true;
-						this.state.assistantResponseSeen = false;
-						this.state.assistantReadyForBooking = false;
-						this.clearAssistantFallbackMessage();
-						this.clearAssistantStuckBanner();
-						if ( this.assistantUnlockTimer ) {
-							window.clearTimeout( this.assistantUnlockTimer );
-							this.assistantUnlockTimer = null;
-						}
-						this.setAssistantContinueBusy( false );
+					onComposerSubmit: ( detail ) => {
+						const result = this.state.assistantResult && 'object' === typeof this.state.assistantResult ? this.state.assistantResult : {};
+						const wasReady = !! (
+							this.state.assistantReadyForBooking &&
+							this.state.bookingUrl &&
+							true === result.enough_information &&
+							! result.unsafe
+						);
+						const userText = detail && 'string' === typeof detail.text ? detail.text : '';
+						this.beginAssistantUserTurn( userText, wasReady );
 					},
 					onComplete: ( normalized, payload ) => {
 						this.clearAssistantStatusBlock();
+						this.state.assistantAwaitingResponse = false;
 						this.applySavedAssistantRouting( normalized, payload, 'chatkit-complete' );
 						this.state.assistantUserMessageSent = true;
 						if ( payload && payload.unsafe_flag ) {
